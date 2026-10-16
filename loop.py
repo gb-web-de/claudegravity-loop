@@ -2,7 +2,7 @@
 """
 ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop
 Auto-detects available CLIs (Claude Code, Google Antigravity agy, Gemini CLI, Codex).
-Implements cross-model plan review (preventing AI self-grading bias) and autonomous iteration.
+Supports any local or external project path (-p /path/to/project or -p ../project).
 """
 
 import argparse
@@ -16,9 +16,6 @@ import time
 from pathlib import Path
 
 STOP_REQUESTED = False
-LOOP_DIR = Path(".dual-loop")
-PLAN_FILE = LOOP_DIR / "PLAN.md"
-REVIEW_FILE = LOOP_DIR / "REVIEW.md"
 
 
 def sigint_handler(signum, frame):
@@ -82,10 +79,15 @@ def load_project_context(project_path: Path) -> str:
     if not project_path.exists():
         return ""
     context = []
-    claude_md = project_path / "CLAUDE.md"
-    if claude_md.exists():
-        context.append(f"### Projekt-Instruktionen (CLAUDE.md):\n{claude_md.read_text(encoding='utf-8').strip()}\n")
+    
+    # 1. CLAUDE.md oder AGENTS.md suchen
+    for rule_file in ["CLAUDE.md", "AGENTS.md", ".claude/rules.md"]:
+        rf = project_path / rule_file
+        if rf.exists():
+            context.append(f"### Projekt-Instruktionen ({rule_file}):\n{rf.read_text(encoding='utf-8', errors='ignore').strip()}\n")
+            break
 
+    # 2. knowledge/ Ordner sichten (falls vorhanden)
     knowledge_dir = project_path / "knowledge"
     if knowledge_dir.exists() and knowledge_dir.is_dir():
         k_files = [f for f in knowledge_dir.glob("*") if f.is_file()]
@@ -94,29 +96,35 @@ def load_project_context(project_path: Path) -> str:
             for kf in k_files:
                 snippet = kf.read_text(encoding='utf-8', errors='ignore')[:500]
                 context.append(f"--- Datei: {kf.name} ---\n{snippet}\n")
+                
     return "\n".join(context)
 
 
-def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, project_ctx: str, max_rounds: int = 2) -> bool:
-    LOOP_DIR.mkdir(exist_ok=True)
-    print(f"\n🚀 Phase 1: Plan-Entwurf durch {planner.name}...")
+def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, project_path: Path, project_ctx: str, max_rounds: int = 2) -> bool:
+    loop_dir = project_path / ".dual-loop"
+    plan_file = loop_dir / "PLAN.md"
+    review_file = loop_dir / "REVIEW.md"
+    
+    loop_dir.mkdir(exist_ok=True)
+    print(f"\n🚀 Phase 1: Plan-Entwurf durch {planner.name} (im Kontext von {project_path.name})...")
 
     prompt_plan = (
-        f"Du bist der leitende Software-Architekt. Erstelle einen präzisen, token-effizienten Implementierungsplan für:\n"
+        f"Du bist der leitende Software-Architekt für das Projekt in '{project_path}'.\n"
+        f"Erstelle einen präzisen, token-effizienten Implementierungsplan für folgende Aufgabe:\n"
         f"Aufgabe: {task}\n\n"
         f"{project_ctx}\n\n"
         f"Enthalte: Betroffene Dateien, Architektur, Randfälle und Testkriterien. Antworte nur mit dem Markdown-Plan."
     )
-    plan = planner.run(prompt_plan)
-    PLAN_FILE.write_text(plan, encoding="utf-8")
-    print(f"📄 Plan gespeichert in {PLAN_FILE}")
+    plan = planner.run(prompt_plan, cwd=project_path)
+    plan_file.write_text(plan, encoding="utf-8")
+    print(f"📄 Plan gespeichert in {plan_file}")
 
     for r in range(1, max_rounds + 1):
         if STOP_REQUESTED:
             return False
         print(f"\n🔍 Phase 2: Unabhängiges Adversarial Review (Runde {r}/{max_rounds}) durch {reviewer.name}...")
         prompt_rev = (
-            f"Du bist ein unbarmherziger Sicherheits- und Code-Reviewer. "
+            f"Du bist ein unbarmherziger Sicherheits- und Code-Reviewer für das Projekt in '{project_path}'.\n"
             f"Grille den folgenden Plan auf Schwachstellen, Race Conditions, fehlende Tests und logische Lücken:\n\n"
             f"Aufgabe: {task}\n\n"
             f"Plan:\n{plan}\n\n"
@@ -125,9 +133,9 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
             f"KRITIK:\n- [Punkte...]\n"
             f"EMPFEHLUNGEN:\n- [Punkte...]"
         )
-        review = reviewer.run(prompt_rev)
-        REVIEW_FILE.write_text(review, encoding="utf-8")
-        print(f"📋 Review gespeichert in {REVIEW_FILE}")
+        review = reviewer.run(prompt_rev, cwd=project_path)
+        review_file.write_text(review, encoding="utf-8")
+        print(f"📋 Review gespeichert in {review_file}")
 
         if "VERDICT: APPROVED" in review:
             print(f"🎉 Plan von {reviewer.name} genehmigt!")
@@ -139,8 +147,8 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
                 f"{review}\n\n"
                 f"Bitte überarbeite den Plan ({plan}) und behebe alle genannten Mängel."
             )
-            plan = planner.run(prompt_fix)
-            PLAN_FILE.write_text(plan, encoding="utf-8")
+            plan = planner.run(prompt_fix, cwd=project_path)
+            plan_file.write_text(plan, encoding="utf-8")
         else:
             print("🛑 Maximale Review-Runden erreicht. Manuelle Prüfung empfohlen.")
             return False
@@ -150,7 +158,7 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
 def main():
     parser = argparse.ArgumentParser(description="ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop")
     parser.add_argument("task", nargs="?", help="Die Aufgabe für den Loop")
-    parser.add_argument("-p", "--project", default=".", help="Projektverzeichnis (Standard: .)")
+    parser.add_argument("-p", "--project", default=".", help="Pfad zum Ziel-Projekt (absolut z.B. /home/gordon/Projekte/handball oder relativ z.B. ../handball, Standard: .)")
     parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Maximale autonome Iterationen (Standard: 10)")
     parser.add_argument("--planner", default=None, help="Explizite CLI für Planung/Bau (z.B. claude)")
     parser.add_argument("--reviewer", default=None, help="Explizite CLI für Review (z.B. agy oder gemini)")
@@ -189,11 +197,11 @@ def main():
 
     remaining = [a for k, a in agents.items() if a != planner]
     if args.reviewer and args.reviewer in agents:
-        reviewer = agents[args.reviewer]
+        reviewer = args.reviewer in agents and agents[args.reviewer]
     elif remaining:
         reviewer = remaining[0]
     else:
-        reviewer = planner  # Fallback
+        reviewer = planner
 
     print(f"\n=======================================================")
     print(f"[*] ClaudeGravity Loop gestartet")
@@ -205,17 +213,18 @@ def main():
     project_ctx = load_project_context(project_path)
 
     # 1. Phase: Adversarial Plan Review
-    approved = run_adversarial_plan(planner, reviewer, args.task, project_ctx, max_rounds=2)
+    approved = run_adversarial_plan(planner, reviewer, args.task, project_path, project_ctx, max_rounds=2)
     if not approved and not STOP_REQUESTED:
         choice = input("\nPlan nicht vollständig genehmigt. Trotzdem mit Implementierung fortfahren? (j/N): ")
         if choice.lower() not in ["j", "ja", "y", "yes"]:
             print("Abbruch durch Nutzer.")
             return
 
-    # 2. Phase: Autonomer Implementierungs-Loop
+    # 2. Phase: Autonomer Implementierungs-Loop im Projektverzeichnis
     logs_dir = project_path / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     session_log = logs_dir / f"loop_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    plan_file = project_path / ".dual-loop" / "PLAN.md"
 
     print(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {project_path}...")
     iteration = 0
@@ -235,8 +244,8 @@ def main():
         print(log_header, flush=True)
 
         prompt_build = (
-            f"Führe den genehmigten Plan ({PLAN_FILE}) für die Aufgabe aus:\n{args.task}\n\n"
-            f"Erstelle oder modifiziere die benötigten Dateien. Führe Tests durch. "
+            f"Führe den genehmigten Plan ({plan_file}) für die Aufgabe aus:\n{args.task}\n\n"
+            f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch. "
             f"Wenn alle Anforderungen erfüllt und getestet sind, erstelle die Datei .done im Projektverzeichnis."
         )
 
