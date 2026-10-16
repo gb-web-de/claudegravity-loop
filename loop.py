@@ -38,28 +38,29 @@ class AgentCLI:
         return self.run_fn(self.binary, prompt, cwd)
 
 
-def _exec_claude(binary: str, prompt: str, cwd: Path | None = None) -> str:
-    cmd = [binary, "-p", prompt]
-    res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, check=True)
+def _exec_cli(binary: str, args: list[str], cwd: Path | None = None) -> str:
+    cmd = [binary] + args
+    res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True)
+    if res.returncode != 0:
+        err_msg = res.stderr.strip() or res.stdout.strip() or f"Fehlercode {res.returncode}"
+        raise RuntimeError(f"{binary} Fehler (Code {res.returncode}): {err_msg}")
     return res.stdout.strip()
+
+
+def _exec_claude(binary: str, prompt: str, cwd: Path | None = None) -> str:
+    return _exec_cli(binary, ["-p", prompt], cwd)
 
 
 def _exec_agy(binary: str, prompt: str, cwd: Path | None = None) -> str:
-    cmd = [binary, "run", prompt]
-    res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, check=True)
-    return res.stdout.strip()
+    return _exec_cli(binary, ["-p", prompt], cwd)
 
 
 def _exec_gemini(binary: str, prompt: str, cwd: Path | None = None) -> str:
-    cmd = [binary, "-p", prompt]
-    res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, check=True)
-    return res.stdout.strip()
+    return _exec_cli(binary, ["-p", prompt], cwd)
 
 
 def _exec_codex(binary: str, prompt: str, cwd: Path | None = None) -> str:
-    cmd = [binary, "exec", "-s", "read-only", prompt]
-    res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, check=True)
-    return res.stdout.strip()
+    return _exec_cli(binary, ["exec", "-s", "read-only", prompt], cwd)
 
 
 def detect_installed_agents() -> dict[str, AgentCLI]:
@@ -79,15 +80,13 @@ def load_project_context(project_path: Path) -> str:
     if not project_path.exists():
         return ""
     context = []
-    
-    # 1. CLAUDE.md oder AGENTS.md suchen
+
     for rule_file in ["CLAUDE.md", "AGENTS.md", ".claude/rules.md"]:
         rf = project_path / rule_file
         if rf.exists():
             context.append(f"### Projekt-Instruktionen ({rule_file}):\n{rf.read_text(encoding='utf-8', errors='ignore').strip()}\n")
             break
 
-    # 2. knowledge/ Ordner sichten (falls vorhanden)
     knowledge_dir = project_path / "knowledge"
     if knowledge_dir.exists() and knowledge_dir.is_dir():
         k_files = [f for f in knowledge_dir.glob("*") if f.is_file()]
@@ -96,7 +95,7 @@ def load_project_context(project_path: Path) -> str:
             for kf in k_files:
                 snippet = kf.read_text(encoding='utf-8', errors='ignore')[:500]
                 context.append(f"--- Datei: {kf.name} ---\n{snippet}\n")
-                
+
     return "\n".join(context)
 
 
@@ -104,9 +103,10 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
     loop_dir = project_path / ".dual-loop"
     plan_file = loop_dir / "PLAN.md"
     review_file = loop_dir / "REVIEW.md"
-    
+
     loop_dir.mkdir(exist_ok=True)
     print(f"\n🚀 Phase 1: Plan-Entwurf durch {planner.name} (im Kontext von {project_path.name})...")
+    print(f"⏳ Warte auf {planner.name}...", flush=True)
 
     prompt_plan = (
         f"Du bist der leitende Software-Architekt für das Projekt in '{project_path}'.\n"
@@ -123,6 +123,8 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
         if STOP_REQUESTED:
             return False
         print(f"\n🔍 Phase 2: Unabhängiges Adversarial Review (Runde {r}/{max_rounds}) durch {reviewer.name}...")
+        print(f"⏳ Warte auf Review von {reviewer.name}...", flush=True)
+
         prompt_rev = (
             f"Du bist ein unbarmherziger Sicherheits- und Code-Reviewer für das Projekt in '{project_path}'.\n"
             f"Grille den folgenden Plan auf Schwachstellen, Race Conditions, fehlende Tests und logische Lücken:\n\n"
@@ -142,6 +144,7 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
             return True
         elif r < max_rounds:
             print(f"⚠️ Kritikpunkte von {reviewer.name}. {planner.name} bessert den Plan nach...")
+            print(f"⏳ Warte auf Überarbeitung durch {planner.name}...", flush=True)
             prompt_fix = (
                 f"Der Reviewer ({reviewer.name}) hat folgende Kritikpunkte am Plan geäußert:\n\n"
                 f"{review}\n\n"
@@ -158,7 +161,7 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
 def main():
     parser = argparse.ArgumentParser(description="ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop")
     parser.add_argument("task", nargs="?", help="Die Aufgabe für den Loop")
-    parser.add_argument("-p", "--project", default=".", help="Pfad zum Ziel-Projekt (absolut z.B. /home/gordon/Projekte/handball oder relativ z.B. ../handball, Standard: .)")
+    parser.add_argument("-p", "--project", default=".", help="Pfad zum Ziel-Projekt (absolut oder relativ, Standard: .)")
     parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Maximale autonome Iterationen (Standard: 10)")
     parser.add_argument("--planner", default=None, help="Explizite CLI für Planung/Bau (z.B. claude)")
     parser.add_argument("--reviewer", default=None, help="Explizite CLI für Review (z.B. agy oder gemini)")
@@ -197,7 +200,7 @@ def main():
 
     remaining = [a for k, a in agents.items() if a != planner]
     if args.reviewer and args.reviewer in agents:
-        reviewer = args.reviewer in agents and agents[args.reviewer]
+        reviewer = agents[args.reviewer]
     elif remaining:
         reviewer = remaining[0]
     else:
@@ -250,7 +253,7 @@ def main():
         )
 
         try:
-            cmd = [planner.binary, "-p", prompt_build] if planner.binary != "agy" else [planner.binary, "run", prompt_build]
+            cmd = [planner.binary, "-p", prompt_build]
             process = subprocess.Popen(
                 cmd,
                 cwd=str(project_path),
