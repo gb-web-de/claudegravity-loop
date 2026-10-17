@@ -188,6 +188,7 @@ mein-projekt/
 │   └── sessions/                   # 📦 Revisionssicheres Archiv
 │       └── 20261017_102220_task/
 │           ├── state.json          # Sitzungs-Speicher für --resume
+│           ├── .done               # 🏁 Fertigmeldung der Aufgabe (isoliert im Session-Ordner!)
 │           ├── PLAN_v1.md          # Erster Entwurf
 │           ├── REVIEW_round1.md    # Kritik von Antigravity
 │           ├── PLAN_v2.md          # Überarbeiteter Entwurf

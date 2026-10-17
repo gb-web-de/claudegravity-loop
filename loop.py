@@ -131,6 +131,22 @@ def sanitize_filename(text: str) -> str:
     return cleaned[:30] or "task"
 
 
+def check_and_clean_done_marker(session_dir: Path, project_path: Path) -> bool:
+    """Prüft, ob die Fertigmeldung (.done) existiert. Liegt im Session-Ordner."""
+    session_done = session_dir / ".done"
+    root_done = project_path / ".done"
+    if session_done.exists():
+        return True
+    if root_done.exists():
+        try:
+            shutil.move(str(root_done), str(session_done))
+        except Exception:
+            session_done.touch()
+            try: root_done.unlink()
+            except Exception: pass
+        return True
+    return False
+
 def get_permission_flags(binary: str) -> list[str]:
     """Gibt die passenden Flags für Schreib-/Tool-Rechte zurück."""
     if binary in ["claude", "agy"]:
@@ -649,9 +665,9 @@ def main():
         if STOP_REQUESTED:
             break
 
-        done_flag = project_path / ".done"
-        if done_flag.exists():
-            print(f"\n🎉 Fertigmeldung ({done_flag}) gefunden! Aufgabe erfolgreich abgeschlossen.")
+        if check_and_clean_done_marker(session_dir, project_path):
+            done_file = session_dir / ".done"
+            print(f"\n🎉 Fertigmeldung ({done_file.relative_to(project_path)}) gefunden! Aufgabe erfolgreich abgeschlossen.")
             state["phase"] = "completed"
             save_session_state(session_dir, state)
             break
@@ -663,10 +679,12 @@ def main():
         log_header = f"\n{'='*20} Iteration {iteration}/{max_iters} @ {timestamp} {'='*20}\n"
         print(log_header, flush=True)
 
+        rel_done_path = (session_dir / ".done").relative_to(project_path)
         prompt_build = (
-            f"Führe den genehmigten Plan ({plan_file}) für folgende Aufgabe aus:\n{task}\n\n"
-            f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch. "
-            f"Wenn alle Anforderungen erfüllt und getestet sind, erstelle die Datei .done im Projektverzeichnis."
+            f"Führe den genehmigten Plan ({plan_file.relative_to(project_path)}) für folgende Aufgabe aus:\n{task}\n\n"
+            f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch.\n\n"
+            f"WICHTIG ZUM ABSCHLUSS: Wenn alle Anforderungen vollständig erfüllt und getestet sind, "
+            f"erstelle die Fertigmeldungs-Datei genau im Session-Ordner unter: \x27{rel_done_path}\x27 (NICHT im Projekt-Hauptverzeichnis)."
         )
 
         try:
@@ -700,7 +718,7 @@ def main():
         if args.delay > 0:
             time.sleep(args.delay)
 
-    if iteration >= max_iters and not (project_path / ".done").exists():
+    if iteration >= max_iters and not check_and_clean_done_marker(session_dir, project_path):
         print(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
         print(f"💡 Du kannst jederzeit mit 'claudegravity -c' weitere Runden anhängen.")
 

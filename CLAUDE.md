@@ -14,4 +14,4 @@ Er basiert auf dem Prinzip des [claudex-loop](https://github.com/chaseai-yt/clau
 - Verwende ausschließlich Standard-Bibliotheken (`argparse`, `pathlib`, `subprocess`, `signal`, `shutil`).
 - Keine externen API-Schlüssel: Cloud-Modelle werden ausschließlich über die offiziellen CLIs (`claude`, `agy`, `gemini`) mit bestehenden Abos angesprochen.
 - Token-Schonung hat oberste Priorität: Übergib nur den Plan oder relevante Diffs, keine aufgeblähten Chat-Historien.
-- Sobald eine autonome Aufgabe erfolgreich abgeschlossen ist, erstelle die Datei `.done` im Ziel-Projektverzeichnis.
+- Sobald eine autonome Aufgabe erfolgreich abgeschlossen ist, erstelle die Datei `.done` im jeweiligen Session-Ordner (`.dual-loop/sessions/<session>/.done`) und NICHT im Projekt-Hauptverzeichnis.
