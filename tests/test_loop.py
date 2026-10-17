@@ -214,5 +214,21 @@ class CliSmokeTest(unittest.TestCase):
         self.assertNotIn("Traceback", res.stderr)
 
 
+class AgentDescriptionTest(unittest.TestCase):
+    def test_describes_provider_model_and_effort(self):
+        agent = loop.AgentCLI("Antigravity (agy)", "agy", None, model="gemini-2.5-pro", effort="high")
+        self.assertEqual(loop.describe_agent(agent), "Antigravity (agy) (`gemini-2.5-pro`) [Effort: high]")
+
+    def test_marks_effort_ignored_by_other_clis(self):
+        self.assertEqual(loop.effort_label("claude", "high"), "high (nur für agy wirksam)")
+        self.assertEqual(loop.effort_label("agy", "low"), "low")
+        self.assertEqual(loop.effort_label("ollama", "0€ Lokal/Intranet"), "0€ Lokal/Intranet")
+        self.assertIsNone(loop.effort_label("claude", None))
+
+    def test_default_model_without_guessed_names(self):
+        agent = loop.AgentCLI("Claude Code", "claude", None, model=loop.DEFAULT_MODEL_LABEL)
+        self.assertEqual(loop.describe_agent(agent), "Claude Code (`CLI-Default`)")
+
+
 if __name__ == "__main__":
     unittest.main()
