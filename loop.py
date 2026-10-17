@@ -771,6 +771,107 @@ def check_and_clean_done_marker(session_dir: Path, project_path: Path) -> bool:
         return True
     return False
 
+# ==========================================
+# Git-Workspace (Worktree) pro Session
+# ==========================================
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True)
+
+
+def is_git_repo(path: Path) -> bool:
+    """True, wenn path in einem Git-Repository mit mindestens einem Commit liegt."""
+    if not shutil.which("git"):
+        return False
+    return _git(path, "rev-parse", "--verify", "HEAD").returncode == 0
+
+
+def acquire_worktree(project_path: Path, session_dir: Path, state: dict) -> Path:
+    """Legt (oder reaktiviert) den isolierten Git-Workspace der Session an.
+
+    Der Workspace liegt unter <session>/workspace auf dem Branch loop/<session-id>,
+    abgezweigt vom aktuellen HEAD des Projekts. Gibt den Pfad zurück, in dem der
+    Bauleiter arbeitet (bei Fehlern fällt er auf das Projektverzeichnis zurück).
+    """
+    wt = state.get("worktree") or {}
+    wt_path = Path(wt.get("path") or (session_dir / "workspace"))
+    branch = wt.get("branch") or f"loop/{session_dir.name}"
+
+    if wt_path.exists() and (wt_path / ".git").exists():
+        return wt_path
+
+    base_branch = wt.get("base_branch")
+    if not base_branch:
+        res = _git(project_path, "rev-parse", "--abbrev-ref", "HEAD")
+        base_branch = res.stdout.strip() if res.returncode == 0 else "HEAD"
+
+    _git(project_path, "worktree", "prune")
+    if _git(project_path, "rev-parse", "--verify", f"refs/heads/{branch}").returncode == 0:
+        res = _git(project_path, "worktree", "add", str(wt_path), branch)
+    else:
+        res = _git(project_path, "worktree", "add", "-b", branch, str(wt_path), "HEAD")
+
+    if res.returncode != 0:
+        print(f"[!] Git-Workspace konnte nicht angelegt werden, arbeite direkt im Projekt: {res.stderr.strip()}")
+        return project_path
+
+    state["worktree"] = {"path": str(wt_path), "branch": branch, "base_branch": base_branch, "released": False}
+    save_session_state(session_dir, state)
+    print(f"🌿 Git-Workspace angelegt: {wt_path} (Branch `{branch}` von `{base_branch}`)")
+    return wt_path
+
+
+def release_worktree(project_path: Path, session_dir: Path, state: dict, task: str, merge: bool = False) -> bool:
+    """Committet offene Änderungen im Session-Workspace, entfernt den Worktree und
+    merged den Branch optional zurück. Der Branch bleibt erhalten, sofern nicht gemerged."""
+    wt = state.get("worktree")
+    if not wt or wt.get("released"):
+        return True
+    wt_path = Path(wt["path"])
+    branch = wt["branch"]
+    base_branch = wt.get("base_branch", "HEAD")
+
+    if wt_path.exists():
+        _git(wt_path, "add", "-A")
+        if _git(wt_path, "diff", "--cached", "--quiet").returncode != 0:
+            msg = f"claudegravity: {task[:72]}\n\nSession: {session_dir.name}"
+            res = _git(wt_path, "commit", "-m", msg)
+            if res.returncode != 0:
+                res = _git(wt_path, "-c", "user.name=ClaudeGravity Loop", "-c", "user.email=claudegravity@localhost", "commit", "-m", msg)
+            if res.returncode != 0:
+                print(f"[!] Änderungen im Workspace konnten nicht committet werden, Workspace bleibt bestehen: {res.stderr.strip()}")
+                return False
+            print(f"💾 Änderungen auf Branch `{branch}` committet.")
+
+        res = _git(project_path, "worktree", "remove", str(wt_path))
+        if res.returncode != 0:
+            print(f"[!] Git-Workspace konnte nicht freigegeben werden: {res.stderr.strip()}")
+            return False
+    _git(project_path, "worktree", "prune")
+
+    merged = False
+    if merge and base_branch != "HEAD":
+        current = _git(project_path, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        if current != base_branch:
+            print(f"[!] Merge übersprungen: Projekt steht auf `{current}`, nicht auf `{base_branch}`.")
+        else:
+            res = _git(project_path, "merge", "--no-ff", "--no-edit", branch)
+            if res.returncode == 0:
+                _git(project_path, "branch", "-d", branch)
+                merged = True
+                print(f"🔀 Branch `{branch}` in `{base_branch}` gemerged und gelöscht.")
+            else:
+                _git(project_path, "merge", "--abort")
+                print(f"[!] Merge von `{branch}` fehlgeschlagen (Konflikt?), Branch bleibt erhalten: {res.stdout.strip() or res.stderr.strip()}")
+
+    wt["released"] = True
+    wt["merged"] = merged
+    save_session_state(session_dir, state)
+    print(f"🧹 Git-Workspace freigegeben.")
+    if not merged:
+        print(f"💡 Ergebnis liegt auf Branch `{branch}` (übernehmen mit: git merge {branch})")
+    return True
+
+
 def get_permission_flags(binary: str) -> list[str]:
     """Gibt die passenden Flags für Schreib-/Tool-Rechte zurück."""
     if binary in ["claude", "agy"]:
@@ -1441,6 +1542,8 @@ def main():
     parser.add_argument("--auto-switch", "--fallback", action="store_true", help="Bei Erreichen eines AI-Limits automatisch zum alternativen Modell wechseln")
     parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
     parser.add_argument("--check", "--info", action="store_true", help="Installierte AI-CLIs, Standard-Modelle und Rollenkonfiguration anzeigen")
+    parser.add_argument("--no-worktree", "--no-workspace", dest="worktree", action="store_false", help="Keinen eigenen Git-Workspace pro Session anlegen, sondern direkt im Projektverzeichnis bauen")
+    parser.add_argument("--merge", "--worktree-merge", action="store_true", help="Session-Branch nach erfolgreichem Abschluss (.done) in den Ausgangs-Branch mergen")
     parser.add_argument("-d", "--delay", type=int, default=3, help="Pause zwischen Runden in Sekunden")
 
     args = parser.parse_args()
@@ -1906,6 +2009,14 @@ def main():
     if auto_switch:
         state["auto_switch"] = True
 
+    # Git-Workspace pro Session (Standard bei Git-Projekten)
+    use_worktree = (state["worktree"].get("enabled", True) if state.get("worktree") else args.worktree) and is_git_repo(project_path)
+    if not use_worktree and not state.get("worktree"):
+        state["worktree"] = {"enabled": False}
+    merge_worktree = args.merge or state.get("merge_worktree", False)
+    if merge_worktree:
+        state["merge_worktree"] = True
+
     # Fragen-Modus
     ask_mode = args.ask or state.get("ask_mode", False)
     if ask_mode:
@@ -1943,6 +2054,8 @@ def main():
         print(f"[*] Fallback          : 🔄 Auto-Switch aktiv (--auto-switch)")
     if swap_roles:
         print(f"[*] Rollen-Status     : 🔄 Rollen getauscht (--swap)")
+    if use_worktree:
+        print(f"[*] Git-Workspace     : 🌿 eigener Worktree pro Session" + (" (Merge nach .done)" if merge_worktree else ""))
     print(f"[*] Session-ID        : {session_dir.name}")
     print(f"=======================================================\n")
 
@@ -2028,7 +2141,21 @@ def main():
     logs_dir.mkdir(parents=True, exist_ok=True)
     session_log = logs_dir / f"loop_{session_dir.name}.log"
 
-    print(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {project_path}...")
+    work_path = acquire_worktree(project_path, session_dir, state) if use_worktree else project_path
+    in_worktree = work_path != project_path
+
+    def finish_session():
+        done_file = session_dir / ".done"
+        print(f"\n🎉 Fertigmeldung ({done_file.relative_to(project_path)}) gefunden! Aufgabe erfolgreich abgeschlossen.")
+        append_metrics_to_done(session_dir, project_path, session_metrics)
+        print(format_metrics_report(session_metrics))
+        state["phase"] = "completed"
+        state["metrics"] = session_metrics.to_dict()
+        save_session_state(session_dir, state)
+        if in_worktree:
+            release_worktree(project_path, session_dir, state, task, merge=merge_worktree)
+
+    print(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {work_path}...")
     b_build_desc = f"{builder.name}" + (f" (`{builder.model}`)" if builder.model else "") + (f" [{builder.effort}]" if builder.effort else "")
     print(f"🔨 Ausführender Bauleiter: {b_build_desc}")
     start_iter = state.get("last_iteration", 0) + 1
@@ -2038,14 +2165,8 @@ def main():
         if STOP_REQUESTED:
             break
 
-        if check_and_clean_done_marker(session_dir, project_path):
-            done_file = session_dir / ".done"
-            print(f"\n🎉 Fertigmeldung ({done_file.relative_to(project_path)}) gefunden! Aufgabe erfolgreich abgeschlossen.")
-            append_metrics_to_done(session_dir, project_path, session_metrics)
-            print(format_metrics_report(session_metrics))
-            state["phase"] = "completed"
-            state["metrics"] = session_metrics.to_dict()
-            save_session_state(session_dir, state)
+        if check_and_clean_done_marker(session_dir, work_path):
+            finish_session()
             break
 
         state["last_iteration"] = iteration
@@ -2056,9 +2177,11 @@ def main():
         log_header = f"\n{'='*20} Iteration {iteration}/{max_iters} @ {timestamp} {'='*20}\n"
         print(log_header, flush=True)
 
-        rel_done_path = (session_dir / ".done").relative_to(project_path)
+        # Im Worktree liegt der (git-ignorierte) Session-Ordner außerhalb des Arbeitsverzeichnisses -> absolute Pfade
+        rel_done_path = (session_dir / ".done") if in_worktree else (session_dir / ".done").relative_to(project_path)
+        plan_ref = plan_file if in_worktree else plan_file.relative_to(project_path)
         prompt_build = (
-            f"Führe den genehmigten Plan ({plan_file.relative_to(project_path)}) für folgende Aufgabe aus:\n{task}\n\n"
+            f"Führe den genehmigten Plan ({plan_ref}) für folgende Aufgabe aus:\n{task}\n\n"
             f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch.\n\n"
             f"WICHTIG ZUM ABSCHLUSS: Wenn alle Anforderungen vollständig erfüllt und getestet sind, "
             f"erstelle die Fertigmeldungs-Datei genau im Session-Ordner unter: '{rel_done_path}' (NICHT im Projekt-Hauptverzeichnis)."
@@ -2083,7 +2206,7 @@ def main():
             res, builder, builder_flags = safe_agent_run(
                 agent=builder,
                 prompt=prompt_build,
-                cwd=project_path,
+                cwd=work_path,
                 flags=builder_flags,
                 agents=agents,
                 session_dir=session_dir,
@@ -2096,7 +2219,7 @@ def main():
             print(res)
 
             if is_endpoint_builder:
-                written = apply_code_blocks(project_path, res)
+                written = apply_code_blocks(work_path, res)
                 if written:
                     print(f"\n📝 {len(written)} Datei(en) durch 🔨 Bauleiter ({builder.name}) aktualisiert:")
                     for w in written:
@@ -2112,13 +2235,8 @@ def main():
         state["metrics"] = session_metrics.to_dict()
         save_session_state(session_dir, state)
 
-        if check_and_clean_done_marker(session_dir, project_path):
-            done_file = session_dir / ".done"
-            print(f"\n🎉 Fertigmeldung ({done_file.relative_to(project_path)}) gefunden! Aufgabe erfolgreich abgeschlossen.")
-            append_metrics_to_done(session_dir, project_path, session_metrics)
-            print(format_metrics_report(session_metrics))
-            state["phase"] = "completed"
-            save_session_state(session_dir, state)
+        if check_and_clean_done_marker(session_dir, work_path):
+            finish_session()
             break
 
         if STOP_REQUESTED:
@@ -2127,7 +2245,11 @@ def main():
         if args.delay > 0:
             time.sleep(args.delay)
 
-    if not check_and_clean_done_marker(session_dir, project_path):
+    if state.get("phase") == "completed" and in_worktree and not state["worktree"].get("released"):
+        release_worktree(project_path, session_dir, state, task, merge=merge_worktree)
+    if not check_and_clean_done_marker(session_dir, work_path):
+        if in_worktree:
+            print(f"🌿 Git-Workspace bleibt für die Fortsetzung erhalten: {work_path}")
         print(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
         print(f"💡 Du kannst jederzeit mit 'claudegravity -c' weitere Runden anhängen.")
         append_metrics_to_done(session_dir, project_path, session_metrics)
