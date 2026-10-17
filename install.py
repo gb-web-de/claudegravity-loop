@@ -53,6 +53,10 @@ def say(symbol: str, msg: str) -> None:
     print(f"  {symbol} {msg}")
 
 
+def verb(done: str, would: str) -> str:
+    return would if DRY_RUN else done
+
+
 def python_command() -> str:
     """Absoluter Python-Pfad: MCP-Clients starten Server ohne Shell-PATH."""
     return str(Path(sys.executable).absolute())
@@ -115,7 +119,7 @@ def json_client(path: Path, key: str = "mcpServers", extra: dict | None = None):
             return True
         servers[SERVER_NAME] = new
         write_json(path, data)
-        say("+", f"eingetragen: {path}")
+        say("+", f"{verb('eingetragen', 'würde eintragen')}: {path}")
         return True
 
     def uninstall() -> bool:
@@ -124,7 +128,7 @@ def json_client(path: Path, key: str = "mcpServers", extra: dict | None = None):
             return True
         del data[key][SERVER_NAME]
         write_json(path, data)
-        say("-", f"entfernt: {path}")
+        say("-", f"{verb('entfernt', 'würde entfernen')}: {path}")
         return True
 
     def status() -> bool:
@@ -175,7 +179,7 @@ def codex_client():
         if not DRY_RUN:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(new, encoding="utf-8")
-        say("+", f"eingetragen: {path}")
+        say("+", f"{verb('eingetragen', 'würde eintragen')}: {path}")
         return True
 
     def uninstall() -> bool:
@@ -186,7 +190,7 @@ def codex_client():
             return True
         if not DRY_RUN:
             path.write_text(strip_marked_block(old), encoding="utf-8")
-        say("-", f"entfernt: {path}")
+        say("-", f"{verb('entfernt', 'würde entfernen')}: {path}")
         return True
 
     def status() -> bool:
@@ -217,7 +221,7 @@ def claude_code_client():
             return True
         if not DRY_RUN:
             run_cli([exe, "mcp", "remove", SERVER_NAME, "--scope", "user"])
-        say("-", "entfernt aus Claude Code (Scope: user)")
+        say("-", f"{verb('entfernt aus', 'würde entfernen aus')} Claude Code (Scope: user)")
         return True
 
     def install() -> bool:
@@ -327,7 +331,7 @@ def install_commands_unix(bin_dir: Path, touch_path: bool) -> None:
         if not DRY_RUN:
             with rc.open("a", encoding="utf-8") as f:
                 f.write(("\n" if text and not text.endswith("\n") else "") + "\n" + unix_path_block(bin_dir))
-        say("+", f"PATH-Eintrag ergänzt in {rc} (neues Terminal öffnen oder `source {rc}`)")
+        say("+", f"PATH-Eintrag {verb('ergänzt', 'würde ergänzt')} in {rc} (neues Terminal öffnen oder `source {rc}`)")
 
 
 def uninstall_commands_unix(bin_dir: Path) -> None:
@@ -341,7 +345,7 @@ def uninstall_commands_unix(bin_dir: Path) -> None:
         if rc.exists() and MARK_BEGIN in rc.read_text(encoding="utf-8"):
             if not DRY_RUN:
                 rc.write_text(strip_marked_block(rc.read_text(encoding="utf-8")), encoding="utf-8")
-            say("-", f"PATH-Eintrag aus {rc}")
+            say("-", f"PATH-Eintrag {verb('entfernt', 'würde entfernt')} aus {rc}")
 
 
 WIN_LAUNCHERS = {
@@ -392,7 +396,7 @@ def install_commands_windows(bin_dir: Path, touch_path: bool) -> None:
         return
     if not DRY_RUN:
         win_user_path(";".join(entries + [str(bin_dir)]))
-    say("+", f"{bin_dir} zum Benutzer-PATH hinzugefügt (neues Terminal öffnen)")
+    say("+", f"{bin_dir} {verb('zum Benutzer-PATH hinzugefügt', 'würde zum Benutzer-PATH hinzugefügt')} (neues Terminal öffnen)")
 
 
 def uninstall_commands_windows(bin_dir: Path) -> None:
@@ -410,7 +414,7 @@ def uninstall_commands_windows(bin_dir: Path) -> None:
     if kept != entries:
         if not DRY_RUN:
             win_user_path(";".join(kept))
-        say("-", f"{bin_dir} aus dem Benutzer-PATH")
+        say("-", f"{bin_dir} {verb('aus dem Benutzer-PATH entfernt', 'würde aus dem Benutzer-PATH entfernt')}")
 
 
 # --------------------------------------------------------------------
@@ -489,7 +493,9 @@ def main() -> int:
              else install_commands_unix(bin_dir, not args.no_path))
 
     print()
-    if args.uninstall:
+    if DRY_RUN:
+        print("Trockenlauf beendet – es wurde nichts verändert.")
+    elif args.uninstall:
         print("Fertig. ClaudeGravity wurde entfernt (Backups *.claudegravity.bak bleiben erhalten).")
     else:
         print("Fertig. Neues Terminal öffnen und testen mit:  claudegravity --info")
