@@ -1,18 +1,27 @@
 # ClaudeGravity Loop - Projekt-Richtlinien
 
 ## Zweck
-`claudegravity-loop` ist ein leichtgewichtiger, autonomer Runner für AI-Coding-Aufgaben mit **Claude Code** und **Google Antigravity (`agy`)**.
+`claudegravity-loop` ist ein leichtgewichtiger, autonomer Runner für AI-Coding-Aufgaben mit **Claude Code**, **Google Antigravity (`agy`)** und weiteren CLIs bzw. lokalen Modellen.
 Er basiert auf dem Prinzip des [claudex-loop](https://github.com/chaseai-yt/claudex-loop): **Das Modell, das den Plan entwirft oder baut, benotet sich niemals selbst.**
 
 ## Architektur
 - `loop.py`: Haupt-CLI-Runner (benötigt nur Python 3.10+ Standardbibliothek).
-- `mcp_server.py`: Eigenständiger MCP-Server (JSON-RPC 2.0 stdio) & CLI-Optimizer für automatisierte Modell- & Rollenwahl.
+  - **3 Rollen:** 🏗️ Architekt (Phase 1: Plan), 🧐 Prüfstatiker (Phase 2: Review), 🔨 Bauleiter (Phase 3: Umsetzung). Jede Rolle hat eigene Flags für CLI, Modell, Effort und Endpunkt (`--planner/--architekt`, `--reviewer/--pruefstatiker`, `--builder/--bauer`, jeweils `-model`, `-effort`, `-endpoint`).
+  - **Backends:** CLIs `claude`, `agy`, `gemini`, `codex`, `copilot`/`gh`, `ollama` sowie OpenAI-kompatible REST-Endpunkte (Ollama, LM Studio, vLLM, Intranet-Server via `--endpoint` oder `CLAUDEGRAVITY_ENDPOINT`).
+  - **Strategien:** `--strategy best-code|eco|local-free|balanced`; `--dry-run` zeigt die Belegung ohne Ausführung.
+- `mcp_server.py`: Eigenständiger MCP-Server (JSON-RPC 2.0 stdio) & CLI-Optimizer für automatisierte Modell- & Rollenwahl (Tools: `claudegravity_optimize`, `claudegravity_run`, `claudegravity_info`).
+- `claudegravity.bat`, `claudegravity.ps1`, `claudegravity-mcp.bat`: Windows-Launcher.
+- `tests/`: `unittest`-Suite; läuft in GitHub Actions auf Linux, macOS und Windows (`.github/workflows/tests.yml`).
 - `.dual-loop/`: Git-ignorierter Arbeitsordner. Enthält ausschließlich den Unterordner `sessions/` (alle Pläne, Reviews und Logs sind aufgabenspezifisch darin isoliert).
 - `projects/`: Ordner für gespiegelte Projekte (wie in der Claude UI).
   - Jedes Unterprojekt kann eine eigene `CLAUDE.md` und einen Ordner `knowledge/` besitzen.
 
 ## Richtlinien für Entwickler & Agenten
-- Verwende ausschließlich Standard-Bibliotheken (`argparse`, `pathlib`, `subprocess`, `signal`, `shutil`).
-- Keine externen API-Schlüssel: Cloud-Modelle werden ausschließlich über die offiziellen CLIs (`claude`, `agy`, `gemini`) mit bestehenden Abos angesprochen.
+- Verwende ausschließlich Standard-Bibliotheken (`argparse`, `pathlib`, `subprocess`, `signal`, `shutil`, `urllib`, `unittest`).
+- Cloud-Modelle werden über die offiziellen CLIs (`claude`, `agy`, `gemini`, …) mit bestehenden Abos angesprochen. API-Keys gibt es nur für eigene OpenAI-kompatible Endpunkte (`--api-key` oder `CLAUDEGRAVITY_API_KEY`) und werden nie ins Repository geschrieben.
 - Token-Schonung hat oberste Priorität: Übergib nur den Plan oder relevante Diffs, keine aufgeblähten Chat-Historien.
+- Sicherheit:
+  - Modell-Ausgaben sind nicht vertrauenswürdig. Dateien aus Antworten werden nur über `resolve_project_target()` innerhalb des Projektordners geschrieben (keine absoluten Pfade, kein `..`, kein `.git/`).
+  - Prozesse immer mit Argumentlisten und ohne `shell=True` starten. Unter Windows löst `build_cli_command()` npm-`.cmd`-Shims direkt auf; Aufgabentexte dürfen nie in einen Shell-String gelangen.
+- Tests vor jedem Commit: `python -m unittest discover -s tests`. Neue Funktionen bekommen einen Test in `tests/`.
 - Sobald eine autonome Aufgabe erfolgreich abgeschlossen ist, erstelle die Datei `.done` im jeweiligen Session-Ordner (`.dual-loop/sessions/<session>/.done`) und NICHT im Projekt-Hauptverzeichnis.

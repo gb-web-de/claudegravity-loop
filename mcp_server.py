@@ -15,6 +15,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -95,6 +96,20 @@ def analyze_task_complexity(task: str) -> dict:
         "is_testing": is_testing,
         "is_small_fix": is_small_fix,
     }
+
+
+def format_shell_command(argv: list[str], shell: str = "bash") -> str:
+    """Formatiert einen Befehl zum Kopieren ins Terminal, korrekt gequotet für bash, cmd oder powershell."""
+    if shell == "cmd":
+        return subprocess.list2cmdline(argv)
+    if shell == "powershell":
+        return " ".join([argv[0]] + ["'" + a.replace("'", "''") + "'" for a in argv[1:]])
+    return shlex.join(argv)
+
+
+def loop_launch_argv(loop_args: list[str]) -> list[str]:
+    """Startbefehl für loop.py ohne Shell: Aufgabentext wird nie von einer Shell interpretiert."""
+    return [sys.executable, str(Path(__file__).resolve().parent / "loop.py")] + loop_args
 
 
 def optimize_claudegravity_command(
@@ -210,25 +225,23 @@ def optimize_claudegravity_command(
             "verlässlicher Ausführungsgeschwindigkeit."
         )
 
-    cmd_parts = ["claudegravity", f'"{task}"']
+    cmd_args = [task]
     if strategy_flag != "balanced":
-        cmd_parts.append(f"--strategy {strategy_flag}")
+        cmd_args += ["--strategy", strategy_flag]
     if endpoint:
-        cmd_parts.append(f"--endpoint {endpoint}")
-    if p_norm == "lowest-cost":
-        cmd_parts.append(f"--bauer-model {builder_model}")
-    elif p_norm == "local-free":
-        cmd_parts.append(f"--bauer-model {builder_model}")
+        cmd_args += ["--endpoint", endpoint]
+    if p_norm in ("lowest-cost", "local-free"):
+        cmd_args += ["--bauer-model", builder_model]
     if ask_mode or comp["is_architectural"]:
-        cmd_parts.append("-i")
+        cmd_args.append("-i")
     if yolo:
-        cmd_parts.append("--yolo")
+        cmd_args.append("--yolo")
     if max_iterations != 10:
-        cmd_parts.append(f"-m {max_iterations}")
+        cmd_args += ["-m", str(max_iterations)]
     if project_path not in [".", "./", ""]:
-        cmd_parts.append(f"-p {project_path}")
+        cmd_args += ["-p", project_path]
 
-    command_str = " ".join(cmd_parts)
+    command_str = format_shell_command(["claudegravity"] + cmd_args)
 
     return {
         "task": task,
@@ -260,6 +273,7 @@ def optimize_claudegravity_command(
         },
         "cost_benefit_analysis": cost_benefit,
         "recommended_command": command_str,
+        "loop_args": cmd_args,
         "installed_agents": agents
     }
 
@@ -267,8 +281,8 @@ def optimize_claudegravity_command(
 def format_optimization_markdown(opt: dict) -> str:
     r = opt["roles"]
     cmd_base = opt["recommended_command"]
-    cmd_cmd = cmd_base.replace("claudegravity", "claudegravity.bat", 1)
-    cmd_ps = ".\\" + cmd_base.replace("claudegravity", "claudegravity.ps1", 1)
+    cmd_cmd = format_shell_command(["claudegravity.bat"] + opt["loop_args"], "cmd")
+    cmd_ps = format_shell_command([".\\claudegravity.ps1"] + opt["loop_args"], "powershell")
 
     lines = [
         "### 🎯 ClaudeGravity Optimierungs-Empfehlung",
@@ -472,8 +486,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
 
         if background:
             proc = subprocess.Popen(
-                cmd_str,
-                shell=True,
+                loop_launch_argv(opt["loop_args"]),
                 cwd=str(p_dir),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -493,7 +506,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
                 "content": [
                     {
                         "type": "text",
-                        "text": f"📋 Bereit zum Starten. Bitte führe folgenden Befehl im Terminal aus:\n\n```bash\ncd {p_dir} && {cmd_str}\n```"
+                        "text": f"📋 Bereit zum Starten. Bitte führe folgenden Befehl im Terminal aus:\n\n```bash\ncd {shlex.quote(str(p_dir))} && {cmd_str}\n```"
                     }
                 ],
                 "isError": False

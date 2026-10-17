@@ -357,11 +357,59 @@ def create_agent(
     )
 
 
-def _exec_cli(binary: str, args: list[str], cwd: Path | None = None) -> str:
+NPM_SHIM_TARGET = re.compile(r'"%dp0%\\([^"]+)"\s+%\*')
+
+
+def unwrap_npm_cmd_shim(shim_path: Path) -> list[str] | None:
+    """Liest einen npm-.cmd-Shim (z.B. claude.cmd) und liefert den direkten Aufruf ohne cmd.exe.
+
+    So landen Prompts nie in der cmd.exe-Kommandozeile, wo Zeilenumbrüche den Aufruf
+    abschneiden und Zeichen wie & | % " als Befehle interpretiert würden.
+    """
+    try:
+        content = shim_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    m = NPM_SHIM_TARGET.search(content)
+    if not m:
+        return None
+    target = shim_path.parent / m.group(1).replace("\\", "/")
+    if target.suffix.lower() in (".js", ".cjs", ".mjs"):
+        local_node = shim_path.parent / "node.exe"
+        node = str(local_node) if local_node.exists() else shutil.which("node")
+        if not node:
+            return None
+        return [node, str(target)]
+    return [str(target)]
+
+
+def quote_cmd_arg(arg: str) -> str:
+    """Quotet ein Argument für cmd.exe /c (Fallback für .bat/.cmd ohne npm-Shim)."""
+    if "\n" in arg or "\r" in arg:
+        raise ValueError("Mehrzeilige Argumente können nicht sicher über cmd.exe übergeben werden.")
+    escaped = arg.replace('"', '""').replace("%", "%%cd:~,%")
+    trailing = len(escaped) - len(escaped.rstrip("\\"))
+    return '"' + escaped + "\\" * trailing + '"'
+
+
+def build_cli_command(binary: str, args: list[str]) -> tuple[list[str] | str, bool]:
+    """Liefert (Befehl, shell) für subprocess.run. cmd.exe wird nur als letzter Ausweg genutzt."""
     resolved = shutil.which(binary) or binary
-    is_win = sys.platform == "win32"
-    use_shell = is_win and (str(resolved).lower().endswith((".cmd", ".bat")) or not Path(resolved).suffix)
-    cmd = [str(resolved)] + args
+    if sys.platform != "win32" or not str(resolved).lower().endswith((".cmd", ".bat")):
+        return [str(resolved)] + args, False
+    direct = unwrap_npm_cmd_shim(Path(resolved))
+    if direct:
+        return direct + args, False
+    return " ".join([quote_cmd_arg(str(resolved))] + [quote_cmd_arg(a) for a in args]), True
+
+
+def _exec_cli(binary: str, args: list[str], cwd: Path | None = None) -> str:
+    try:
+        cmd, use_shell = build_cli_command(binary, args)
+    except ValueError as ex:
+        raise RuntimeError(
+            f"{binary}: {ex} Installiere die native Version (z.B. {binary}.exe) statt eines .bat-Wrappers."
+        ) from ex
     res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, shell=use_shell)
     if res.returncode != 0:
         err_msg = res.stderr.strip() or res.stdout.strip() or f"Fehlercode {res.returncode}"
@@ -634,16 +682,36 @@ def _exec_endpoint_runner(endpoint_url: str, default_model: str, api_key: str | 
     return runner
 
 
+def resolve_project_target(project_path: Path, rel_path: str) -> Path | None:
+    """Liefert den Zielpfad nur, wenn er innerhalb des Projektordners liegt (sonst None)."""
+    cleaned = rel_path.strip().strip('"\'').replace("\\", "/")
+    if not cleaned or Path(cleaned).is_absolute() or re.match(r"^[a-zA-Z]:", cleaned):
+        return None
+    root = project_path.resolve()
+    target = (root / cleaned).resolve()
+    if target == root or not target.is_relative_to(root):
+        return None
+    if ".git" in target.relative_to(root).parts:
+        return None
+    return target
+
+
 def apply_code_blocks(project_path: Path, text: str) -> list[str]:
-    """Extrahiert Code-Blöcke mit Dateipfaden aus Modell-Antworten und schreibt sie auf die Festplatte."""
+    """Extrahiert Code-Blöcke mit Dateipfaden aus Modell-Antworten und schreibt sie auf die Festplatte.
+
+    Es wird ausschließlich innerhalb des Projektordners geschrieben: absolute Pfade, `..`-Ausbrüche,
+    Symlinks nach außen und `.git/` werden abgelehnt.
+    """
     written_files = []
 
-    # Muster 1: ```filepath: path/to/file.ext oder ```file: path/to/file.ext
-    pattern1 = re.compile(r'```(?:filepath:|file:)\s*([^\s\n\r`]+)\r?\n(.*?)```', re.DOTALL)
-    for match in pattern1.finditer(text):
-        rel_path = match.group(1).strip().strip('"\'')
-        content = match.group(2)
-        target = project_path / rel_path
+    def write_block(rel_path: str, content: str):
+        rel_path = rel_path.strip().strip('"\'')
+        if rel_path in written_files:
+            return
+        target = resolve_project_target(project_path, rel_path)
+        if target is None:
+            print(f"[!] Blockiert: {rel_path} liegt außerhalb des Projektordners und wird nicht geschrieben.")
+            return
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
@@ -651,19 +719,15 @@ def apply_code_blocks(project_path: Path, text: str) -> list[str]:
         except Exception as ex:
             print(f"[!] Fehler beim Schreiben von {rel_path}: {ex}")
 
+    # Muster 1: ```filepath: path/to/file.ext oder ```file: path/to/file.ext
+    pattern1 = re.compile(r'```(?:filepath:|file:)\s*([^\s\n\r`]+)\r?\n(.*?)```', re.DOTALL)
+    for match in pattern1.finditer(text):
+        write_block(match.group(1), match.group(2))
+
     # Muster 2: Dateiname in Header vor Code-Block (### Datei: path/to/file.ext)
     pattern2 = re.compile(r'(?:###|##|\*\*)\s*(?:Datei|File|Pfad|Path)[:\s]+`?([a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]+)`?.*?\n\s*```[a-zA-Z0-9_-]*\r?\n(.*?)```', re.DOTALL)
     for match in pattern2.finditer(text):
-        rel_path = match.group(1).strip().strip('"\'')
-        if rel_path not in written_files:
-            content = match.group(2)
-            target = project_path / rel_path
-            try:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(content, encoding="utf-8")
-                written_files.append(rel_path)
-            except Exception as ex:
-                print(f"[!] Fehler beim Schreiben von {rel_path}: {ex}")
+        write_block(match.group(1), match.group(2))
 
     return written_files
 
@@ -1616,6 +1680,13 @@ def main():
     project_path = Path(args.project).resolve()
     if not project_path.exists():
         sys.exit(f"Fehler: Projektordner '{project_path}' existiert nicht.")
+
+    if not agents:
+        sys.exit(
+            "Fehler: Keine AI-CLI und kein Endpunkt gefunden.\n"
+            "Installiere z.B. `claude` oder `agy`, oder gib einen OpenAI-kompatiblen Server an: "
+            "--endpoint http://localhost:11434/v1 (Details: claudegravity --info)"
+        )
 
     if args.dry_run:
         dry_task = args.task or "Refaktoriere das Modul und erstelle Unit-Tests"
