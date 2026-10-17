@@ -3,6 +3,8 @@
 ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop
 Auto-detects available CLIs (Claude Code, Google Antigravity agy, Gemini CLI, Codex).
 Supports:
+- Universal YOLO permission propagation across all phases (Planning, Review, Build)
+- Automatic detection and recovery if a model attempts file writes during planning
 - Resume after crashes/interrupts (--resume / -c)
 - Interactive Plan Approval & Change Routing (UI options on top, CLI options at bottom)
 - Versioned plan archives, audit logs, and permission handling (--yolo)
@@ -21,6 +23,14 @@ import time
 from pathlib import Path
 
 STOP_REQUESTED = False
+
+PLANNING_DIRECTIVE = (
+    "\n\nSTRIKTE VORGABE FÜR DIE PLANUNG:\n"
+    "- Du befindest dich in der REINEN PLANUNGSPHASE.\n"
+    "- Erstelle, modifiziere oder lösche KEINE Dateien auf der Festplatte (weder in docs/ noch im Code).\n"
+    "- Gib den vollständigen, detaillierten Plan DIREKT als Markdown-Text auf stdout aus.\n"
+    "- Beginne sofort mit dem Markdown-Inhalt des Plans (ohne Tool-Aufrufe zum Dateischreiben).\n"
+)
 
 
 def sigint_handler(signum, frame):
@@ -122,6 +132,7 @@ def sanitize_filename(text: str) -> str:
 
 
 def get_permission_flags(binary: str) -> list[str]:
+    """Gibt die passenden Flags für Schreib-/Tool-Rechte zurück."""
     if binary in ["claude", "agy"]:
         return ["--dangerously-skip-permissions"]
     elif binary == "gemini":
@@ -129,6 +140,23 @@ def get_permission_flags(binary: str) -> list[str]:
     elif binary == "codex":
         return ["-s", "workspace-write"]
     return []
+
+
+def is_permission_error_response(text: str) -> bool:
+    """Prüft, ob das Modell versehentlich eine Berechtigungs-Fehlermeldung statt des Plans zurückgegeben hat."""
+    indicators = [
+        "Schreibberechtigung für",
+        "Permission-Dialog",
+        "Permission-Prompt",
+        "Permission denied",
+        "Write-Tool-Aufruf",
+        "keine Berechtigung, Dateien zu schreiben",
+        "keine Berechtigung",
+        "Schreibzugriff auf",
+        "Berechtigung nicht erteilt"
+    ]
+    text_lower = text.lower()
+    return any(ind.lower() in text_lower for ind in indicators) and len(text.strip().splitlines()) < 15
 
 
 # ==========================================
@@ -169,6 +197,8 @@ def run_adversarial_plan(
     project_ctx: str,
     session_dir: Path,
     state: dict,
+    planner_flags: list[str] | None = None,
+    reviewer_flags: list[str] | None = None,
     max_rounds: int = 2
 ) -> tuple[bool, Path]:
     loop_dir = project_path / ".dual-loop"
@@ -189,17 +219,32 @@ def run_adversarial_plan(
             f"Erstelle einen präzisen, token-effizienten Implementierungsplan für folgende Aufgabe:\n"
             f"Aufgabe: {task}\n\n"
             f"{project_ctx}\n\n"
-            f"Enthalte: Betroffene Dateien, Architektur, Randfälle und Testkriterien. Antworte nur mit dem Markdown-Plan."
+            f"Enthalte: Betroffene Dateien, Architektur, Randfälle und Testkriterien."
+            f"{PLANNING_DIRECTIVE}"
         )
-        plan = planner.run(prompt_plan, cwd=project_path)
+        plan = planner.run(prompt_plan, cwd=project_path, extra_flags=planner_flags)
+
+        # Sicherheitsprüfung: Hat Modell versehentlich eine Permission-Meldung zurückgegeben?
+        if is_permission_error_response(plan):
+            print("⚠️ Modell versuchte eine Datei anzulegen. Erzwinge reine Textausgabe...")
+            retry_prompt = prompt_plan + "\nACHTUNG: Lege KEINE Datei an! Gib den Plan ausschließlich als Text aus!"
+            plan = planner.run(retry_prompt, cwd=project_path, extra_flags=planner_flags)
+
         plan_v1_file.write_text(plan, encoding="utf-8")
         active_plan_file.write_text(plan, encoding="utf-8")
         print(f"📄 Plan v1 gespeichert in {plan_v1_file.relative_to(project_path)}")
     else:
-        # Resume: Den neuesten Plan aus der Session laden
+        # Resume: Den neuesten Plan aus der Session laden (aber Permission-Errors überspringen)
         existing_plans = sorted(session_dir.glob("PLAN_v*.md"), key=lambda p: p.name)
         active_plan_file_source = existing_plans[-1]
-        plan = active_plan_file_source.read_text(encoding="utf-8")
+        plan_content = active_plan_file_source.read_text(encoding="utf-8")
+
+        if is_permission_error_response(plan_content) and len(existing_plans) > 1:
+            print(f"⚠️ {active_plan_file_source.name} enthielt einen Berechtigungsfehler. Nutze Vorgängerversion.")
+            active_plan_file_source = existing_plans[-2]
+            plan_content = active_plan_file_source.read_text(encoding="utf-8")
+
+        plan = plan_content
         active_plan_file.write_text(plan, encoding="utf-8")
         print(f"🔄 Wiederaufnahme: Geladen {active_plan_file_source.name}")
 
@@ -236,7 +281,7 @@ def run_adversarial_plan(
             f"KRITIK:\n- [Punkte...]\n"
             f"EMPFEHLUNGEN:\n- [Punkte...]"
         )
-        review = reviewer.run(prompt_rev, cwd=project_path)
+        review = reviewer.run(prompt_rev, cwd=project_path, extra_flags=reviewer_flags)
 
         review_r_file = session_dir / f"REVIEW_round{r}.md"
         review_r_file.write_text(review, encoding="utf-8")
@@ -260,9 +305,17 @@ def run_adversarial_plan(
             prompt_fix = (
                 f"Der Reviewer ({reviewer.name}) hat folgende Kritikpunkte am Plan geäußert:\n\n"
                 f"{review}\n\n"
-                f"Bitte überarbeite den Plan ({plan}) und behebe alle genannten Mängel."
+                f"Bisheriger Plan:\n{plan}\n\n"
+                f"Bitte überarbeite den Plan und behebe alle genannten Mängel vollständig."
+                f"{PLANNING_DIRECTIVE}"
             )
-            plan = planner.run(prompt_fix, cwd=project_path)
+            plan = planner.run(prompt_fix, cwd=project_path, extra_flags=planner_flags)
+
+            # Prüfen ob Modell trotz Directive einen Permission-Fehler zurückgab
+            if is_permission_error_response(plan):
+                print("⚠️ Modell versuchte erneut eine Datei anzulegen. Erzwinge reinen Text...")
+                retry_fix = prompt_fix + "\nACHTUNG: Lege KEINE Datei wie docs/... an! Gib den Plan als Text auf stdout aus!"
+                plan = planner.run(retry_fix, cwd=project_path, extra_flags=planner_flags)
 
             plan_next_file = session_dir / f"PLAN_v{r+1}.md"
             plan_next_file.write_text(plan, encoding="utf-8")
@@ -292,12 +345,9 @@ def handle_plan_approval_and_changes(
     task: str,
     project_path: Path,
     session_dir: Path,
-    state: dict
+    state: dict,
+    planner_flags: list[str] | None = None
 ) -> bool:
-    """
-    Fragt nach Fertigstellung des Plans nach Approve oder Changes.
-    Bei Changes: Auswahlmenü mit UI-Varianten oben und CLI-Varianten unten.
-    """
     while not STOP_REQUESTED:
         print("\n" + "=" * 60)
         print("📋 PLAN-STATUS: Fertiggestellt & Geprüft")
@@ -331,7 +381,6 @@ def handle_plan_approval_and_changes(
             return False
 
         elif choice in ["2", "changes", "c"]:
-            # Changes Menü: UI oben, CLI unten
             print("\n" + "=" * 60)
             print("💬 WO / WIE MÖCHTEST DU DIE ÄNDERUNGEN VORNEHMEN?")
             print("=" * 60)
@@ -339,7 +388,7 @@ def handle_plan_approval_and_changes(
             print("  [1] Im Editor öffnen (VS Code / Antigravity / Cursor / System)")
             print("      -> Öffnet die Plan-Datei direkt zum Bearbeiten")
             print("  [2] Claude UI (Web / Desktop)")
-            print("      -> Zeigt den Plan-Text zum einfachen Kopieren in die Claude Web-UI")
+            print("      -> Zeigt den Plan-Pfad zum einfachen Kopieren in die Claude Web-UI")
             print("\n[CLI-Varianten (Terminal)]:")
             print("  [3] Feedback direkt hier eintippen")
             print("      -> KI überarbeitet den Plan anhand deiner Anweisung automatisch")
@@ -354,12 +403,10 @@ def handle_plan_approval_and_changes(
                 return False
 
             if c_choice == "1":
-                # Im Editor öffnen
                 editor = os.environ.get("EDITOR", "xdg-open")
                 print(f"🚀 Öffne {plan_file.name} mit {editor}...")
                 subprocess.run([editor, str(plan_file)])
                 input("\nDrücke [Enter], sobald du mit dem Bearbeiten im Editor fertig bist...")
-                # Plan-Update sichern
                 v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
                 new_v_file = session_dir / f"PLAN_v{v_num}_manual.md"
                 new_v_file.write_text(plan_file.read_text(encoding="utf-8"), encoding="utf-8")
@@ -381,8 +428,9 @@ def handle_plan_approval_and_changes(
                         f"Feedback: {feedback}\n\n"
                         f"Aktueller Plan:\n{old_plan}\n\n"
                         f"Bitte überarbeite den Plan und gib den vollständigen neuen Markdown-Plan aus."
+                        f"{PLANNING_DIRECTIVE}"
                     )
-                    new_plan = planner.run(prompt_user_fix, cwd=project_path)
+                    new_plan = planner.run(prompt_user_fix, cwd=project_path, extra_flags=planner_flags)
                     v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
                     new_v_file = session_dir / f"PLAN_v{v_num}.md"
                     new_v_file.write_text(new_plan, encoding="utf-8")
@@ -454,7 +502,6 @@ def main():
         print(f"🔄 Setze letzte Sitzung fort: {session_dir.name}")
         print(f"📌 Ursprüngliche Aufgabe: {task}")
     elif not args.task and latest_sess:
-        # Kein Task angegeben, aber vorherige Session existiert
         state_candidate = load_session_state(latest_sess)
         if state_candidate and state_candidate.get("phase") != "completed":
             print(f"\n🔍 Unterbrochene Sitzung gefunden: {latest_sess.name}")
@@ -478,7 +525,6 @@ def main():
         sys.exit(1)
     else:
         task = args.task
-        # Neue Session
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         slug = sanitize_filename(task)
         session_dir = loop_dir / "sessions" / f"{timestamp}_{slug}"
@@ -511,6 +557,20 @@ def main():
     else:
         reviewer = planner
 
+    # ==========================================
+    # Rechte-Steuerung (YOLO gilt für alle Phasen!)
+    # ==========================================
+    planner_perm_flags = []
+    reviewer_perm_flags = []
+    yolo_active = args.yolo or state.get("yolo_enabled", False)
+
+    if yolo_active:
+        planner_perm_flags = get_permission_flags(planner.binary)
+        reviewer_perm_flags = get_permission_flags(reviewer.binary)
+        state["yolo_enabled"] = True
+        save_session_state(session_dir, state)
+        print(f"🔓 YOLO-Modus aktiv: Volle Tool- & Schreibrechte erteilt ({' '.join(planner_perm_flags)}).")
+
     print(f"\n=======================================================")
     print(f"[*] ClaudeGravity Loop gestartet")
     print(f"[*] Ziel-Projekt : {project_path}")
@@ -529,9 +589,18 @@ def main():
         state["phase"] = "review"
         save_session_state(session_dir, state)
 
-        # Plan erstellen / Review durchführen
+        # Plan erstellen / Review durchführen mit planner_perm_flags
         review_ok, plan_file = run_adversarial_plan(
-            planner, reviewer, task, project_path, project_ctx, session_dir, state, max_rounds=2
+            planner=planner,
+            reviewer=reviewer,
+            task=task,
+            project_path=project_path,
+            project_ctx=project_ctx,
+            session_dir=session_dir,
+            state=state,
+            planner_flags=planner_perm_flags,
+            reviewer_flags=reviewer_perm_flags,
+            max_rounds=2
         )
 
         if STOP_REQUESTED:
@@ -539,7 +608,7 @@ def main():
 
         # Interaktive Freigabe & Change-Routing (Approve / Changes)
         user_confirmed = handle_plan_approval_and_changes(
-            plan_file, planner, reviewer, task, project_path, session_dir, state
+            plan_file, planner, reviewer, task, project_path, session_dir, state, planner_flags=planner_perm_flags
         )
 
         if not user_confirmed or STOP_REQUESTED:
@@ -550,27 +619,20 @@ def main():
         state["user_approved"] = True
         save_session_state(session_dir, state)
 
-    # ==========================================
-    # Rechte-Steuerung für Phase 3 (Build)
-    # ==========================================
-    perm_flags = []
-    if args.yolo or state.get("yolo_enabled", False):
-        give_permissions = True
-    else:
+    # Falls YOLO noch nicht aktiv war, vor Phase 3 fragen
+    if not yolo_active:
         try:
             print("\n⚙️  Berechtigungs-Prüfung für Phase 3 (Implementierung):")
             perm_ans = input(f"Soll {planner.name} volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(planner.binary))})? [J/n]: ")
-            give_permissions = perm_ans.strip().lower() in ["", "j", "ja", "y", "yes"]
+            if perm_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:
+                planner_perm_flags = get_permission_flags(planner.binary)
+                state["yolo_enabled"] = True
+                save_session_state(session_dir, state)
+                print(f"🔓 Schreibberechtigung aktiviert ({' '.join(planner_perm_flags)}).")
+            else:
+                print("🔒 Eingeschränkter Modus: Bestätigung bei jedem Tool-Call erforderlich.")
         except (EOFError, KeyboardInterrupt):
-            give_permissions = False
-
-    if give_permissions:
-        perm_flags = get_permission_flags(planner.binary)
-        state["yolo_enabled"] = True
-        save_session_state(session_dir, state)
-        print(f"🔓 Schreibberechtigung aktiviert ({' '.join(perm_flags)}).")
-    else:
-        print("🔒 Eingeschränkter Modus: Bestätigung bei jedem Tool-Call erforderlich.")
+            pass
 
     # ==========================================
     # 3. Phase: Autonomer Implementierungs-Loop
@@ -608,7 +670,7 @@ def main():
         )
 
         try:
-            cmd = [planner.binary, "-p", prompt_build] + perm_flags
+            cmd = [planner.binary, "-p", prompt_build] + planner_perm_flags
             process = subprocess.Popen(
                 cmd,
                 cwd=str(project_path),
