@@ -3,11 +3,13 @@
 ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop
 Auto-detects available CLIs (Claude Code, Google Antigravity agy, Gemini CLI, Codex).
 Supports any local or external project path (-p /path/to/project or -p ../project).
+Provides versioned plan archives, review logs, and full write-tool permission control.
 """
 
 import argparse
 import datetime
 import os
+import re
 import signal
 import shutil
 import subprocess
@@ -34,8 +36,8 @@ class AgentCLI:
         self.binary = binary
         self.run_fn = run_fn
 
-    def run(self, prompt: str, cwd: Path | None = None) -> str:
-        return self.run_fn(self.binary, prompt, cwd)
+    def run(self, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
+        return self.run_fn(self.binary, prompt, cwd, extra_flags)
 
 
 def _exec_cli(binary: str, args: list[str], cwd: Path | None = None) -> str:
@@ -47,20 +49,31 @@ def _exec_cli(binary: str, args: list[str], cwd: Path | None = None) -> str:
     return res.stdout.strip()
 
 
-def _exec_claude(binary: str, prompt: str, cwd: Path | None = None) -> str:
-    return _exec_cli(binary, ["-p", prompt], cwd)
+def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
+    args = ["-p", prompt]
+    if extra_flags:
+        args.extend(extra_flags)
+    return _exec_cli(binary, args, cwd)
 
 
-def _exec_agy(binary: str, prompt: str, cwd: Path | None = None) -> str:
-    return _exec_cli(binary, ["-p", prompt], cwd)
+def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
+    args = ["-p", prompt]
+    if extra_flags:
+        args.extend(extra_flags)
+    return _exec_cli(binary, args, cwd)
 
 
-def _exec_gemini(binary: str, prompt: str, cwd: Path | None = None) -> str:
-    return _exec_cli(binary, ["-p", prompt], cwd)
+def _exec_gemini(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
+    args = ["-p", prompt]
+    if extra_flags:
+        args.extend(extra_flags)
+    return _exec_cli(binary, args, cwd)
 
 
-def _exec_codex(binary: str, prompt: str, cwd: Path | None = None) -> str:
-    return _exec_cli(binary, ["exec", "-s", "read-only", prompt], cwd)
+def _exec_codex(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
+    sandbox = "workspace-write" if extra_flags and "--dangerously-skip-permissions" in extra_flags else "read-only"
+    args = ["exec", "-s", sandbox, prompt]
+    return _exec_cli(binary, args, cwd)
 
 
 def detect_installed_agents() -> dict[str, AgentCLI]:
@@ -99,13 +112,37 @@ def load_project_context(project_path: Path) -> str:
     return "\n".join(context)
 
 
-def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, project_path: Path, project_ctx: str, max_rounds: int = 2) -> bool:
-    loop_dir = project_path / ".dual-loop"
-    plan_file = loop_dir / "PLAN.md"
-    review_file = loop_dir / "REVIEW.md"
+def sanitize_filename(text: str) -> str:
+    cleaned = re.sub(r'[^a-zA-Z0-9_\-\s]', '', text)
+    cleaned = re.sub(r'\s+', '_', cleaned).strip('_')
+    return cleaned[:30] or "task"
 
-    loop_dir.mkdir(exist_ok=True)
-    print(f"\n🚀 Phase 1: Plan-Entwurf durch {planner.name} (im Kontext von {project_path.name})...")
+
+def get_permission_flags(binary: str) -> list[str]:
+    """Gibt die passenden Flags für Schreib-/Tool-Rechte zurück."""
+    if binary in ["claude", "agy"]:
+        return ["--dangerously-skip-permissions"]
+    elif binary == "gemini":
+        return ["-y"]
+    elif binary == "codex":
+        return ["-s", "workspace-write"]
+    return []
+
+
+def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, project_path: Path, project_ctx: str, max_rounds: int = 2) -> tuple[bool, Path]:
+    loop_dir = project_path / ".dual-loop"
+    active_plan_file = loop_dir / "PLAN.md"
+    active_review_file = loop_dir / "REVIEW.md"
+    log_file = loop_dir / "PLAN-REVIEW-LOG.md"
+
+    # Neues Session-Verzeichnis für jede Ausführung erstellen (kein Überschreiben alter Pläne!)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    slug = sanitize_filename(task)
+    session_dir = loop_dir / "sessions" / f"{timestamp}_{slug}"
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n📁 Session-Ordner angelegt: {session_dir.relative_to(project_path)}")
+    print(f"🚀 Phase 1: Plan-Entwurf durch {planner.name} (im Kontext von {project_path.name})...")
     print(f"⏳ Warte auf {planner.name}...", flush=True)
 
     prompt_plan = (
@@ -116,12 +153,27 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
         f"Enthalte: Betroffene Dateien, Architektur, Randfälle und Testkriterien. Antworte nur mit dem Markdown-Plan."
     )
     plan = planner.run(prompt_plan, cwd=project_path)
-    plan_file.write_text(plan, encoding="utf-8")
-    print(f"📄 Plan gespeichert in {plan_file}")
 
+    # Plan v1 speichern (im Session-Archiv UND als aktive PLAN.md)
+    plan_v1_file = session_dir / "PLAN_v1.md"
+    plan_v1_file.write_text(plan, encoding="utf-8")
+    active_plan_file.write_text(plan, encoding="utf-8")
+    print(f"📄 Plan v1 gespeichert in {plan_v1_file.relative_to(project_path)} & {active_plan_file.relative_to(project_path)}")
+
+    # Audit Log Header
+    log_entry = [
+        f"\n## [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Session: {slug}",
+        f"- **Aufgabe:** {task}",
+        f"- **Planer:** {planner.name} | **Prüfer:** {reviewer.name}",
+        f"- **Session-Pfad:** `{session_dir.relative_to(project_path)}`",
+        f"- **Runde 1:** Plan v1 erstellt"
+    ]
+
+    approved = False
     for r in range(1, max_rounds + 1):
         if STOP_REQUESTED:
-            return False
+            return False, active_plan_file
+
         print(f"\n🔍 Phase 2: Unabhängiges Adversarial Review (Runde {r}/{max_rounds}) durch {reviewer.name}...")
         print(f"⏳ Warte auf Review von {reviewer.name}...", flush=True)
 
@@ -136,12 +188,21 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
             f"EMPFEHLUNGEN:\n- [Punkte...]"
         )
         review = reviewer.run(prompt_rev, cwd=project_path)
-        review_file.write_text(review, encoding="utf-8")
-        print(f"📋 Review gespeichert in {review_file}")
 
-        if "VERDICT: APPROVED" in review:
+        # Review archivieren
+        review_r_file = session_dir / f"REVIEW_round{r}.md"
+        review_r_file.write_text(review, encoding="utf-8")
+        active_review_file.write_text(review, encoding="utf-8")
+        print(f"📋 Review gespeichert in {review_r_file.relative_to(project_path)}")
+
+        is_approved = "VERDICT: APPROVED" in review
+        verdict_str = "APPROVED" if is_approved else "REVISE"
+        log_entry.append(f"  - Review Runde {r}: **VERDICT: {verdict_str}** ([Details]({review_r_file.name}))")
+
+        if is_approved:
             print(f"🎉 Plan von {reviewer.name} genehmigt!")
-            return True
+            approved = True
+            break
         elif r < max_rounds:
             print(f"⚠️ Kritikpunkte von {reviewer.name}. {planner.name} bessert den Plan nach...")
             print(f"⏳ Warte auf Überarbeitung durch {planner.name}...", flush=True)
@@ -151,11 +212,24 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
                 f"Bitte überarbeite den Plan ({plan}) und behebe alle genannten Mängel."
             )
             plan = planner.run(prompt_fix, cwd=project_path)
-            plan_file.write_text(plan, encoding="utf-8")
+
+            # Neue Version speichern
+            plan_next_file = session_dir / f"PLAN_v{r+1}.md"
+            plan_next_file.write_text(plan, encoding="utf-8")
+            active_plan_file.write_text(plan, encoding="utf-8")
+            print(f"📄 Plan v{r+1} gespeichert in {plan_next_file.relative_to(project_path)}")
+            log_entry.append(f"- **Runde {r+1}:** Plan v{r+1} erstellt ([Details]({plan_next_file.name}))")
         else:
             print("🛑 Maximale Review-Runden erreicht. Manuelle Prüfung empfohlen.")
-            return False
-    return False
+            approved = False
+
+    # Audit Log fortschreiben
+    log_entry.append(f"- **Ergebnis:** {'Genehmigt' if approved else 'Nicht genehmigt (Limit erreicht)'}\n")
+    with open(log_file, "a", encoding="utf-8") as f_log:
+        f_log.write("\n".join(log_entry) + "\n")
+    print(f"📜 Audit-Log aktualisiert in {log_file.relative_to(project_path)}")
+
+    return approved, active_plan_file
 
 
 def main():
@@ -165,6 +239,7 @@ def main():
     parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Maximale autonome Iterationen (Standard: 10)")
     parser.add_argument("--planner", default=None, help="Explizite CLI für Planung/Bau (z.B. claude)")
     parser.add_argument("--reviewer", default=None, help="Explizite CLI für Review (z.B. agy oder gemini)")
+    parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
     parser.add_argument("--check", action="store_true", help="Installierte AI-CLIs prüfen")
     parser.add_argument("-d", "--delay", type=int, default=3, help="Pause zwischen Runden in Sekunden")
 
@@ -215,19 +290,39 @@ def main():
 
     project_ctx = load_project_context(project_path)
 
-    # 1. Phase: Adversarial Plan Review
-    approved = run_adversarial_plan(planner, reviewer, args.task, project_path, project_ctx, max_rounds=2)
+    # 1. & 2. Phase: Adversarial Plan Review mit Versionierung
+    approved, plan_file = run_adversarial_plan(planner, reviewer, args.task, project_path, project_ctx, max_rounds=2)
     if not approved and not STOP_REQUESTED:
-        choice = input("\nPlan nicht vollständig genehmigt. Trotzdem mit Implementierung fortfahren? (j/N): ")
+        try:
+            choice = input("\nPlan nicht vollständig genehmigt. Trotzdem mit Implementierung fortfahren? (j/N): ")
+        except (EOFError, KeyboardInterrupt):
+            choice = "n"
         if choice.lower() not in ["j", "ja", "y", "yes"]:
             print("Abbruch durch Nutzer.")
             return
 
-    # 2. Phase: Autonomer Implementierungs-Loop im Projektverzeichnis
+    # Rechte-Steuerung für Phase 3 (Build)
+    perm_flags = []
+    if args.yolo:
+        give_permissions = True
+    else:
+        try:
+            print("\n⚙️  Berechtigungs-Prüfung für Phase 3 (Implementierung):")
+            perm_ans = input(f"Soll {planner.name} volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(planner.binary))})? [J/n]: ")
+            give_permissions = perm_ans.strip().lower() in ["", "j", "ja", "y", "yes"]
+        except (EOFError, KeyboardInterrupt):
+            give_permissions = False
+
+    if give_permissions:
+        perm_flags = get_permission_flags(planner.binary)
+        print(f"🔓 Schreibberechtigung aktiviert ({' '.join(perm_flags)}).")
+    else:
+        print("🔒 Eingeschränkter Modus: Änderungen müssen einzeln bestätigt werden.")
+
+    # 3. Phase: Autonomer Implementierungs-Loop im Projektverzeichnis
     logs_dir = project_path / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     session_log = logs_dir / f"loop_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    plan_file = project_path / ".dual-loop" / "PLAN.md"
 
     print(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {project_path}...")
     iteration = 0
@@ -247,13 +342,13 @@ def main():
         print(log_header, flush=True)
 
         prompt_build = (
-            f"Führe den genehmigten Plan ({plan_file}) für die Aufgabe aus:\n{args.task}\n\n"
+            f"Führe den genehmigten Plan ({plan_file}) für folgende Aufgabe aus:\n{args.task}\n\n"
             f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch. "
             f"Wenn alle Anforderungen erfüllt und getestet sind, erstelle die Datei .done im Projektverzeichnis."
         )
 
         try:
-            cmd = [planner.binary, "-p", prompt_build]
+            cmd = [planner.binary, "-p", prompt_build] + perm_flags
             process = subprocess.Popen(
                 cmd,
                 cwd=str(project_path),

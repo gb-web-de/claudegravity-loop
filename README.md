@@ -24,69 +24,76 @@ Ein einzelnes KI-Modell (z. B. Claude) übersieht beim Überprüfen eigener Entw
 
 ### 2. Installierte KIs prüfen
 ```bash
-./loop.py --check
+claudegravity --check
 ```
 
 ### 3. Eine Aufgabe ausführen
 ```bash
-# Direkt im aktuellen Verzeichnis:
-./loop.py "Erstelle eine REST-API mit FastAPI für Notizen"
+# Im aktuellen Verzeichnis (fragt vor Phase 3 nach Schreibrechten):
+claudegravity "Refaktoriere das Spielplan-Modul"
 
-# Mit Projekt-Kontext (wie in der Claude UI):
-./loop.py -p projects/demo "Erstelle einen Authentifizierungs-Endpoint"
+# Automatisch mit vollen Schreibrechten ausführen (--yolo):
+claudegravity --yolo "Refaktoriere das Spielplan-Modul"
+
+# In einem anderen Projektordner:
+claudegravity -p /home/gordon/Projekte/handball --yolo "Füge Unit-Tests hinzu"
 ```
 
-### 4. Optionen
+### 4. Parameter & Optionen
 | Parameter | Beschreibung |
 | :--- | :--- |
 | `-p`, `--project` | Zielverzeichnis des Projekts (Standard: `.`) |
 | `-m`, `--max-iterations` | Maximale Runden für den autonomen Loop (Standard: `10`) |
+| `--yolo`, `--auto-approve`| Erteilt der KI in Phase 3 automatisch Schreibrechte (`--dangerously-skip-permissions`) |
 | `--planner` | Bestimmt das Planer-Modell (z. B. `claude`) |
 | `--reviewer` | Bestimmt das Prüfer-Modell (z. B. `agy` oder `gemini`) |
 | `--check` | Zeigt erkannte AI-CLIs an |
 
 ---
 
-## 🇬🇧 Quickstart (English)
+## 📂 Plan-Versionierung & Audit-Log
 
-### 1. Prerequisites
-* Python 3.10+.
-* Official CLIs authenticated in your terminal (e.g., `claude` and `agy` or `gemini`).
+Nichts geht verloren! Jeder Durchlauf legt automatisch ein eigenes Session-Archiv an:
 
-### 2. Verify Available AI Tools
-```bash
-./loop.py --check
 ```
-
-### 3. Run a Task
-```bash
-# In the current directory:
-./loop.py "Build a FastAPI notes service"
-
-# With project context (mirroring Claude UI Projects):
-./loop.py -p projects/demo "Add JWT authentication endpoints"
+.dual-loop/
+├── PLAN.md                                    # 🎯 Immer die aktuellste Version
+├── REVIEW.md                                  # 📋 Das aktuellste Review
+├── PLAN-REVIEW-LOG.md                         # 📜 Fortlaufendes Audit-Logbuch
+└── sessions/
+    └── 20261017_102220_refaktoriere_.../      # 📦 Revisionssicheres Archiv
+        ├── PLAN_v1.md                         # Erster Entwurf
+        ├── REVIEW_round1.md                   # Review von Modell B
+        ├── PLAN_v2.md                         # Überarbeiteter Plan
+        └── REVIEW_round2.md                   # Zweites Review
 ```
 
 ---
 
-## 📂 Claude UI Projekte lokal gespiegelt
+## 🇬🇧 Quickstart (English)
 
-In der Claude Web-UI haben Projekte **Anweisungen**, **Wissen** und **Chats**. Lokal wird das 1:1 in Ordnern abgebildet:
-
+### 1. Check AI Tools
+```bash
+claudegravity --check
 ```
-projects/
-└── mein-projekt/
-    ├── CLAUDE.md              # 🎯 Projekt-Anweisungen (liest Claude automatisch)
-    ├── knowledge/             # 📚 Projekt-Wissen (Docs, Notizen, DB-Schemas)
-    │   └── api_spec.md
-    └── logs/                  # 💬 Vollständige Protokolle aller Runden
+
+### 2. Run a Task
+```bash
+# Prompt for write permissions before build:
+claudegravity "Refactor tournament module"
+
+# Auto-approve write permissions (--yolo):
+claudegravity --yolo "Refactor tournament module"
+
+# Run for a specific project:
+claudegravity -p /home/gordon/Projekte/handball --yolo "Add unit tests"
 ```
 
 ---
 
 ## 💡 Token-Schonung
 
-* **Artefakt-Handoff:** Es werden keine riesigen Chat-Verläufe übertragen, sondern nur präzise Markdown-Dateien (`.dual-loop/PLAN.md` und `.dual-loop/REVIEW.md`).
+* **Artefakt-Handoff:** Es werden keine riesigen Chat-Verläufe übertragen, sondern nur präzise Markdown-Dateien (`PLAN_v1.md`, `REVIEW_round1.md`).
 * **Loop-Guard:** Maximal 2 Review-Runden, um teure Endlos-Diskussionen zwischen den Modellen zu verhindern.
 * **.done Marker:** Erstellt die KI die Datei `.done`, stoppt der Loop sofort.
 
