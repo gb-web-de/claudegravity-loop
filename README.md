@@ -175,7 +175,32 @@ KIs laufen im Hintergrund ohne Fenster. Damit eine KI nicht unbemerkt Dateien au
 
 ---
 
-### 8. Wo liegen meine Dateien? (Ordnerstruktur)
+### 8. Fragen-Modus & Modell-Einstellungen
+
+#### ❓ Fragen-Modus (`-i` / `--ask` / `--interview`):
+Wenn du eine komplexe Aufgabe hast, bei der Architekturentscheidungen oder Details unklar sind, aktiviere den Fragen-Modus:
+```bash
+claudegravity -i "Baue ein Benachrichtigungssystem"
+```
+Beide KIs binden dich gezielt ein:
+1. **Planer (Claude):** Stellt dir bis zu 3 konkrete Rückfragen (z.B. Wahl der Bibliothek, Datenformat), bevor der Entwurf finalisiert wird.
+2. **Prüfer (Antigravity):** Grille den Plan und stellt bei Zielkonflikten oder Sicherheitsrisiken Rückfragen an dich. Deine Antworten fließen direkt in Runde 2 des Plans ein.
+
+#### ⚙️ Modell- & Intensitäts-Steuerung:
+Standardmäßig nutzen beide Tools (`claude`, `agy`) ihre voreingestellten Standard-Modelle. Du kannst dies pro Aufgabe frei steuern:
+* `--planner-model <name>`: Modell für Planung/Bau (z.B. `sonnet`, `opus`, `gemini-4-argon-high`)
+* `--reviewer-model <name>`: Modell für den Prüfer (z.B. `gemini-4-argon-high`, `gemini-3.8-flash-high`)
+* `--effort <low|medium|high|xhigh|max>`: Thinking/Reasoning-Intensität für Antigravity (`agy`)
+* `--reviewer-effort <effort>`: Spezifische Prüf-Intensität (z.B. `high` für besonders gründliche Adversarial Reviews)
+
+Beispiel mit maximaler Prüf-Intensität und Fragen-Modus:
+```bash
+claudegravity --reviewer-effort high -i "Refaktoriere das Spielplan-Modul"
+```
+
+---
+
+### 9. Wo liegen meine Dateien? (Ordnerstruktur)
 
 In jedem Projekt, in dem du `claudegravity` ausführst, wird ein sauberer Ordner namens `.dual-loop/` angelegt:
 
@@ -196,7 +221,7 @@ mein-projekt/
 
 ---
 
-### 9. Häufige Fragen & Fehlerbehebung (FAQ)
+### 10. Häufige Fragen & Fehlerbehebung (FAQ)
 
 **Kostet mich der Loop extra Geld?**  
 Nein! Es werden die bestehenden Abos deiner Terminal-Tools (`claude`, `agy`) genutzt. Es fallen keine API-Gebühren pro Token an.
@@ -339,7 +364,32 @@ When running in headless print mode, AI tools require permission to edit files o
 
 ---
 
-### 8. Directory Structure & File Storage
+### 8. Interview Mode & Model Controls
+
+#### ❓ Interview Mode (`-i` / `--ask` / `--interview`):
+If your task contains ambiguities, architectural choices, or trade-offs, enable interview mode:
+```bash
+claudegravity -i "Build an authentication service"
+```
+Both agents will interact with you directly:
+1. **Planner (Claude):** Asks up to 3 specific clarifying questions before finalizing the roadmap.
+2. **Reviewer (Antigravity):** Highlights critical edge cases or trade-offs and asks for your guidance. Your answers are passed into Plan Round 2.
+
+#### ⚙️ Custom Models & Reasoning Effort:
+By default, the CLIs use their configured default models and effort. You can customize them per task:
+* `--planner-model <name>`: Model for planning/coding (e.g., `sonnet`, `opus`, `gemini-4-argon-high`)
+* `--reviewer-model <name>`: Model for review (e.g., `gemini-4-argon-high`, `gemini-3.8-flash-high`)
+* `--effort <low|medium|high|xhigh|max>`: Reasoning effort for Antigravity (`agy`)
+* `--reviewer-effort <effort>`: Specific effort for the review stage (e.g., `high` for maximum critique depth)
+
+Example with high reviewer reasoning effort and interview mode:
+```bash
+claudegravity --reviewer-effort high -i "Refactor payment module"
+```
+
+---
+
+### 9. Directory Structure & File Storage
 
 All plans, audits, and sessions are safely stored in `.dual-loop/`:
 
@@ -360,7 +410,7 @@ my-project/
 
 ---
 
-### 9. Frequently Asked Questions (FAQ)
+### 10. Frequently Asked Questions (FAQ)
 
 **Does this cost extra API fees?**  
 No! It runs through your official terminal CLIs (`claude`, `agy`) using your active personal subscriptions.

@@ -175,6 +175,20 @@ def is_permission_error_response(text: str) -> bool:
     return any(ind.lower() in text_lower for ind in indicators) and len(text.strip().splitlines()) < 15
 
 
+def extract_questions(text: str) -> str | None:
+    """Extrahiert Fragen an den Nutzer, falls ein Agent welche formuliert hat."""
+    patterns = [
+        r'(?:###|##)\s*(?:FRAGEN\s+AN\s+DEN\s+NUTZER|OFFENE\s+FRAGEN|RÜCKFRAGEN|QUESTIONS\s+FOR\s+USER)[:\s]*(.*?)(?=(?:\n###|\n##|\Z))',
+    ]
+    for p in patterns:
+        m = re.search(p, text, re.IGNORECASE | re.DOTALL)
+        if m:
+            content = m.group(1).strip()
+            if "?" in content or "-" in content or "1." in content:
+                return content
+    return None
+
+
 # ==========================================
 # Session & State Management (Resume-Support)
 # ==========================================
@@ -215,7 +229,8 @@ def run_adversarial_plan(
     state: dict,
     planner_flags: list[str] | None = None,
     reviewer_flags: list[str] | None = None,
-    max_rounds: int = 2
+    max_rounds: int = 2,
+    ask_mode: bool = False
 ) -> tuple[bool, Path]:
     loop_dir = project_path / ".dual-loop"
 
@@ -245,6 +260,12 @@ def run_adversarial_plan(
             f"Enthalte: Betroffene Dateien, Architektur, Randfälle und Testkriterien."
             f"{PLANNING_DIRECTIVE}"
         )
+        if ask_mode:
+            prompt_plan += (
+                "\n\nFRAGEN-MODUS AKTIV: Falls es wichtige Unklarheiten, Annahmen oder architektonische Alternativen gibt, "
+                "stelle bis zu 3 konkrete, nummerierte Fragen an den Nutzer unter der Überschrift '### FRAGEN AN DEN NUTZER:'. "
+                "Formuliere darunter deinen initialen Entwurf."
+            )
         plan = planner.run(prompt_plan, cwd=project_path, extra_flags=planner_flags)
 
         # Sicherheitsprüfung: Hat Modell versehentlich eine Permission-Meldung zurückgegeben?
@@ -252,6 +273,31 @@ def run_adversarial_plan(
             print("⚠️ Modell versuchte eine Datei anzulegen. Erzwinge reine Textausgabe...")
             retry_prompt = prompt_plan + "\nACHTUNG: Lege KEINE Datei an! Gib den Plan ausschließlich als Text aus!"
             plan = planner.run(retry_prompt, cwd=project_path, extra_flags=planner_flags)
+
+        if ask_mode:
+            questions = extract_questions(plan)
+            if questions:
+                print("\n" + "=" * 60)
+                print(f"❓ {planner.name} (Planer) hat Rückfragen an dich:")
+                print("=" * 60)
+                print(questions)
+                print("-" * 60)
+                try:
+                    user_ans = input("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    user_ans = ""
+                if user_ans:
+                    print(f"⏳ {planner.name} bezieht deine Vorgaben in Plan v1 ein...", flush=True)
+                    prompt_refine = (
+                        f"Du hattest dem Nutzer folgende Fragen gestellt:\n{questions}\n\n"
+                        f"Der Nutzer hat wie folgt geantwortet:\n{user_ans}\n\n"
+                        f"Bisheriger Entwurf:\n{plan}\n\n"
+                        f"Finalisiere nun den Plan v1 vollständig unter Berücksichtigung dieser Nutzer-Entscheidungen."
+                        f"{PLANNING_DIRECTIVE}"
+                    )
+                    plan = planner.run(prompt_refine, cwd=project_path, extra_flags=planner_flags)
+                    if is_permission_error_response(plan):
+                        plan = planner.run(prompt_refine + "\nACHTUNG: Lege KEINE Datei an! Gib den Plan als Text aus!", cwd=project_path, extra_flags=planner_flags)
 
         plan_v1_file.write_text(plan, encoding="utf-8")
         current_plan_file = plan_v1_file
@@ -304,6 +350,11 @@ def run_adversarial_plan(
             f"KRITIK:\n- [Punkte...]\n"
             f"EMPFEHLUNGEN:\n- [Punkte...]"
         )
+        if ask_mode:
+            prompt_rev += (
+                "\n\nFRAGEN-MODUS AKTIV: Wenn du kritische Zielkonflikte, Risiken oder Architektur-Entscheidungen siehst, "
+                "die zwingend menschlicher Klärung bedürfen, stelle diese gezielt unter '### FRAGEN AN DEN NUTZER:'."
+            )
         review = reviewer.run(prompt_rev, cwd=project_path, extra_flags=reviewer_flags)
 
         review_r_file = session_dir / f"REVIEW_round{r}.md"
@@ -322,11 +373,28 @@ def run_adversarial_plan(
             save_session_state(session_dir, state)
             break
         elif r < max_rounds:
+            user_rev_feedback = ""
+            if ask_mode:
+                rev_questions = extract_questions(review)
+                if rev_questions:
+                    print("\n" + "=" * 60)
+                    print(f"❓ {reviewer.name} (Prüfer) hat Rückfragen an dich:")
+                    print("=" * 60)
+                    print(rev_questions)
+                    print("-" * 60)
+                    try:
+                        user_rev_ans = input("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        user_rev_ans = ""
+                    if user_rev_ans:
+                        user_rev_feedback = f"\n\nDer Nutzer hat auf die Rückfragen folgendes klargestellt:\n{user_rev_ans}\n"
+
             print(f"⚠️ Kritikpunkte von {reviewer.name}. {planner.name} bessert den Plan nach...")
             print(f"⏳ Warte auf Überarbeitung durch {planner.name}...", flush=True)
             prompt_fix = (
                 f"Der Reviewer ({reviewer.name}) hat folgende Kritikpunkte am Plan geäußert:\n\n"
-                f"{review}\n\n"
+                f"{review}\n"
+                f"{user_rev_feedback}\n"
                 f"Bisheriger Plan:\n{plan}\n\n"
                 f"Bitte überarbeite den Plan und behebe alle genannten Mängel vollständig."
                 f"{PLANNING_DIRECTIVE}"
@@ -482,8 +550,14 @@ def main():
     parser.add_argument("-p", "--project", default=".", help="Pfad zum Ziel-Projekt (absolut oder relativ, Standard: .)")
     parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Maximale autonome Iterationen (Standard: 10)")
     parser.add_argument("-c", "--resume", "--continue", dest="resume", action="store_true", help="Unterbrochene Sitzung fortsetzen")
+    parser.add_argument("-i", "--ask", "--interview", "--clarify", action="store_true", help="Fragen-Modus: Beide Agenten stellen bei Unklarheiten gezielte Fragen an dich, bevor der Plan finalisiert wird")
     parser.add_argument("--planner", default=None, help="Explizite CLI für Planung/Bau (z.B. claude)")
     parser.add_argument("--reviewer", default=None, help="Explizite CLI für Review (z.B. agy oder gemini)")
+    parser.add_argument("--planner-model", default=None, help="Modell für den Planer (z.B. sonnet, opus, gemini-4-argon-high)")
+    parser.add_argument("--reviewer-model", default=None, help="Modell für den Prüfer (z.B. gemini-4-argon-high, gemini-3.8-flash-high, opus)")
+    parser.add_argument("--effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität / Thinking Effort (für agy)")
+    parser.add_argument("--reviewer-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Prüfer (für agy)")
+    parser.add_argument("--planner-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Planer (falls agy)")
     parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
     parser.add_argument("--check", action="store_true", help="Installierte AI-CLIs prüfen")
     parser.add_argument("-d", "--delay", type=int, default=3, help="Pause zwischen Runden in Sekunden")
@@ -496,6 +570,12 @@ def main():
         print("🔍 Erkannte AI-CLIs auf deinem System:")
         for key, agent in agents.items():
             print(f"  [x] {agent.name} (`{agent.binary}` im PATH)")
+        print("\n⚙️  Modell- und Intensitäts-Steuerung:")
+        print("  - Standard: Es werden die in deinen CLIs hinterlegten Standard-Modelle und -Intensitäten genutzt.")
+        print("  - Planer-Modell anpassen : --planner-model <name>  (z.B. sonnet, opus, gemini-4-argon-high)")
+        print("  - Prüfer-Modell anpassen : --reviewer-model <name> (z.B. gemini-4-argon-high, gemini-3.8-flash-high)")
+        print("  - Reasoning-Effort (agy) : --effort <low|medium|high|xhigh|max> (oder --reviewer-effort / --planner-effort)")
+        print("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
         if len(agents) >= 2:
             print("\n🚀 Mindestens 2 Modelle vorhanden. Dual-Loop ist voll einsatzbereit!")
         else:
@@ -589,7 +669,7 @@ def main():
         reviewer = planner
 
     # ==========================================
-    # Rechte-Steuerung (YOLO gilt für alle Phasen!)
+    # Rechte-, Modell- & Effort-Steuerung
     # ==========================================
     planner_perm_flags = []
     reviewer_perm_flags = []
@@ -602,11 +682,58 @@ def main():
         save_session_state(session_dir, state)
         print(f"🔓 YOLO-Modus aktiv: Volle Tool- & Schreibrechte erteilt ({' '.join(planner_perm_flags)}).")
 
+    planner_flags = list(planner_perm_flags)
+    reviewer_flags = list(reviewer_perm_flags)
+
+    # Modell für Planer
+    planner_model = args.planner_model or state.get("planner_model")
+    if planner_model:
+        planner_flags.extend(["--model", planner_model])
+        state["planner_model"] = planner_model
+
+    # Effort für Planer (falls agy)
+    p_effort = args.planner_effort or args.effort or state.get("planner_effort")
+    if p_effort and planner.binary == "agy":
+        planner_flags.extend(["--effort", p_effort])
+        state["planner_effort"] = p_effort
+
+    # Modell für Prüfer
+    reviewer_model = args.reviewer_model or state.get("reviewer_model")
+    if reviewer_model:
+        reviewer_flags.extend(["--model", reviewer_model])
+        state["reviewer_model"] = reviewer_model
+
+    # Effort für Prüfer (falls agy)
+    r_effort = args.reviewer_effort or args.effort or state.get("reviewer_effort")
+    if r_effort and reviewer.binary == "agy":
+        reviewer_flags.extend(["--effort", r_effort])
+        state["reviewer_effort"] = r_effort
+
+    # Fragen-Modus
+    ask_mode = args.ask or state.get("ask_mode", False)
+    if ask_mode:
+        state["ask_mode"] = True
+    save_session_state(session_dir, state)
+
     print(f"\n=======================================================")
     print(f"[*] ClaudeGravity Loop gestartet")
     print(f"[*] Ziel-Projekt : {project_path}")
-    print(f"[*] Planer/Bau   : {planner.name}")
-    print(f"[*] Prüfer/Review: {reviewer.name}")
+    p_info = f"{planner.name}"
+    if planner_model:
+        p_info += f" (Modell: {planner_model})"
+    if p_effort and planner.binary == "agy":
+        p_info += f" [Effort: {p_effort}]"
+    print(f"[*] Planer/Bau   : {p_info}")
+
+    r_info = f"{reviewer.name}"
+    if reviewer_model:
+        r_info += f" (Modell: {reviewer_model})"
+    if r_effort and reviewer.binary == "agy":
+        r_info += f" [Effort: {r_effort}]"
+    print(f"[*] Prüfer/Review: {r_info}")
+
+    if ask_mode:
+        print(f"[*] Modus        : ❓ Fragen-Modus aktiv (--ask)")
     print(f"[*] Session-ID   : {session_dir.name}")
     print(f"=======================================================\n")
 
@@ -622,7 +749,7 @@ def main():
         state["phase"] = "review"
         save_session_state(session_dir, state)
 
-        # Plan erstellen / Review durchführen mit planner_perm_flags
+        # Plan erstellen / Review durchführen mit planner_flags
         review_ok, plan_file = run_adversarial_plan(
             planner=planner,
             reviewer=reviewer,
@@ -631,9 +758,10 @@ def main():
             project_ctx=project_ctx,
             session_dir=session_dir,
             state=state,
-            planner_flags=planner_perm_flags,
-            reviewer_flags=reviewer_perm_flags,
-            max_rounds=2
+            planner_flags=planner_flags,
+            reviewer_flags=reviewer_flags,
+            max_rounds=2,
+            ask_mode=ask_mode
         )
 
         if STOP_REQUESTED:
@@ -641,7 +769,7 @@ def main():
 
         # Interaktive Freigabe & Change-Routing (Approve / Changes)
         user_confirmed, plan_file = handle_plan_approval_and_changes(
-            plan_file, planner, reviewer, task, project_path, session_dir, state, planner_flags=planner_perm_flags
+            plan_file, planner, reviewer, task, project_path, session_dir, state, planner_flags=planner_flags
         )
 
         if not user_confirmed or STOP_REQUESTED:
@@ -659,6 +787,9 @@ def main():
             perm_ans = input(f"Soll {planner.name} volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(planner.binary))})? [J/n]: ")
             if perm_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:
                 planner_perm_flags = get_permission_flags(planner.binary)
+                for f in planner_perm_flags:
+                    if f not in planner_flags:
+                        planner_flags.insert(0, f)
                 state["yolo_enabled"] = True
                 save_session_state(session_dir, state)
                 print(f"🔓 Schreibberechtigung aktiviert ({' '.join(planner_perm_flags)}).")
@@ -705,7 +836,7 @@ def main():
         )
 
         try:
-            cmd = [planner.binary, "-p", prompt_build] + planner_perm_flags
+            cmd = [planner.binary, "-p", prompt_build] + planner_flags
             process = subprocess.Popen(
                 cmd,
                 cwd=str(project_path),
