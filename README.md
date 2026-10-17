@@ -15,12 +15,13 @@
   * [6. Schritt-für-Schritt: Dein erster Durchlauf](#6-schritt-für-schritt-dein-erster-durchlauf)
   * [7. Das Menü: Plan freigeben oder ändern (Approve & Changes)](#7-das-menü-plan-freigeben-oder-ändern-approve--changes)
   * [8. Fragen-Modus: KIs stellen Fragen an dich (`-i` / `--ask`)](#8-fragen-modus-kis-stellen-fragen-an-dich--i----ask)
-  * [9. Modelle, Effort & Rollenwechsel (`--swap`, `--architekt`, `--pruefstatiker`)](#9-modelle-effort--rollenwechsel---swap---architekt---pruefstatiker)
+  * [9. Die 3 Rollen, Modell-Splitting & Kostensparen (`--strategy`, `--bauer-model`, `--dry-run`)](#9-die-3-rollen-modell-splitting--kostensparen---strategy---bauer-model---dry-run)
   * [10. Weitermachen nach Pause oder Absturz (`--resume`)](#10-weitermachen-nach-pause-oder-absturz---resume)
   * [11. Schreibrechte & der Autopilot (`--yolo`)](#11-schreibrechte--der-autopilot---yolo)
   * [12. Was passiert bei AI-Sitzungslimits? (Token-Limits & Audit)](#12-was-passiert-bei-ai-sitzungslimits-token-limits--kosten-audit)
   * [13. Wo liegen meine Dateien? (Saubere Ordnerstruktur)](#13-wo-liegen-meine-dateien-saubere-ordnerstruktur)
   * [14. Häufige Fragen & Fehlerbehebung (FAQ)](#14-häufige-fragen--fehlerbehebung-faq)
+  * [15. ClaudeGravity MCP-Server & Universeller Optimierungs-Prompt (`mcp_server.py`)](#15-claudegravity-mcp-server--universeller-optimierungs-prompt-mcp_serverpy)
 * [🇬🇧 English Documentation (Beginner's Guide)](#-english-documentation-for-beginners)
   * [1. What is ClaudeGravity Loop? (Explained Simply)](#1-what-is-claudegravity-loop-explained-simply)
   * [2. Architecture: Single-File Concept (Not an Installer!)](#2-architecture-single-file-concept-not-an-installer)
@@ -30,12 +31,13 @@
   * [6. Step-by-Step: Your First Run](#6-step-by-step-your-first-run)
   * [7. Plan Approval & Changes Menu](#7-plan-approval--changes-menu)
   * [8. Interview Mode: AIs Ask You Questions (`-i` / `--ask`)](#8-interview-mode-ais-ask-you-questions--i----ask)
-  * [9. Model Selection, Effort & Role Swapping (`--swap`, `--architekt`, `--pruefstatiker`)](#9-model-selection-effort--role-swapping---swap---architekt---pruefstatiker)
+  * [9. 3-Role Architecture, Model Splitting & Cost Economics (`--strategy`, `--bauer-model`, `--dry-run`)](#9-3-role-architecture-model-splitting--cost-economics---strategy---bauer-model---dry-run)
   * [10. Crash Recovery & Resuming (`--resume`)](#10-crash-recovery--resuming---resume)
   * [11. File Permissions & Autopilot (`--yolo`)](#11-file-permissions--autopilot---yolo)
   * [12. What Happens When AI Limits Are Hit? (Session Limits & Cost Audit)](#12-what-happens-when-ai-limits-are-hit-session-limits--cost-audit)
   * [13. Directory Structure & File Storage](#13-directory-structure--file-storage)
   * [14. Frequently Asked Questions (FAQ)](#14-frequently-asked-questions-faq)
+  * [15. ClaudeGravity MCP Server & Universal Optimization Prompt (`mcp_server.py`)](#15-claudegravity-mcp-server--universal-optimization-prompt-mcp_serverpy)
 
 ---
 
@@ -123,8 +125,12 @@ claudegravity --check
 
 | Befehl | Wofür wird er benutzt? |
 | :--- | :--- |
-| `claudegravity --info` / `--check` | Zeigt Standardmodelle, Rollen (Architekt & Prüfstatiker) und Optionen |
+| `claudegravity --info` / `--check` | Zeigt Standardmodelle, die 3 Rollen (Architekt, Prüfer, Bauleiter) und Optionen |
 | `claudegravity "Aufgabe"` | Startet den Loop im aktuellen Ordner (Claude = Architekt, Antigravity = Prüfstatiker) |
+| `claudegravity --strategy eco "Aufgabe"` | **Eco-Modus:** Spart bis zu 70% Token-Kosten durch Modell-Splitting zwischen Plan und Bau |
+| `claudegravity --strategy best-code "Aufgabe"` | **Qualitäts-Modus:** Höchste Code-Präzision & tiefes Thinking auf Flaggschiff-Modellen |
+| `claudegravity --dry-run "Aufgabe"` | **Trockenlauf:** Zeigt Rollen, Modelle, Kostenanalyse und Befehl ohne Ausführung |
+| `claudegravity --bauer-model haiku "Aufgabe"` | **Gezieltes Bau-Modell:** Separates Modell für den autonomen Bau-Loop (Phase 3) |
 | `claudegravity --swap "Aufgabe"` | **Rollen tauschen:** Antigravity plant/baut (Architekt), Claude prüft (Prüfstatiker) |
 | `claudegravity -i "Aufgabe"` | **Fragen-Modus:** Beide KIs stellen dir Rückfragen bei Unklarheiten |
 | `claudegravity --effort max "Aufgabe"` | Thinking/Reasoning-Intensität festlegen (`low` bis `max`) |
@@ -211,9 +217,36 @@ Beide KIs binden dich gezielt ein:
 
 ---
 
-### 9. Modelle, Effort & Rollenwechsel (`--swap`, `--architekt`, `--pruefstatiker`)
+### 9. Die 3 Rollen, Modell-Splitting & Kostensparen (`--strategy`, `--bauer-model`, `--dry-run`)
 
-Standardmäßig nutzen beide Tools (`claude`, `agy`) ihre in der CLI hinterlegten Standard-Modelle. Du kannst Rollen, Modelle und Thinking-Intensitäten pro Aufgabe flexibel steuern:
+Warum müssen Planung und Bau nicht das gleiche Modell sein? **Weil eine Trennung massiv Kosten spart!**
+
+#### 💡 Das Kostenspar-Prinzip (Planung vs. Bau):
+* **Phase 1 (Architekt) & Phase 2 (Prüfstatiker):** Benötigen tiefes Denkvermögen (Reasoning), verbrauchen aber **nur 10–15% der gesamten Tokens** (~2.000 bis 4.000 Tokens für `PLAN.md` und `REVIEW.md`). Hier lohnt sich ein Spitzenmodell (z. B. Claude Sonnet 3.7 / Opus oder Gemini 2.5 Pro mit hohem Effort), um Denkfehler von vornherein auszuschließen.
+* **Phase 3 (Bauleiter / Coder):** Liest und schreibt ganze Dateien, führt Tests aus, behebt Linter-Fehler und iteriert mehrfach. **Dieser Schritt macht 85–90% aller Tokens und Kosten aus!**
+* **Der Spareffekt:** Wenn für Phase 3 ein schnelles Spar-Modell eingesetzt wird (z. B. `claude-3-5-haiku` oder `gemini-2.5-flash`), sparst du **bis zu 70% deiner Token-Kosten**, während die Architektur durch die Prüfung auf absolutem Profi-Niveau bleibt!
+
+```mermaid
+flowchart LR
+    subgraph P1["Phase 1 & 2: Kognitive Höchstleistung (~15% Tokens)"]
+        A["🏗️ Architekt (Top-Modell)"] --> B["🧐 Prüfstatiker (Top-Modell)"]
+    end
+    subgraph P3["Phase 3: Fleißarbeit & Code-Generierung (~85% Tokens)"]
+        B --> C["🔨 Bauleiter (Schnelles Spar-Modell)"]
+        C --> D["✅ Getesteter Code (.done)"]
+    end
+```
+
+#### 🎯 Die 3 Strategie-Profile (`--strategy`):
+* `--strategy eco`: **Maximale Ersparnis!** Top-Modelle für Plan & Review, aber blitzschnelles Spar-Modell für Phase 3 (z. B. Haiku oder Flash). Spart bis zu 70% Kontingent!
+* `--strategy best-code`: **Maximale Qualität!** Nutzt durchgehend Spitzenmodelle mit intensivem Thinking-Effort auf allen Ebenen.
+* `--strategy balanced`: **Ausgewogener Standard** (Standardbelegung).
+
+#### 🔍 Trockenlauf (`--dry-run`):
+Prüfe vorab die gewählten Rollen, Modelle und Kosten ohne Dateien anzufassen:
+```bash
+claudegravity --dry-run "Refaktoriere Spielplan-Modul" --strategy eco
+```
 
 #### 🔄 Rollen tauschen (`--swap`):
 * Standard: **Architekt** = Claude Code (Planung & Bau) | **Prüfstatiker** = Antigravity (Prüfung & Review)
@@ -221,22 +254,25 @@ Standardmäßig nutzen beide Tools (`claude`, `agy`) ihre in der CLI hinterlegte
   ```bash
   claudegravity --swap "Baue ein Benachrichtigungssystem"
   ```
-  Jetzt plant und baut **Antigravity**, während **Claude Code** als unbestechlicher Prüfstatiker fungiert!
+  Jetzt plant **Antigravity**, während **Claude Code** als unbestechlicher Prüfstatiker fungiert!
 
 #### 🛠️ KIs und Modelle gezielt zuweisen:
-* `--architekt <claude|agy|gemini>` (oder `--planner`): Bestimmt die KI für den Entwurf und die Implementierung.
-* `--pruefstatiker <agy|claude|gemini>` (oder `--reviewer`): Bestimmt die KI für den statischen Code-Review.
-* `--architekt-model <name>` (oder `--planner-model`): Modell für Planung/Bau (z.B. `sonnet`, `opus`, `gemini-2.5-pro`).
-* `--pruefstatiker-model <name>` (oder `--reviewer-model`): Modell für den Prüfer (z.B. `gemini-2.5-pro`, `sonnet`, `gemini-3.8-flash-high`).
+* `--architekt <claude|agy|gemini>` (oder `--planner`): KI für den Entwurf (Phase 1).
+* `--pruefstatiker <agy|claude|gemini>` (oder `--reviewer`): KI für das statische Review (Phase 2).
+* `--bauer <claude|agy|gemini>` (oder `--builder`): KI für die Umsetzung (Phase 3).
+* `--architekt-model <name>`: Modell für Planung (z. B. `sonnet`, `opus`, `gemini-2.5-pro`).
+* `--pruefstatiker-model <name>`: Modell für Prüfung (z. B. `gemini-2.5-pro`, `sonnet`).
+* `--bauer-model <name>`: Modell für den Bau (z. B. `claude-3-5-haiku`, `gemini-2.5-flash`).
 
 #### 🧠 Reasoning-Effort (Thinking-Intensität):
 * `--effort <low|medium|high|xhigh|max>`: Globale Denk-Intensität.
-* `--pruefstatiker-effort <effort>` (oder `--reviewer-effort`): Spezifische Prüf-Intensität für Antigravity (z.B. `high` oder `max` für tiefste Sicherheitsanalysen).
-* `--architekt-effort <effort>` (oder `--planner-effort`): Spezifische Intensität für den Architekten.
+* `--pruefstatiker-effort <effort>`: Spezifische Prüf-Intensität für Antigravity (z.B. `high` oder `max` für tiefste Sicherheitsanalysen).
+* `--architekt-effort <effort>`: Spezifische Intensität für den Architekten.
+* `--bauer-effort <effort>`: Spezifische Intensität für den Bauleiter.
 
-**Beispiel mit Rollentausch, maximaler Prüf-Schärfe und Fragen-Modus:**
+**Beispiel mit maximaler Ersparnis und Fragen-Modus:**
 ```bash
-claudegravity --swap --pruefstatiker-effort max -i "Refaktoriere das Spielplan-Modul"
+claudegravity --strategy eco -i "Refaktoriere das Spielplan-Modul"
 ```
 
 ---
@@ -339,6 +375,60 @@ Wenn sich die KIs nach 2 Runden nicht einig sind, bricht das Tool ab und fragt d
 Drücke einfach einmal `Ctrl+C`. Das Programm beendet die aktuelle Runde sauber und sichert den Zwischenstand ab.
 
 ---
+
+### 15. ClaudeGravity MCP-Server & Universeller Optimierungs-Prompt (`mcp_server.py`)
+
+In diesem Repository ist ein eigenständiger, installationsfreier **MCP-Server** (`mcp_server.py`) enthalten. Er benötigt nur die Python Standard-Bibliothek (kein `pip install` nötig) und kommuniziert über den offiziellen JSON-RPC 2.0 Standard.
+
+#### 🛠️ Was kann der MCP-Server?
+1. `claudegravity_optimize`: Analysiert jede Aufgabe auf Komplexität (Refactoring, Architektur, Bugfix) und ermittelt die optimale Modell-, Rollen- und Effort-Kombination (für maximale Qualität oder bis zu 70% Kostenersparnis). Gibt den fertigen Shell-Befehl aus.
+2. `claudegravity_run`: Führt den optimierten Befehl direkt oder im Hintergrund aus.
+3. `claudegravity_info`: Zeigt alle installierten AI-CLIs und Setup-Empfehlungen.
+
+#### 🔌 Einbindung in Claude Code:
+Füge den Server mit einem Befehl zu deiner Claude Code Installation hinzu:
+```bash
+claude mcp add claudegravity -- python3 /home/gordon/Projekte/claudegravity-loop/mcp_server.py
+```
+
+#### 🔌 Einbindung in Antigravity / Cursor / Gemini (`mcp.json`):
+```json
+{
+  "mcpServers": {
+    "claudegravity": {
+      "command": "python3",
+      "args": ["/home/gordon/Projekte/claudegravity-loop/mcp_server.py"]
+    }
+  }
+}
+```
+
+#### 💻 Direkter Aufruf im Terminal (CLI-Optimizer):
+Du kannst den Optimizer auch direkt im Terminal aufrufen, ohne einen MCP-Client zu starten:
+```bash
+# Günstigste Variante (bis zu 70% Ersparnis durch Modell-Splitting):
+claudegravity-mcp --optimize "Refaktoriere Spielplan-Modul" --priority lowest-cost
+
+# Höchste Codequalität (Frontier-Modelle mit hohem Thinking):
+claudegravity-mcp --optimize "Baue ein sicheres Auth-Modul mit JWT" --priority best-code
+```
+
+#### 📋 Der Universelle Optimierungs-Prompt (Kopiervorlage):
+Kopiere diesen Prompt in ein beliebiges Chat-Fenster (Claude Code, Antigravity, ChatGPT), um für jede Aufgabe sofort den optimalen Einzeiler-Befehl zu erhalten:
+
+```markdown
+Du bist ein Experte für ClaudeGravity Loop. Analysiere folgende Programmieraufgabe und gib mir den optimalen claudegravity-Befehl aus:
+
+📌 Aufgabe: <HIER DEINE AUFGABE EINTRAGEN>
+🎯 Priorität: [best-code (höchste Qualität) | lowest-cost (bis zu 70% Ersparnis) | balanced (ausgewogen)]
+
+Beantworte kurz:
+1. Analyse: Warum lohnt sich bei dieser Aufgabe die Trennung von Planung (Architekt) und Bau (Bauleiter)?
+2. Rollenbelegung: Welche Modelle und Thinking-Efforts sind für Architekt, Prüfstatiker und Bauleiter ideal?
+3. Befehl: Gib den exakten, ausführbaren Shell-Befehl als Einzeiler aus.
+```
+
+---
 ---
 
 # 🇬🇧 English Documentation (For Beginners)
@@ -404,14 +494,6 @@ ln -sf ~/Projekte/claudegravity-loop/loop.py ~/.local/bin/claudegravity-loop
 
 ---
 
-### 4. Prerequisites & Verification (`--check`)
-
-You only need:
-1. **Python 3.10+** (preinstalled on Linux and macOS).
-2. At least two AI CLIs logged in on your system:
-   * **Claude Code** (`claude`)
-   * **Google Antigravity** (`agy`) or **Gemini CLI** (`gemini`)
-
 ### 4. Prerequisites & Verification (`--check` / `--info`)
 
 You only need:
@@ -433,9 +515,13 @@ claudegravity --check
 
 | Command | Description |
 | :--- | :--- |
-| `claudegravity --info` / `--check` | Verify installed AIs, default models, roles, and options |
+| `claudegravity --info` / `--check` | Verify installed AIs, default models, the 3 roles, and options |
 | `claudegravity "Task"` | Run task in the current folder (Claude = Architect, Antigravity = Inspector) |
-| `claudegravity --swap "Task"` | **Swap Roles:** Antigravity builds (Architect), Claude reviews (Inspector) |
+| `claudegravity --strategy eco "Task"` | **Eco Mode:** Cut up to 70% token costs by model splitting between plan and build |
+| `claudegravity --strategy best-code "Task"` | **Quality Mode:** Maximum code quality and deep thinking across all frontier models |
+| `claudegravity --dry-run "Task"` | **Dry Run:** Preview roles, models, cost analysis, and exact command without running |
+| `claudegravity --bauer-model haiku "Task"` | **Targeted Build Model:** Dedicated fast/cheap model for Phase 3 build loop |
+| `claudegravity --swap "Task"` | **Swap Roles:** Antigravity plans (Architect), Claude reviews (Inspector) |
 | `claudegravity -i "Task"` | **Interview Mode:** Both AIs ask clarifying questions if anything is ambiguous |
 | `claudegravity --effort max "Task"` | Set reasoning/thinking effort (`low` to `max`) |
 | `claudegravity --yolo "Task"` | **Autopilot:** Run hands-free with full tool permissions granted automatically |
@@ -521,9 +607,36 @@ Both agents will interact with you directly:
 
 ---
 
-### 9. Model Selection, Effort & Role Swapping (`--swap`, `--architekt`, `--pruefstatiker`)
+### 9. 3-Role Architecture, Model Splitting & Cost Economics (`--strategy`, `--bauer-model`, `--dry-run`)
 
-By default, the CLIs use their configured default models and effort. You can configure roles, models, and reasoning effort per task:
+Do planning and building have to be the exact same model? **No! In fact, separating them cuts up to 70% of your token costs and quota!**
+
+#### 💡 The Cost-Saving Economics (Plan vs. Build):
+* **Phase 1 (Architect) & Phase 2 (Inspector):** High cognitive complexity and reasoning, but consumes **only 10–15% of total session tokens** (~2,000 to 4,000 tokens for `PLAN.md` and `REVIEW.md`). Using a top-tier frontier model here (e.g. Claude 3.7 Sonnet / Opus or Gemini 2.5 Pro with high effort) ensures flawless system design without breaking the bank.
+* **Phase 3 (Autonomous Builder / Coder):** Heavy-duty lifting—reading large files, writing implementations, running test suites, resolving linters across multiple iterations. **Accounts for 85–90% of total tokens and API costs!**
+* **The Savings:** By offloading Phase 3 to a fast, cost-effective workhorse (e.g., `claude-3-5-haiku` or `gemini-2.5-flash`), you save **up to 70% in token costs and quota**, while the codebase still maintains the rock-solid architecture designed by the frontier models!
+
+```mermaid
+flowchart LR
+    subgraph P1["Phase 1 & 2: Cognitive Reasoning (~15% Tokens)"]
+        A["🏗️ Architect (Frontier Model)"] --> B["🧐 Inspector (Frontier Model)"]
+    end
+    subgraph P3["Phase 3: Execution & Code Writing (~85% Tokens)"]
+        B --> C["🔨 Builder (Fast Eco Model)"]
+        C --> D["✅ Tested Code (.done)"]
+    end
+```
+
+#### 🎯 Strategy Presets (`--strategy`):
+* `--strategy eco`: **Maximum Savings!** Frontier models for Plan & Review, ultra-fast eco model for Phase 3 (e.g. Haiku or Flash). Saves up to 70% quota!
+* `--strategy best-code`: **Maximum Quality!** All phases run on top-tier frontier models with high thinking effort.
+* `--strategy balanced`: **Balanced Default** (default setup).
+
+#### 🔍 Dry Run (`--dry-run`):
+Preview the assigned roles, models, and cost analysis without modifying any files:
+```bash
+claudegravity --dry-run "Refactor payment module" --strategy eco
+```
 
 #### 🔄 Swapping Roles (`--swap`):
 * Default: **Architect** = Claude Code (Plan & Build) | **Inspector** = Antigravity (Review & Audit)
@@ -531,22 +644,25 @@ By default, the CLIs use their configured default models and effort. You can con
   ```bash
   claudegravity --swap "Build an authentication service"
   ```
-  Now **Antigravity** acts as the Architect (Plan & Build), and **Claude Code** acts as the rigorous Inspector!
+  Now **Antigravity** acts as the Architect, and **Claude Code** acts as the rigorous Inspector!
 
 #### 🛠️ Explicitly Assigning AIs & Models:
-* `--architekt <claude|agy|gemini>` (or `--planner`): Assign the AI for drafting and implementation.
-* `--pruefstatiker <agy|claude|gemini>` (or `--reviewer`): Assign the AI for independent review.
-* `--architekt-model <name>` (or `--planner-model`): Model for the Architect (e.g., `sonnet`, `opus`, `gemini-2.5-pro`).
-* `--pruefstatiker-model <name>` (or `--reviewer-model`): Model for the Inspector (e.g., `gemini-2.5-pro`, `sonnet`, `gemini-3.8-flash-high`).
+* `--architekt <claude|agy|gemini>` (or `--planner`): AI for drafting (Phase 1).
+* `--pruefstatiker <agy|claude|gemini>` (or `--reviewer`): AI for independent review (Phase 2).
+* `--bauer <claude|agy|gemini>` (or `--builder`): AI for implementation (Phase 3).
+* `--architekt-model <name>`: Model for the Architect (e.g. `sonnet`, `opus`, `gemini-2.5-pro`).
+* `--pruefstatiker-model <name>`: Model for the Inspector (e.g. `gemini-2.5-pro`, `sonnet`).
+* `--bauer-model <name>`: Model for the Builder (e.g. `claude-3-5-haiku`, `gemini-2.5-flash`).
 
 #### 🧠 Reasoning Effort (Thinking Intensity):
 * `--effort <low|medium|high|xhigh|max>`: Global thinking effort.
-* `--pruefstatiker-effort <effort>` (or `--reviewer-effort`): Specific reasoning effort for the Inspector (e.g., `high` or `max` for thorough security auditing).
-* `--architekt-effort <effort>` (or `--planner-effort`): Specific reasoning effort for the Architect.
+* `--pruefstatiker-effort <effort>`: Specific reasoning effort for the Inspector.
+* `--architekt-effort <effort>`: Specific reasoning effort for the Architect.
+* `--bauer-effort <effort>`: Specific reasoning effort for the Builder.
 
-**Example with swapped roles, max inspector effort, and interview mode:**
+**Example with maximum savings and interview mode:**
 ```bash
-claudegravity --swap --pruefstatiker-effort max -i "Refactor payment module"
+claudegravity --strategy eco -i "Refactor payment module"
 ```
 
 ---
@@ -645,6 +761,60 @@ To prevent token waste, reviews are capped at 2 rounds. If disagreement persists
 
 **How do I safely stop a running loop?**  
 Press `Ctrl+C` once. The runner cleanly wraps up the current step and saves the state so you can resume later.
+
+---
+
+### 15. ClaudeGravity MCP Server & Universal Optimization Prompt (`mcp_server.py`)
+
+This repository includes a standalone, zero-dependency **MCP Server** (`mcp_server.py`). It requires only the Python standard library (no `pip install` needed) and speaks the official JSON-RPC 2.0 stdio protocol.
+
+#### 🛠️ Available MCP Tools:
+1. `claudegravity_optimize`: Analyzes task complexity (refactoring, architecture, bugfix) and calculates the optimal model, role, and effort configuration (for highest quality or up to 70% cost savings). Outputs the ready-to-execute shell command.
+2. `claudegravity_run`: Executes the optimized command directly or detached in the background.
+3. `claudegravity_info`: Inspects system CLIs and status.
+
+#### 🔌 Connecting to Claude Code:
+Add the server with a single command to your Claude Code setup:
+```bash
+claude mcp add claudegravity -- python3 /home/gordon/Projekte/claudegravity-loop/mcp_server.py
+```
+
+#### 🔌 Connecting to Antigravity / Cursor / Gemini (`mcp.json`):
+```json
+{
+  "mcpServers": {
+    "claudegravity": {
+      "command": "python3",
+      "args": ["/home/gordon/Projekte/claudegravity-loop/mcp_server.py"]
+    }
+  }
+}
+```
+
+#### 💻 Direct Terminal Usage (CLI Optimizer):
+You can also run the optimizer directly from your shell without an MCP client:
+```bash
+# Maximum economy (up to 70% savings via model splitting):
+claudegravity-mcp --optimize "Refactor payment module" --priority lowest-cost
+
+# Maximum code quality (frontier models with deep reasoning):
+claudegravity-mcp --optimize "Build JWT auth module with tests" --priority best-code
+```
+
+#### 📋 Universal Optimization Prompt (Copy & Paste):
+Copy and paste this prompt into any AI chat (Claude Code, Antigravity, ChatGPT) to instantly generate the optimal one-liner command:
+
+```markdown
+You are an expert on ClaudeGravity Loop. Analyze the following programming task and generate the optimal claudegravity command:
+
+📌 Task: <ENTER YOUR TASK HERE>
+🎯 Priority: [best-code (highest quality) | lowest-cost (up to 70% savings) | balanced (default)]
+
+Briefly answer:
+1. Analysis: Why does splitting Planning (Architect) and Building (Builder) save up to 70% token costs for this task?
+2. Role Assignment: Which models and thinking effort levels are ideal for Architect, Inspector, and Builder?
+3. Command: Output the exact, executable one-liner shell command.
+```
 
 ---
 

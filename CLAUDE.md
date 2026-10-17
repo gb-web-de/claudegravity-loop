@@ -6,6 +6,7 @@ Er basiert auf dem Prinzip des [claudex-loop](https://github.com/chaseai-yt/clau
 
 ## Architektur
 - `loop.py`: Haupt-CLI-Runner (benötigt nur Python 3.10+ Standardbibliothek).
+- `mcp_server.py`: Eigenständiger MCP-Server (JSON-RPC 2.0 stdio) & CLI-Optimizer für automatisierte Modell- & Rollenwahl.
 - `.dual-loop/`: Git-ignorierter Arbeitsordner. Enthält ausschließlich den Unterordner `sessions/` (alle Pläne, Reviews und Logs sind aufgabenspezifisch darin isoliert).
 - `projects/`: Ordner für gespiegelte Projekte (wie in der Claude UI).
   - Jedes Unterprojekt kann eine eigene `CLAUDE.md` und einen Ordner `knowledge/` besitzen.

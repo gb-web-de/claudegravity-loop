@@ -177,8 +177,10 @@ class SessionMetrics:
         self.total_tokens += total_tokens
         self.cost_usd += cost_usd
 
-        if agent_name not in self.by_agent:
-            self.by_agent[agent_name] = {
+        tracker_key = f"{role} [{agent_name}]" if role else agent_name
+        if tracker_key not in self.by_agent:
+            self.by_agent[tracker_key] = {
+                "agent_name": agent_name,
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "total_tokens": 0,
@@ -188,7 +190,7 @@ class SessionMetrics:
                 "effort": effort or "",
             }
 
-        entry = self.by_agent[agent_name]
+        entry = self.by_agent[tracker_key]
         entry["input_tokens"] += input_tokens
         entry["output_tokens"] += output_tokens
         entry["total_tokens"] += total_tokens
@@ -231,13 +233,14 @@ def format_metrics_report(metrics: SessionMetrics) -> str:
         f"  * **Input-Tokens:** {metrics.input_tokens:,}",
         f"  * **Output-Tokens:** {metrics.output_tokens:,}",
         f"* **Entstandene Kosten (geschätzt):** ~${metrics.cost_usd:.4f} USD",
-        "* **Aufschlüsselung nach Agent, Rolle, Modell & Effort:**"
+        "* **Aufschlüsselung nach Rolle, Agent, Modell & Effort:**"
     ]
     if metrics.by_agent:
-        for agent_name, usage in metrics.by_agent.items():
-            lines.append(f"  * **{agent_name}**")
-            if usage.get("role"):
-                lines.append(f"    * **Rolle:** {usage['role']}")
+        for tracker_key, usage in metrics.by_agent.items():
+            role_str = usage.get("role")
+            agent_str = usage.get("agent_name", tracker_key)
+            title = f"{role_str} ({agent_str})" if role_str else agent_str
+            lines.append(f"  * **{title}**")
             if usage.get("model"):
                 lines.append(f"    * **Modell:** `{usage['model']}`")
             if usage.get("effort"):
@@ -314,6 +317,28 @@ class AgentCLI:
                     effort=used_effort
                 )
         return text
+
+
+def create_agent(
+    binary: str,
+    agents: dict[str, AgentCLI],
+    role: str = "Architekt",
+    model: str | None = None,
+    effort: str | None = None,
+    metrics_tracker: SessionMetrics | None = None
+) -> AgentCLI:
+    base = agents.get(binary)
+    if not base:
+        raise ValueError(f"Agent-CLI '{binary}' ist nicht verfügbar.")
+    return AgentCLI(
+        name=base.name,
+        binary=base.binary,
+        run_fn=base.run_fn,
+        metrics_tracker=metrics_tracker,
+        role=role,
+        model=model,
+        effort=effort
+    )
 
 
 def _exec_cli(binary: str, args: list[str], cwd: Path | None = None) -> str:
@@ -672,10 +697,18 @@ def safe_agent_run(
         except RateLimitError as err:
             action, new_agent = handle_rate_limit(agent, agents, err, session_dir, state, auto_switch=auto_switch)
             if action == "switch" and new_agent:
-                role_label = "Architekt" if role == "planner" else "Prüfstatiker"
+                if role == "builder":
+                    role_label = "Bauleiter"
+                    role_title = "🔨 Bauleiter (Bau & Umsetzung)"
+                elif role == "planner":
+                    role_label = "Architekt"
+                    role_title = "🏗️ Architekt (Planung & Entwurf)"
+                else:
+                    role_label = "Prüfstatiker"
+                    role_title = "🧐 Prüfstatiker (Prüfung & Review)"
                 print(f"🔄 Rolle '{role_label}' wechselt zu {new_agent.name}!")
                 agent = new_agent
-                agent.role = "🏗️ Architekt (Planung & Bau)" if role == "planner" else "🧐 Prüfstatiker (Prüfung & Review)"
+                agent.role = role_title
                 if metrics_tracker:
                     agent.metrics_tracker = metrics_tracker
                 flags = get_permission_flags(new_agent.binary)
@@ -1028,7 +1061,7 @@ def handle_plan_approval_and_changes(
 
         elif choice in ["3", "swap", "s"]:
             planner, reviewer = reviewer, planner
-            planner.role = "🏗️ Architekt (Planung & Bau)"
+            planner.role = "🏗️ Architekt (Planung & Entwurf)"
             reviewer.role = "🧐 Prüfstatiker (Prüfung & Review)"
 
             yolo_active = state.get("yolo_enabled", False)
@@ -1048,7 +1081,7 @@ def handle_plan_approval_and_changes(
             state["reviewer_binary"] = reviewer.binary
             save_session_state(session_dir, state)
             print(f"\n🔄 Rollen erfolgreich getauscht:")
-            print(f"   🏗️ Neuer Architekt (Planung & Bau)    : {planner.name}")
+            print(f"   🏗️ Neuer Architekt (Planung & Entwurf): {planner.name}")
             print(f"   🧐 Neuer Prüfstatiker (Prüfung & Review): {reviewer.name}")
             continue
 
@@ -1153,14 +1186,19 @@ def main():
     parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Maximale autonome Iterationen (Standard: 10)")
     parser.add_argument("-c", "--resume", "--continue", dest="resume", action="store_true", help="Unterbrochene Sitzung fortsetzen")
     parser.add_argument("-i", "--ask", "--interview", "--clarify", action="store_true", help="Fragen-Modus: Beide Agenten stellen bei Unklarheiten gezielte Fragen an dich, bevor der Plan finalisiert wird")
-    parser.add_argument("--planner", "--architekt", default=None, help="Explizite CLI für Architekt / Bau (z.B. claude oder agy)")
+    parser.add_argument("--planner", "--architekt", default=None, help="Explizite CLI für Architekt / Planung (z.B. claude oder agy)")
     parser.add_argument("--reviewer", "--pruefstatiker", default=None, help="Explizite CLI für Prüfstatiker / Review (z.B. agy oder claude)")
-    parser.add_argument("--swap", "--swap-roles", "--reverse", action="store_true", help="Rollen tauschen: Antigravity wird Architekt (Bau), Claude wird Prüfstatiker (Review)")
+    parser.add_argument("--builder", "--bauer", default=None, help="Explizite CLI für Bauleiter / Umsetzung (Phase 3, z.B. claude oder agy, Standard: folgt Architekt)")
+    parser.add_argument("--swap", "--swap-roles", "--reverse", action="store_true", help="Rollen tauschen: Antigravity wird Architekt (Planung), Claude wird Prüfstatiker (Review)")
     parser.add_argument("--planner-model", "--architekt-model", default=None, help="Modell für den Architekten (z.B. sonnet, opus, gemini-2.5-pro)")
     parser.add_argument("--reviewer-model", "--pruefstatiker-model", default=None, help="Modell für den Prüfstatiker (z.B. gemini-2.5-pro, sonnet, opus)")
+    parser.add_argument("--builder-model", "--bauer-model", default=None, help="Modell für den Bauleiter in Phase 3 (z.B. claude-3-5-haiku, gemini-2.5-flash, sonnet)")
     parser.add_argument("--effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität / Thinking Effort (für agy)")
     parser.add_argument("--reviewer-effort", "--pruefstatiker-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Prüfstatiker (für agy)")
     parser.add_argument("--planner-effort", "--architekt-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Architekten (falls agy)")
+    parser.add_argument("--builder-effort", "--bauer-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität für den Bauleiter in Phase 3 (für agy)")
+    parser.add_argument("--strategy", "--preset", default="balanced", choices=["best-code", "quality", "eco", "economy", "cost", "balanced"], help="Optimierungs-Strategie: best-code (beste Qualität), eco (geringste Kosten / bis zu 70%% Ersparnis), balanced (ausgewogen, Standard)")
+    parser.add_argument("--dry-run", action="store_true", help="Trockenlauf: Zeigt Rollen, Modelle, Kosten-Analyse und generierten Befehl ohne Ausführung")
     parser.add_argument("--auto-switch", "--fallback", action="store_true", help="Bei Erreichen eines AI-Limits automatisch zum alternativen Modell wechseln")
     parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
     parser.add_argument("--check", "--info", action="store_true", help="Installierte AI-CLIs, Standard-Modelle und Rollenkonfiguration anzeigen")
@@ -1177,24 +1215,39 @@ def main():
         print("\n" + "=" * 68)
         print("🎯 Standard-Belegung (wenn NICHTS explizit angegeben wird):")
         print("=" * 68)
-        print("1. 🏗️ Architekt (Planung & Bau / Implementation):")
+        print("1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
         print("   • CLI           : Claude Code (`claude`)")
         print("   • Standardmodell: Claude Sonnet 5 / 3.7 Sonnet (CLI-Default)")
         print("   • Thinking-Effort: high (CLI-Default)")
-        print("   • Rolle im Loop : Entwirft den Plan (Phase 1) & baut den Code (Phase 3)")
-        print("\n2. 🧐 Prüfstatiker (Prüfung & Review / Stresstest):")
+        print("   • Aufgabe       : Entwirft den Plan (Phase 1) [nur ~10-15% aller Tokens]")
+        print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
         print("   • CLI           : Google Antigravity (`agy`)")
         print("   • Standardmodell: Gemini 4 Argon / Gemini 2.5 Pro (CLI-Default)")
         print("   • Thinking-Effort: high (CLI-Default)")
-        print("   • Rolle im Loop : Grillt den Plan unabhängig auf Schwachstellen (Phase 2)")
+        print("   • Aufgabe       : Grillt den Plan unabhängig auf Schwachstellen (Phase 2) [nur ~5-10% aller Tokens]")
+        print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
+        print("   • CLI           : Folgt dem Architekten (oder separat via --bauer / --builder)")
+        print("   • Standardmodell: Folgt dem Architekten (oder Sparmodell via --bauer-model)")
+        print("   • Thinking-Effort: CLI-Default (oder steuerbar via --bauer-effort)")
+        print("   • Aufgabe       : Setzt den Plan autonom im Code um [verbraucht ~80-90% aller Tokens!]")
+        print("=" * 68)
+        print("\n💡 Kostenspar-Tipp (Warum Planung & Bau trennen?):")
+        print("  Planung & Prüfung benötigen hohes Denkvermögen, aber wenige Tokens.")
+        print("  Der Bau-Loop (Phase 3) verbraucht fast das gesamte Kontingent!")
+        print("  Mit '--strategy eco' oder '--bauer-model claude-3-5-haiku / gemini-2.5-flash'")
+        print("  sparst du bis zu 70% deiner Token-Kosten bei maximaler Architektur-Qualität!")
         print("=" * 68)
         print("\n⚙️  Rollen- und Modell-Steuerung (Anpassungen per Flag):")
+        print("  - Strategie-Presets      : --strategy <best-code|eco|balanced> (eco = bis zu 70% günstiger)")
+        print("  - Trockenlauf            : --dry-run (zeigt Rollen, Modelle & Befehl ohne Ausführung)")
         print("  - Rollen umkehren        : --swap / --swap-roles (Antigravity = Architekt, Claude = Prüfstatiker)")
         print("  - Architekt festlegen    : --architekt / --planner <claude|agy|gemini|codex>")
         print("  - Prüfstatiker festlegen : --pruefstatiker / --reviewer <agy|claude|gemini|codex>")
-        print("  - Architekt-Modell       : --architekt-model / --planner-model <name> (z.B. sonnet, gemini-4-argon-high)")
-        print("  - Prüfstatiker-Modell    : --pruefstatiker-model / --reviewer-model <name> (z.B. gemini-4-argon-high, sonnet)")
-        print("  - Reasoning-Effort       : --effort <low|medium|high|xhigh|max> (oder --pruefstatiker-effort / --architekt-effort)")
+        print("  - Bauleiter festlegen    : --bauer / --builder <claude|agy|gemini|codex>")
+        print("  - Architekt-Modell       : --architekt-model / --planner-model <name> (z.B. sonnet, gemini-2.5-pro)")
+        print("  - Prüfstatiker-Modell    : --pruefstatiker-model / --reviewer-model <name> (z.B. gemini-2.5-pro, sonnet)")
+        print("  - Bauleiter-Modell       : --bauer-model / --builder-model <name> (z.B. claude-3-5-haiku, gemini-2.5-flash)")
+        print("  - Reasoning-Effort       : --effort / --pruefstatiker-effort / --architekt-effort / --bauer-effort")
         print("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Kontingentlimit nahtlos zum Alternativmodell)")
         print("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
         print("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert inkl. Rolle, Modell & Effort)")
@@ -1207,6 +1260,138 @@ def main():
     project_path = Path(args.project).resolve()
     if not project_path.exists():
         sys.exit(f"Fehler: Projektordner '{project_path}' existiert nicht.")
+
+    if args.dry_run:
+        dry_task = args.task or "Refaktoriere das Modul und erstelle Unit-Tests"
+        swap_roles = args.swap
+        architekt_choice = args.planner
+        pruefstatiker_choice = args.reviewer
+
+        if swap_roles:
+            if not architekt_choice and "agy" in agents:
+                architekt_choice = "agy"
+            elif not architekt_choice and "gemini" in agents:
+                architekt_choice = "gemini"
+            if not pruefstatiker_choice and "claude" in agents:
+                pruefstatiker_choice = "claude"
+
+        if architekt_choice and architekt_choice in agents:
+            planner = agents[architekt_choice]
+        elif "claude" in agents and not swap_roles:
+            planner = agents["claude"]
+        else:
+            planner = list(agents.values())[0]
+
+        remaining = [a for k, a in agents.items() if a.binary != planner.binary]
+        if pruefstatiker_choice and pruefstatiker_choice in agents:
+            reviewer = agents[pruefstatiker_choice]
+        elif remaining:
+            agy_cand = [a for a in remaining if a.binary == "agy"]
+            reviewer = agy_cand[0] if agy_cand else remaining[0]
+        else:
+            reviewer = planner
+
+        if swap_roles and not args.planner and not args.reviewer:
+            if planner.binary == "claude" and reviewer.binary == "agy":
+                planner, reviewer = reviewer, planner
+
+        builder_choice = args.builder or planner.binary
+        builder = agents.get(builder_choice, planner)
+
+        # Strategy
+        strat = (args.strategy or "balanced").lower()
+        if strat in ["quality", "best"]:
+            strat = "best-code"
+        elif strat in ["economy", "cost"]:
+            strat = "eco"
+
+        default_p_effort = None
+        default_r_effort = None
+        default_b_effort = None
+        default_b_model = None
+
+        if strat == "best-code":
+            default_p_effort = "high"
+            default_r_effort = "high"
+            default_b_effort = "high"
+        elif strat == "eco":
+            default_p_effort = "medium"
+            default_r_effort = "medium"
+            default_b_effort = "low"
+            default_b_model = "claude-3-5-haiku" if builder.binary == "claude" else "gemini-2.5-flash"
+        else:
+            default_p_effort = "high" if planner.binary == "agy" else None
+            default_r_effort = "high" if reviewer.binary == "agy" else None
+
+        p_model = args.planner_model or ("claude-sonnet (CLI Default)" if planner.binary == "claude" else ("gemini-2.5-pro (CLI Default)" if planner.binary in ["agy", "gemini"] else "CLI Default"))
+        p_effort = args.planner_effort or args.effort or default_p_effort or ("high (CLI Default)" if planner.binary == "agy" else None)
+
+        r_model = args.reviewer_model or ("gemini-2.5-pro (CLI Default)" if reviewer.binary in ["agy", "gemini"] else ("claude-sonnet (CLI Default)" if reviewer.binary == "claude" else "CLI Default"))
+        r_effort = args.reviewer_effort or args.effort or default_r_effort or ("high (CLI Default)" if reviewer.binary == "agy" else None)
+
+        b_model = args.builder_model or default_b_model or p_model
+        b_effort = args.builder_effort or default_b_effort or ("CLI Default" if builder.binary == "agy" else None)
+
+        print("\n" + "=" * 68)
+        print("🔍 ClaudeGravity Loop — Trockenlauf (Dry Run)")
+        print("=" * 68)
+        print(f"📌 Aufgabe        : {dry_task}")
+        print(f"🎯 Strategie      : {strat.upper()}")
+        print(f"📁 Ziel-Projekt   : {project_path}")
+        print("\n1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
+        print(f"   • CLI           : {planner.name} (`{planner.binary}`)")
+        print(f"   • Modell        : {p_model}")
+        print(f"   • Effort        : {p_effort or 'Standard'}")
+        print(f"   • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)")
+        print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
+        print(f"   • CLI           : {reviewer.name} (`{reviewer.binary}`)")
+        print(f"   • Modell        : {r_model}")
+        print(f"   • Effort        : {r_effort or 'Standard'}")
+        print(f"   • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)")
+        print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
+        print(f"   • CLI           : {builder.name} (`{builder.binary}`)")
+        print(f"   • Modell        : {b_model}")
+        print(f"   • Effort        : {b_effort or 'Standard'}")
+        print(f"   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)")
+        print("\n💡 Wirtschaftlichkeits- & Qualitäts-Analyse:")
+        if strat == "eco":
+            print(f"   • Spareffekt: Bis zu ~70% Kosten- und Tokenersparnis!")
+            print(f"   • Grund: Phase 1 & 2 nutzen solide Architekturplanung. Das ressourcenintensive")
+            print(f"     Bauen in Phase 3 wird an das Spar-Modell `{b_model}` delegiert.")
+        elif strat == "best-code":
+            print(f"   • Fokus: Höchste Code-Qualität, tiefes Reasoning und maximale Fehlertoleranz.")
+            print(f"   • Alle Phasen laufen auf Flaggschiff-Modellen mit hohem Reasoning.")
+        else:
+            print(f"   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
+
+        cmd_parts = ["claudegravity", f'"{dry_task}"']
+        if strat != "balanced":
+            cmd_parts.append(f"--strategy {strat}")
+        if args.planner_model:
+            cmd_parts.append(f"--architekt-model {args.planner_model}")
+        if args.reviewer_model:
+            cmd_parts.append(f"--pruefstatiker-model {args.reviewer_model}")
+        if args.builder_model:
+            cmd_parts.append(f"--bauer-model {args.builder_model}")
+        elif default_b_model:
+            cmd_parts.append(f"--bauer-model {default_b_model}")
+        if args.effort:
+            cmd_parts.append(f"--effort {args.effort}")
+        if args.swap:
+            cmd_parts.append("--swap")
+        if args.ask:
+            cmd_parts.append("-i")
+        if args.yolo:
+            cmd_parts.append("--yolo")
+        if args.auto_switch:
+            cmd_parts.append("--auto-switch")
+        if args.project != ".":
+            cmd_parts.append(f"-p {args.project}")
+
+        print("\n🚀 Generierter Shell-Befehl (zum Starten):")
+        print(f"   {' '.join(cmd_parts)}")
+        print("=" * 68)
+        return
 
     loop_dir = project_path / ".dual-loop"
     loop_dir.mkdir(exist_ok=True)
@@ -1291,51 +1476,82 @@ def main():
             pruefstatiker_choice = "claude"
 
     if architekt_choice and architekt_choice in agents:
-        planner = agents[architekt_choice]
+        planner_base = agents[architekt_choice]
     elif "claude" in agents and not swap_roles:
-        planner = agents["claude"]
+        planner_base = agents["claude"]
     else:
-        planner = list(agents.values())[0]
+        planner_base = list(agents.values())[0]
 
-    remaining = [a for k, a in agents.items() if a.binary != planner.binary]
+    remaining = [a for k, a in agents.items() if a.binary != planner_base.binary]
     if pruefstatiker_choice and pruefstatiker_choice in agents:
-        reviewer = agents[pruefstatiker_choice]
+        reviewer_base = agents[pruefstatiker_choice]
     elif remaining:
         agy_cand = [a for a in remaining if a.binary == "agy"]
-        reviewer = agy_cand[0] if agy_cand else remaining[0]
+        reviewer_base = agy_cand[0] if agy_cand else remaining[0]
     else:
-        reviewer = planner
+        reviewer_base = planner_base
 
     if swap_roles and not args.planner and not args.reviewer:
-        if planner.binary == "claude" and reviewer.binary == "agy":
-            planner, reviewer = reviewer, planner
+        if planner_base.binary == "claude" and reviewer_base.binary == "agy":
+            planner_base, reviewer_base = reviewer_base, planner_base
 
-    planner.role = "🏗️ Architekt (Planung & Bau)"
-    reviewer.role = "🧐 Prüfstatiker (Prüfung & Review)"
+    builder_choice = args.builder or state.get("builder_binary") or planner_base.binary
+    builder_base = agents.get(builder_choice, planner_base)
 
     # ==========================================
     # Metriken (Token & Kosten-Tracking)
     # ==========================================
     session_metrics = SessionMetrics.from_dict(state.get("metrics"))
-    planner.metrics_tracker = session_metrics
-    reviewer.metrics_tracker = session_metrics
+
+    planner = create_agent(planner_base.binary, agents, role="🏗️ Architekt (Planung & Entwurf)", metrics_tracker=session_metrics)
+    reviewer = create_agent(reviewer_base.binary, agents, role="🧐 Prüfstatiker (Prüfung & Review)", metrics_tracker=session_metrics)
+    builder = create_agent(builder_base.binary, agents, role="🔨 Bauleiter (Bau & Umsetzung)", metrics_tracker=session_metrics)
 
     # ==========================================
     # Rechte-, Modell- & Effort-Steuerung
     # ==========================================
     planner_perm_flags = []
     reviewer_perm_flags = []
+    builder_perm_flags = []
     yolo_active = args.yolo or state.get("yolo_enabled", False)
 
     if yolo_active:
         planner_perm_flags = get_permission_flags(planner.binary)
         reviewer_perm_flags = get_permission_flags(reviewer.binary)
+        builder_perm_flags = get_permission_flags(builder.binary)
         state["yolo_enabled"] = True
         save_session_state(session_dir, state)
         print(f"🔓 YOLO-Modus aktiv: Volle Tool- & Schreibrechte erteilt ({' '.join(planner_perm_flags)}).")
 
     planner_flags = list(planner_perm_flags)
     reviewer_flags = list(reviewer_perm_flags)
+    builder_flags = list(builder_perm_flags)
+
+    # Strategie auflösen
+    strat = (args.strategy or state.get("strategy") or "balanced").lower()
+    if strat in ["quality", "best"]:
+        strat = "best-code"
+    elif strat in ["economy", "cost"]:
+        strat = "eco"
+    state["strategy"] = strat
+
+    default_p_effort = None
+    default_r_effort = None
+    default_b_effort = None
+    default_b_model = None
+
+    if strat == "best-code":
+        default_p_effort = "high"
+        default_r_effort = "high"
+        default_b_effort = "high"
+    elif strat == "eco":
+        default_p_effort = "medium"
+        default_r_effort = "medium"
+        default_b_effort = "low"
+        default_b_model = "claude-3-5-haiku" if builder.binary == "claude" else "gemini-2.5-flash"
+    else:  # balanced
+        default_p_effort = "high" if planner.binary == "agy" else None
+        default_r_effort = "high" if reviewer.binary == "agy" else None
 
     # Modell für Architekt
     planner_model = args.planner_model or state.get("planner_model")
@@ -1346,8 +1562,7 @@ def main():
     else:
         planner.model = "claude-sonnet (CLI Default)" if planner.binary == "claude" else ("gemini-2.5-pro (CLI Default)" if planner.binary in ["agy", "gemini"] else "CLI Default")
 
-    # Effort für Architekt (falls agy)
-    p_effort = args.planner_effort or args.effort or state.get("planner_effort")
+    p_effort = args.planner_effort or args.effort or state.get("planner_effort") or default_p_effort
     if p_effort:
         if planner.binary == "agy":
             planner_flags.extend(["--effort", p_effort])
@@ -1365,8 +1580,7 @@ def main():
     else:
         reviewer.model = "gemini-2.5-pro (CLI Default)" if reviewer.binary in ["agy", "gemini"] else ("claude-sonnet (CLI Default)" if reviewer.binary == "claude" else "CLI Default")
 
-    # Effort für Prüfstatiker (falls agy)
-    r_effort = args.reviewer_effort or args.effort or state.get("reviewer_effort")
+    r_effort = args.reviewer_effort or args.effort or state.get("reviewer_effort") or default_r_effort
     if r_effort:
         if reviewer.binary == "agy":
             reviewer_flags.extend(["--effort", r_effort])
@@ -1374,6 +1588,24 @@ def main():
         reviewer.effort = r_effort
     else:
         reviewer.effort = "high (CLI Default)" if reviewer.binary == "agy" else None
+
+    # Modell für Bauleiter (Phase 3)
+    builder_model = args.builder_model or state.get("builder_model") or default_b_model
+    if builder_model:
+        builder_flags.extend(["--model", builder_model])
+        state["builder_model"] = builder_model
+        builder.model = builder_model
+    else:
+        builder.model = planner.model
+
+    b_effort = args.builder_effort or state.get("builder_effort") or default_b_effort
+    if b_effort:
+        if builder.binary == "agy":
+            builder_flags.extend(["--effort", b_effort])
+        state["builder_effort"] = b_effort
+        builder.effort = b_effort
+    else:
+        builder.effort = planner.effort if builder.binary == planner.binary else ("CLI Default" if builder.binary == "agy" else None)
 
     # Auto-Switch Modus
     auto_switch = args.auto_switch or state.get("auto_switch", False)
@@ -1389,6 +1621,7 @@ def main():
     print(f"\n=======================================================")
     print(f"[*] ClaudeGravity Loop gestartet")
     print(f"[*] Ziel-Projekt      : {project_path}")
+    print(f"[*] Strategie         : {strat.upper()}")
     p_info = f"{planner.name}"
     if planner.model:
         p_info += f" (Modell: {planner.model})"
@@ -1402,6 +1635,13 @@ def main():
     if reviewer.effort:
         r_info += f" [Effort: {reviewer.effort}]"
     print(f"[*] 🧐 Prüfstatiker   : {r_info}")
+
+    b_info = f"{builder.name}"
+    if builder.model:
+        b_info += f" (Modell: {builder.model})"
+    if builder.effort:
+        b_info += f" [Effort: {builder.effort}]"
+    print(f"[*] 🔨 Bauleiter      : {b_info}")
 
     if ask_mode:
         print(f"[*] Modus             : ❓ Fragen-Modus aktiv (--ask)")
@@ -1458,19 +1698,30 @@ def main():
         state["user_approved"] = True
         save_session_state(session_dir, state)
 
+    if not args.builder:
+        # Falls kein separater Bauleiter gesetzt ist, baut der freigegebene Architekt
+        builder = create_agent(
+            planner.binary,
+            agents,
+            role="🔨 Bauleiter (Bau & Umsetzung)",
+            model=builder_model,
+            effort=b_effort,
+            metrics_tracker=session_metrics
+        )
+
     # Falls YOLO noch nicht aktiv war, vor Phase 3 fragen
     if not yolo_active:
         try:
             print("\n⚙️  Berechtigungs-Prüfung für Phase 3 (Implementierung):")
-            perm_ans = input(f"Soll {planner.name} volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(planner.binary))})? [J/n]: ")
+            perm_ans = input(f"Soll 🔨 Bauleiter ({builder.name}) volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(builder.binary))})? [J/n]: ")
             if perm_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:
-                planner_perm_flags = get_permission_flags(planner.binary)
-                for f in planner_perm_flags:
-                    if f not in planner_flags:
-                        planner_flags.insert(0, f)
+                builder_perm_flags = get_permission_flags(builder.binary)
+                for f in builder_perm_flags:
+                    if f not in builder_flags:
+                        builder_flags.insert(0, f)
                 state["yolo_enabled"] = True
                 save_session_state(session_dir, state)
-                print(f"🔓 Schreibberechtigung aktiviert ({' '.join(planner_perm_flags)}).")
+                print(f"🔓 Schreibberechtigung aktiviert ({' '.join(builder_perm_flags)}).")
             else:
                 print("🔒 Eingeschränkter Modus: Bestätigung bei jedem Tool-Call erforderlich.")
         except (EOFError, KeyboardInterrupt):
@@ -1484,8 +1735,8 @@ def main():
     session_log = logs_dir / f"loop_{session_dir.name}.log"
 
     print(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {project_path}...")
-    p_build_desc = f"{planner.name}" + (f" (`{planner.model}`)" if planner.model else "") + (f" [{planner.effort}]" if planner.effort else "")
-    print(f"🏗️ Ausführender Architekt: {p_build_desc}")
+    b_build_desc = f"{builder.name}" + (f" (`{builder.model}`)" if builder.model else "") + (f" [{builder.effort}]" if builder.effort else "")
+    print(f"🔨 Ausführender Bauleiter: {b_build_desc}")
     start_iter = state.get("last_iteration", 0) + 1
     max_iters = args.max_iterations
 
@@ -1520,20 +1771,20 @@ def main():
         )
 
         try:
-            print(f"⏳ Warte auf 🏗️ Architekt ({planner.name}) (führt genehmigten Plan aus)...", flush=True)
-            res, planner, planner_flags = safe_agent_run(
-                agent=planner,
+            print(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) (führt genehmigten Plan aus)...", flush=True)
+            res, builder, builder_flags = safe_agent_run(
+                agent=builder,
                 prompt=prompt_build,
                 cwd=project_path,
-                flags=planner_flags,
+                flags=builder_flags,
                 agents=agents,
                 session_dir=session_dir,
                 state=state,
                 auto_switch=auto_switch,
-                role="planner",
+                role="builder",
                 metrics_tracker=session_metrics
             )
-            print(f"\n📋 Zusammenfassung von 🏗️ Architekt ({planner.name}) [Iteration {iteration}]:")
+            print(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [Iteration {iteration}]:")
             print(res)
 
             with open(session_log, "a", encoding="utf-8") as f_log:

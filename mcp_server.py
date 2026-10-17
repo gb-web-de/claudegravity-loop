@@ -1,0 +1,572 @@
+#!/usr/bin/env python3
+"""
+ClaudeGravity MCP Server & Command Optimizer
+Zero-dependency JSON-RPC 2.0 stdio Model Context Protocol (MCP) server for Claude Code, Antigravity, and AI assistants.
+Analyzes tasks, selects optimal model pairings (Architekt, Prüfstatiker, Bauleiter),
+minimizes token costs by up to 70%, and outputs/executes the optimal claudegravity command.
+
+Usage:
+  - As MCP Server (stdio): python3 mcp_server.py
+  - As CLI Optimizer:      python3 mcp_server.py --optimize "Task description" [--priority best-code|lowest-cost|balanced]
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+MCP_PROTOCOL_VERSION = "2024-11-05"
+SERVER_NAME = "claudegravity-mcp"
+SERVER_VERSION = "1.0.0"
+
+
+def detect_installed_agents() -> dict[str, str]:
+    agents = {}
+    if shutil.which("claude"):
+        agents["claude"] = "Claude Code"
+    if shutil.which("agy"):
+        agents["agy"] = "Google Antigravity (agy)"
+    if shutil.which("gemini"):
+        agents["gemini"] = "Gemini CLI"
+    if shutil.which("codex"):
+        agents["codex"] = "Codex CLI"
+    return agents
+
+
+def analyze_task_complexity(task: str) -> dict:
+    t_lower = task.lower()
+    is_refactor = any(w in t_lower for w in ["refactor", "refaktoriere", "umbau", "restrukturier", "clean up", "aufräumen"])
+    is_security = any(w in t_lower for w in ["secur", "sicher", "auth", "token", "login", "vulnerability", "lücke", "passw"])
+    is_architectural = any(w in t_lower for w in ["architekt", "migration", "redesign", "framework", "datenbank", "schema", "api design"])
+    is_testing = any(w in t_lower for w in ["test", "unit", "pytest", "spec", "coverage", "abdeckung"])
+    is_small_fix = any(w in t_lower for w in ["fix", "bug", "fehler", "korrigier", "typo", "klein", "patch"]) and not (is_refactor or is_architectural)
+
+    complexity = "hoch" if (is_architectural or is_refactor or is_security) else ("niedrig" if is_small_fix else "mittel")
+
+    return {
+        "complexity": complexity,
+        "is_refactor": is_refactor,
+        "is_security": is_security,
+        "is_architectural": is_architectural,
+        "is_testing": is_testing,
+        "is_small_fix": is_small_fix,
+    }
+
+
+def optimize_claudegravity_command(
+    task: str,
+    priority: str = "balanced",
+    project_path: str = ".",
+    ask_mode: bool = False,
+    yolo: bool = False,
+    max_iterations: int = 10
+) -> dict:
+    agents = detect_installed_agents()
+    comp = analyze_task_complexity(task)
+    p_norm = priority.lower().strip()
+    if p_norm in ["best-code", "quality", "best", "code"]:
+        p_norm = "best-code"
+    elif p_norm in ["lowest-cost", "eco", "economy", "cost", "lowest"]:
+        p_norm = "lowest-cost"
+    else:
+        p_norm = "balanced"
+
+    has_claude = "claude" in agents
+    has_agy = "agy" in agents
+    has_gemini = "gemini" in agents
+
+    if has_claude and (has_agy or has_gemini):
+        planner_cli = "claude"
+        reviewer_cli = "agy" if has_agy else "gemini"
+    elif has_agy and has_claude:
+        planner_cli = "claude"
+        reviewer_cli = "agy"
+    elif has_claude:
+        planner_cli = "claude"
+        reviewer_cli = "claude"
+    elif has_agy:
+        planner_cli = "agy"
+        reviewer_cli = "agy"
+    else:
+        avail = list(agents.keys())
+        planner_cli = avail[0] if avail else "claude"
+        reviewer_cli = avail[1] if len(avail) > 1 else planner_cli
+
+    if p_norm == "best-code":
+        strategy_flag = "best-code"
+        planner_model = "claude-3-7-sonnet" if planner_cli == "claude" else "gemini-2.5-pro"
+        planner_effort = "high"
+        reviewer_model = "gemini-2.5-pro" if reviewer_cli in ["agy", "gemini"] else "claude-3-7-sonnet"
+        reviewer_effort = "high"
+        builder_cli = planner_cli
+        builder_model = planner_model
+        builder_effort = "high"
+        cost_benefit = (
+            "💎 Maximale Codequalität & Sicherheit: Alle Phasen (Architekt, Prüfstatiker, Bauleiter) "
+            "nutzen Frontier-Modelle mit intensivem Thinking-Effort. Höchste Fehlertoleranz und "
+            "gründlichste Testabdeckung."
+        )
+    elif p_norm == "lowest-cost":
+        strategy_flag = "eco"
+        planner_model = "claude-3-7-sonnet" if planner_cli == "claude" else "gemini-2.5-pro"
+        planner_effort = "medium"
+        reviewer_model = "gemini-2.5-pro" if reviewer_cli in ["agy", "gemini"] else "claude-3-7-sonnet"
+        reviewer_effort = "medium"
+        builder_cli = planner_cli
+        builder_model = "claude-3-5-haiku" if builder_cli == "claude" else "gemini-2.5-flash"
+        builder_effort = "low"
+        cost_benefit = (
+            "💰 Maximale Kosten- & Tokenersparnis (bis zu 70% Ersparnis!):\n"
+            "   • Phase 1 (Planung) & Phase 2 (Review) verbrauchen nur ~10-15% aller Tokens -> Spitzenmodell sichert fehlerfreie Architektur.\n"
+            f"   • Phase 3 (Bau-Loop) verbraucht ~85-90% aller Tokens -> Schnelles Spar-Modell ({builder_model}) setzt den genehmigten Plan kostengünstig um."
+        )
+    else:  # balanced
+        strategy_flag = "balanced"
+        planner_model = "claude-sonnet (Standard)" if planner_cli == "claude" else "gemini-2.5-pro (Standard)"
+        planner_effort = "high" if planner_cli == "agy" else None
+        reviewer_model = "gemini-2.5-pro (Standard)" if reviewer_cli in ["agy", "gemini"] else "claude-sonnet (Standard)"
+        reviewer_effort = "high" if reviewer_cli == "agy" else None
+        builder_cli = planner_cli
+        builder_model = planner_model
+        builder_effort = None
+        cost_benefit = (
+            "⚖️ Ausgewogene Standard-Konfiguration: Hohe Denk-Präzision in der Planung bei "
+            "verlässlicher Ausführungsgeschwindigkeit."
+        )
+
+    cmd_parts = ["claudegravity", f'"{task}"']
+    if strategy_flag != "balanced":
+        cmd_parts.append(f"--strategy {strategy_flag}")
+    if p_norm == "lowest-cost":
+        cmd_parts.append(f"--bauer-model {builder_model}")
+    if ask_mode or comp["is_architectural"]:
+        cmd_parts.append("-i")
+    if yolo:
+        cmd_parts.append("--yolo")
+    if max_iterations != 10:
+        cmd_parts.append(f"-m {max_iterations}")
+    if project_path not in [".", "./", ""]:
+        cmd_parts.append(f"-p {project_path}")
+
+    command_str = " ".join(cmd_parts)
+
+    return {
+        "task": task,
+        "priority": p_norm,
+        "complexity_analysis": comp,
+        "strategy": strategy_flag,
+        "roles": {
+            "architekt": {
+                "role": "🏗️ Architekt (Phase 1: Planung & Entwurf)",
+                "cli": planner_cli,
+                "model": planner_model,
+                "effort": planner_effort or "Standard",
+                "token_share": "~10-15% der Gesamt-Tokens"
+            },
+            "pruefstatiker": {
+                "role": "🧐 Prüfstatiker (Phase 2: Prüfung & Review)",
+                "cli": reviewer_cli,
+                "model": reviewer_model,
+                "effort": reviewer_effort or "Standard",
+                "token_share": "~5-10% der Gesamt-Tokens"
+            },
+            "bauleiter": {
+                "role": "🔨 Bauleiter (Phase 3: Bau & Umsetzung)",
+                "cli": builder_cli,
+                "model": builder_model,
+                "effort": builder_effort or "Standard",
+                "token_share": "~80-90% der Gesamt-Tokens (Hauptverbrauch!)"
+            }
+        },
+        "cost_benefit_analysis": cost_benefit,
+        "recommended_command": command_str,
+        "installed_agents": agents
+    }
+
+
+def format_optimization_markdown(opt: dict) -> str:
+    r = opt["roles"]
+    lines = [
+        "### 🎯 ClaudeGravity Optimierungs-Empfehlung",
+        f"* **Aufgabe:** {opt['task']}",
+        f"* **Gewählte Priorität:** `{opt['priority']}` (Erkannte Komplexität: {opt['complexity_analysis']['complexity']})",
+        "",
+        "#### 👥 Rollen- und Modellbelegung:",
+        f"1. **{r['architekt']['role']}**",
+        f"   • CLI: `{r['architekt']['cli']}` | Modell: `{r['architekt']['model']}` | Effort: `{r['architekt']['effort']}`",
+        f"   • Token-Anteil: {r['architekt']['token_share']}",
+        f"2. **{r['pruefstatiker']['role']}**",
+        f"   • CLI: `{r['pruefstatiker']['cli']}` | Modell: `{r['pruefstatiker']['model']}` | Effort: `{r['pruefstatiker']['effort']}`",
+        f"   • Token-Anteil: {r['pruefstatiker']['token_share']}",
+        f"3. **{r['bauleiter']['role']}**",
+        f"   • CLI: `{r['bauleiter']['cli']}` | Modell: `{r['bauleiter']['model']}` | Effort: `{r['bauleiter']['effort']}`",
+        f"   • Token-Anteil: {r['bauleiter']['token_share']}",
+        "",
+        "#### 💡 Wirtschaftlichkeits- & Qualitäts-Analyse:",
+        opt["cost_benefit_analysis"],
+        "",
+        "#### 🚀 Empfohlener Shell-Befehl:",
+        "```bash",
+        opt["recommended_command"],
+        "```",
+    ]
+    return "\n".join(lines)
+
+
+# ==========================================
+# MCP Protocol Handlers (JSON-RPC 2.0 stdio)
+# ==========================================
+
+MCP_TOOLS = [
+    {
+        "name": "claudegravity_optimize",
+        "description": (
+            "Analysiert eine Programmieraufgabe und ermittelt die optimale Kombination aus Modellen, "
+            "Reasoning-Effort und Rollen (Architekt, Prüfstatiker, Bauleiter) für ClaudeGravity Loop basierend auf dem Ziel "
+            "(bester Code vs. geringste Kosten). Liefert den exakten, ausführbaren Shell-Befehl und spart bis zu 70% Kosten."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "Beschreibung der Programmieraufgabe, des Refactorings oder des neuen Features."
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["best-code", "lowest-cost", "balanced"],
+                    "default": "balanced",
+                    "description": "best-code (beste Codequalität), lowest-cost (minimale Kosten / bis zu 70% Ersparnis), balanced (ausgewogen)."
+                },
+                "project_path": {
+                    "type": "string",
+                    "default": ".",
+                    "description": "Pfad zum Ziel-Projektverzeichnis (Standard: .)."
+                },
+                "ask_mode": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Ob der interaktive Fragen-Modus (-i / --ask) für menschliche Klärung aktiviert werden soll."
+                },
+                "yolo": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Ob volle Schreib- und Toolrechte ohne manuelle Nachfrage erteilt werden sollen (--yolo)."
+                },
+                "max_iterations": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximale Anzahl autonomer Runden in Phase 3 (Standard: 10)."
+                }
+            },
+            "required": ["task"]
+        }
+    },
+    {
+        "name": "claudegravity_run",
+        "description": "Startet den ClaudeGravity Loop mit optimierten Parametern direkt auf dem System.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "Die auszuführende Aufgabe."
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["best-code", "lowest-cost", "balanced"],
+                    "default": "balanced"
+                },
+                "project_path": {
+                    "type": "string",
+                    "default": "."
+                },
+                "yolo": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Volle Schreib- und Toolrechte automatisch gewähren (Standard: true für Agent-Ausführung)."
+                },
+                "ask_mode": {
+                    "type": "boolean",
+                    "default": False
+                },
+                "max_iterations": {
+                    "type": "integer",
+                    "default": 10
+                },
+                "background": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Ob der Prozess im Hintergrund gestartet werden soll."
+                }
+            },
+            "required": ["task"]
+        }
+    },
+    {
+        "name": "claudegravity_info",
+        "description": "Prüft die installierten AI-CLIs (Claude Code, Google Antigravity, Gemini, Codex) und gibt Empfehlungen für das Setup.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    }
+]
+
+
+def handle_tool_call(name: str, arguments: dict) -> dict:
+    if name == "claudegravity_optimize":
+        task = arguments.get("task", "")
+        priority = arguments.get("priority", "balanced")
+        project_path = arguments.get("project_path", ".")
+        ask_mode = arguments.get("ask_mode", False)
+        yolo = arguments.get("yolo", False)
+        max_iterations = arguments.get("max_iterations", 10)
+
+        opt = optimize_claudegravity_command(
+            task=task,
+            priority=priority,
+            project_path=project_path,
+            ask_mode=ask_mode,
+            yolo=yolo,
+            max_iterations=max_iterations
+        )
+        md_text = format_optimization_markdown(opt)
+        return {
+            "content": [
+                {"type": "text", "text": md_text}
+            ],
+            "isError": False
+        }
+
+    elif name == "claudegravity_run":
+        task = arguments.get("task", "")
+        priority = arguments.get("priority", "balanced")
+        project_path = arguments.get("project_path", ".")
+        ask_mode = arguments.get("ask_mode", False)
+        yolo = arguments.get("yolo", True)
+        max_iterations = arguments.get("max_iterations", 10)
+        background = arguments.get("background", False)
+
+        opt = optimize_claudegravity_command(
+            task=task,
+            priority=priority,
+            project_path=project_path,
+            ask_mode=ask_mode,
+            yolo=yolo,
+            max_iterations=max_iterations
+        )
+        cmd_str = opt["recommended_command"]
+
+        p_dir = Path(project_path).resolve()
+        if not p_dir.exists():
+            return {
+                "content": [{"type": "text", "text": f"Fehler: Projektpfad '{p_dir}' existiert nicht."}],
+                "isError": True
+            }
+
+        if background:
+            proc = subprocess.Popen(
+                cmd_str,
+                shell=True,
+                cwd=str(p_dir),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"🚀 ClaudeGravity Loop im Hintergrund gestartet (PID {proc.pid})!\nBefehl: `{cmd_str}`\nProjekt: `{p_dir}`"
+                    }
+                ],
+                "isError": False
+            }
+        else:
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"📋 Bereit zum Starten. Bitte führe folgenden Befehl im Terminal aus:\n\n```bash\ncd {p_dir} && {cmd_str}\n```"
+                    }
+                ],
+                "isError": False
+            }
+
+    elif name == "claudegravity_info":
+        agents = detect_installed_agents()
+        lines = [
+            "### 🔍 Erkannte AI-Coding CLIs auf diesem System:",
+            ""
+        ]
+        for k, a in agents.items():
+            lines.append(f"* **{a}** (`{k}` im PATH verfügbar)")
+        if not agents:
+            lines.append("⚠️ Keine unterstützten AI-CLIs im PATH gefunden (claude, agy, gemini, codex).")
+        lines.append("")
+        lines.append("💡 **Empfohlenes Setup für Dual-Loop:**")
+        lines.append("1. **Architekt:** Claude Code (`claude`) für Plan & Entwurf")
+        lines.append("2. **Prüfstatiker:** Google Antigravity (`agy`) für unabhängigen Stresstest")
+        lines.append("3. **Bauleiter:** Kostengünstiges Modell (`gemini-2.5-flash` oder `claude-3-5-haiku`) für Phase 3 Umsetzung (spart bis zu 70% Kosten).")
+        return {
+            "content": [{"type": "text", "text": "\n".join(lines)}],
+            "isError": False
+        }
+
+    else:
+        return {
+            "content": [{"type": "text", "text": f"Unbekanntes Tool: {name}"}],
+            "isError": True
+        }
+
+
+def run_mcp_stdio_server():
+    """Liest JSON-RPC 2.0 Nachrichten von stdin und antwortet auf stdout."""
+    while True:
+        try:
+            line = sys.stdin.readline()
+            if not line:
+                break
+            line_str = line.strip()
+            if not line_str:
+                continue
+
+            req = json.loads(line_str)
+            req_id = req.get("id")
+            method = req.get("method")
+            params = req.get("params", {})
+
+            if method == "initialize":
+                res = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "protocolVersion": MCP_PROTOCOL_VERSION,
+                        "capabilities": {
+                            "tools": {}
+                        },
+                        "serverInfo": {
+                            "name": SERVER_NAME,
+                            "version": SERVER_VERSION
+                        }
+                    }
+                }
+                sys.stdout.write(json.dumps(res) + "\n")
+                sys.stdout.flush()
+
+            elif method == "notifications/initialized":
+                continue
+
+            elif method == "ping":
+                res = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {}
+                }
+                sys.stdout.write(json.dumps(res) + "\n")
+                sys.stdout.flush()
+
+            elif method == "tools/list":
+                res = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "tools": MCP_TOOLS
+                    }
+                }
+                sys.stdout.write(json.dumps(res) + "\n")
+                sys.stdout.flush()
+
+            elif method == "tools/call":
+                t_name = params.get("name", "")
+                t_args = params.get("arguments", {})
+                tool_res = handle_tool_call(t_name, t_args)
+                res = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": tool_res
+                }
+                sys.stdout.write(json.dumps(res) + "\n")
+                sys.stdout.flush()
+
+            else:
+                res = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32601,
+                        "message": f"Methode '{method}' wird nicht unterstützt."
+                    }
+                }
+                sys.stdout.write(json.dumps(res) + "\n")
+                sys.stdout.flush()
+
+        except json.JSONDecodeError as err:
+            err_res = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": -32700,
+                    "message": f"Parse-Fehler: {err}"
+                }
+            }
+            sys.stdout.write(json.dumps(err_res) + "\n")
+            sys.stdout.flush()
+        except (KeyboardInterrupt, BrokenPipeError):
+            break
+        except Exception as exc:
+            err_res = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": -32603,
+                    "message": f"Interner Fehler: {exc}"
+                }
+            }
+            sys.stdout.write(json.dumps(err_res) + "\n")
+            sys.stdout.flush()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="ClaudeGravity MCP Server & Command Optimizer")
+    parser.add_argument("task_pos", nargs="?", default=None, help="Aufgabe (für direkten CLI-Aufruf)")
+    parser.add_argument("--optimize", "-o", dest="optimize_task", default=None, help="Aufgabe analysieren und optimalen Befehl ausgeben")
+    parser.add_argument("--priority", default="balanced", choices=["best-code", "quality", "eco", "lowest-cost", "cost", "balanced"], help="Priorität: best-code, lowest-cost, balanced")
+    parser.add_argument("-p", "--project", default=".", help="Zielprojekt-Pfad")
+    parser.add_argument("-i", "--ask", action="store_true", help="Fragen-Modus (-i)")
+    parser.add_argument("--yolo", action="store_true", help="YOLO-Modus (--yolo)")
+    parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Max Iterationen")
+    parser.add_argument("--info", action="store_true", help="Installierte AI-CLIs prüfen")
+    parser.add_argument("--mcp", action="store_true", help="Als MCP-Server (stdio JSON-RPC) starten")
+
+    args = parser.parse_args()
+
+    cli_task = args.optimize_task or args.task_pos
+
+    if args.info:
+        res = handle_tool_call("claudegravity_info", {})
+        print(res["content"][0]["text"])
+        return
+
+    if cli_task:
+        opt = optimize_claudegravity_command(
+            task=cli_task,
+            priority=args.priority,
+            project_path=args.project,
+            ask_mode=args.ask,
+            yolo=args.yolo,
+            max_iterations=args.max_iterations
+        )
+        print("\n" + format_optimization_markdown(opt) + "\n")
+        return
+
+    run_mcp_stdio_server()
+
+
+if __name__ == "__main__":
+    main()
