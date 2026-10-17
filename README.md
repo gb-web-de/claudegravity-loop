@@ -68,6 +68,9 @@ flowchart TD
 
 ClaudeGravity ist eine **Single-File-Anwendung (`loop.py`)**. Du musst **nichts kompilieren** und **keine Python-Pakete (`pip install`)** installieren – die Standardbibliothek von Python 3.10+ reicht vollkommen aus!
 
+> [!TIP]
+> **Alles in einem Schritt:** Nach dem Klonen `./install.sh` (Linux/macOS), `install.bat` (CMD) oder `.\install.ps1` (PowerShell) ausführen. Das trägt den MCP-Server in alle gefundenen Clients ein (Claude Code, Claude Desktop, Gemini CLI, Antigravity, Codex, Copilot CLI, Cursor, Windsurf, VS Code) und macht `claudegravity`, `claudegravity-loop` und `claudegravity-mcp` global aufrufbar. `--status` zeigt den Stand, `--dry-run` simuliert, `--uninstall` entfernt alles wieder. Die manuellen Schritte unten sind dann nicht nötig.
+
 #### 🪟 Für Windows (CMD oder PowerShell)
 1. Repository klonen (oder als ZIP herunterladen und entpacken):
    ```cmd
@@ -340,6 +343,9 @@ When a single AI writes code and reviews its own work, it becomes confirmation-b
 ### 1.2 Installation (Windows, macOS, Linux)
 
 ClaudeGravity is a **zero-dependency, single-file application (`loop.py`)**. No `pip install`, no virtual environments, pure Python 3.10+ standard library.
+
+> [!TIP]
+> **One-step setup:** after cloning, run `./install.sh` (Linux/macOS), `install.bat` (CMD) or `.\install.ps1` (PowerShell). It registers the MCP server with every detected client (Claude Code, Claude Desktop, Gemini CLI, Antigravity, Codex, Copilot CLI, Cursor, Windsurf, VS Code) and puts `claudegravity`, `claudegravity-loop` and `claudegravity-mcp` on your PATH. Use `--status`, `--dry-run` or `--uninstall` as needed; the manual steps below become optional.
 
 #### 🪟 Windows Setup
 1. Clone the repository:
