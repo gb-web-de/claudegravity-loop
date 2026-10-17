@@ -114,7 +114,7 @@ Sobald Phase 2 abgeschlossen ist, fragt dich das Tool:
 ```text
 ============================================================
 📋 PLAN-STATUS: Fertiggestellt & Geprüft
-📄 Aktuelle Plan-Datei: .dual-loop/PLAN.md
+📄 Aktuelle Plan-Datei: .dual-loop/sessions/<session>/PLAN_v2.md
 ============================================================
 Möchtest du den Plan freigeben oder Änderungen vornehmen?
   [1] Approve  -> Plan genehmigen & weiter zur Implementierung
@@ -182,13 +182,11 @@ In jedem Projekt, in dem du `claudegravity` ausführst, wird ein sauberer Ordner
 ```
 mein-projekt/
 ├── .dual-loop/
-│   ├── PLAN.md                     # 🎯 Der aktuellste genehmigte Plan
-│   ├── REVIEW.md                   # 📋 Das aktuellste Prüf-Review
-│   ├── PLAN-REVIEW-LOG.md          # 📜 Fortlaufendes Audit-Tagebuch aller Aufgaben
-│   └── sessions/                   # 📦 Revisionssicheres Archiv
+│   └── sessions/                   # 📦 Revisionssicheres Archiv aller Aufgaben
 │       └── 20261017_102220_task/
 │           ├── state.json          # Sitzungs-Speicher für --resume
 │           ├── .done               # 🏁 Fertigmeldung der Aufgabe (isoliert im Session-Ordner!)
+│           ├── LOG.md              # 📜 Audit-Log der Review-Runden dieser Aufgabe
 │           ├── PLAN_v1.md          # Erster Entwurf
 │           ├── REVIEW_round1.md    # Kritik von Antigravity
 │           ├── PLAN_v2.md          # Überarbeiteter Entwurf
@@ -283,7 +281,7 @@ Once Phase 2 is finished, you will see:
 ```text
 ============================================================
 📋 PLAN STATUS: Completed & Reviewed
-📄 Current Plan File: .dual-loop/PLAN.md
+📄 Current Plan File: .dual-loop/sessions/<session>/PLAN_v2.md
 ============================================================
 What would you like to do?
   [1] Approve  -> Approve plan & proceed to implementation
@@ -348,12 +346,11 @@ All plans, audits, and sessions are safely stored in `.dual-loop/`:
 ```
 my-project/
 ├── .dual-loop/
-│   ├── PLAN.md                     # 🎯 Always the latest active plan
-│   ├── REVIEW.md                   # 📋 Always the latest review
-│   ├── PLAN-REVIEW-LOG.md          # 📜 Continuous markdown audit log
-│   └── sessions/                   # 📦 Versioned history archive
+│   └── sessions/                   # 📦 Clean, versioned task archive
 │       └── 20261017_102220_task/
 │           ├── state.json          # Session state for --resume
+│           ├── .done               # 🏁 Task completion marker (isolated in session!)
+│           ├── LOG.md              # 📜 Audit log of review rounds
 │           ├── PLAN_v1.md          # Initial roadmap
 │           ├── REVIEW_round1.md    # Critique by reviewer
 │           ├── PLAN_v2.md          # Revised roadmap

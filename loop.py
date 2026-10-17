@@ -218,11 +218,18 @@ def run_adversarial_plan(
     max_rounds: int = 2
 ) -> tuple[bool, Path]:
     loop_dir = project_path / ".dual-loop"
-    active_plan_file = loop_dir / "PLAN.md"
-    active_review_file = loop_dir / "REVIEW.md"
-    log_file = loop_dir / "PLAN-REVIEW-LOG.md"
 
+    # Alte temporäre Dateien im Root von .dual-loop aufräumen
+    for legacy in [loop_dir / "PLAN.md", loop_dir / "REVIEW.md", loop_dir / "PLAN-REVIEW-LOG.md"]:
+        if legacy.exists():
+            try:
+                legacy.unlink()
+            except Exception:
+                pass
+
+    log_file = session_dir / "LOG.md"
     plan_v1_file = session_dir / "PLAN_v1.md"
+    current_plan_file = plan_v1_file
 
     # Wenn Plan v1 noch nicht existiert (oder von vorn begonnen wird):
     if not plan_v1_file.exists():
@@ -247,7 +254,7 @@ def run_adversarial_plan(
             plan = planner.run(retry_prompt, cwd=project_path, extra_flags=planner_flags)
 
         plan_v1_file.write_text(plan, encoding="utf-8")
-        active_plan_file.write_text(plan, encoding="utf-8")
+        current_plan_file = plan_v1_file
         print(f"📄 Plan v1 gespeichert in {plan_v1_file.relative_to(project_path)}")
     else:
         # Resume: Den neuesten Plan aus der Session laden (aber Permission-Errors überspringen)
@@ -261,7 +268,7 @@ def run_adversarial_plan(
             plan_content = active_plan_file_source.read_text(encoding="utf-8")
 
         plan = plan_content
-        active_plan_file.write_text(plan, encoding="utf-8")
+        current_plan_file = active_plan_file_source
         print(f"🔄 Wiederaufnahme: Geladen {active_plan_file_source.name}")
 
     start_round = state.get("rounds_completed", 0) + 1
@@ -269,7 +276,7 @@ def run_adversarial_plan(
 
     if approved:
         print("🎉 Plan wurde in einer früheren Sitzung bereits genehmigt!")
-        return True, active_plan_file
+        return True, current_plan_file
 
     log_entry = [
         f"\n## [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Session: {session_dir.name}",
@@ -282,7 +289,7 @@ def run_adversarial_plan(
         if STOP_REQUESTED:
             state["rounds_completed"] = r - 1
             save_session_state(session_dir, state)
-            return False, active_plan_file
+            return False, current_plan_file
 
         print(f"\n🔍 Phase 2: Unabhängiges Adversarial Review (Runde {r}/{max_rounds}) durch {reviewer.name}...")
         print(f"⏳ Warte auf Review von {reviewer.name}...", flush=True)
@@ -301,7 +308,6 @@ def run_adversarial_plan(
 
         review_r_file = session_dir / f"REVIEW_round{r}.md"
         review_r_file.write_text(review, encoding="utf-8")
-        active_review_file.write_text(review, encoding="utf-8")
         print(f"📋 Review gespeichert in {review_r_file.relative_to(project_path)}")
 
         is_approved = "VERDICT: APPROVED" in review
@@ -335,7 +341,7 @@ def run_adversarial_plan(
 
             plan_next_file = session_dir / f"PLAN_v{r+1}.md"
             plan_next_file.write_text(plan, encoding="utf-8")
-            active_plan_file.write_text(plan, encoding="utf-8")
+            current_plan_file = plan_next_file
             print(f"📄 Plan v{r+1} gespeichert in {plan_next_file.relative_to(project_path)}")
             save_session_state(session_dir, state)
         else:
@@ -348,7 +354,7 @@ def run_adversarial_plan(
     with open(log_file, "a", encoding="utf-8") as f_log:
         f_log.write("\n".join(log_entry) + "\n")
 
-    return approved, active_plan_file
+    return approved, current_plan_file
 
 
 # ==========================================
@@ -363,7 +369,7 @@ def handle_plan_approval_and_changes(
     session_dir: Path,
     state: dict,
     planner_flags: list[str] | None = None
-) -> bool:
+) -> tuple[bool, Path]:
     while not STOP_REQUESTED:
         print("\n" + "=" * 60)
         print("📋 PLAN-STATUS: Fertiggestellt & Geprüft")
@@ -379,12 +385,12 @@ def handle_plan_approval_and_changes(
         try:
             choice = input("Auswahl [1/2/3/4] (Standard: 1): ").strip()
         except (EOFError, KeyboardInterrupt):
-            return False
+            return False, plan_file
 
         if choice in ["", "1", "approve", "a"]:
             state["user_approved"] = True
             save_session_state(session_dir, state)
-            return True
+            return True, plan_file
 
         elif choice in ["3", "view", "v"]:
             print("\n" + "-" * 50)
@@ -394,7 +400,7 @@ def handle_plan_approval_and_changes(
 
         elif choice in ["4", "exit", "q"]:
             print("Abgebrochen. Du kannst diesen Stand jederzeit mit 'claudegravity --resume' fortsetzen.")
-            return False
+            return False, plan_file
 
         elif choice in ["2", "changes", "c"]:
             print("\n" + "=" * 60)
@@ -416,7 +422,7 @@ def handle_plan_approval_and_changes(
             try:
                 c_choice = input("Auswahl [1-6]: ").strip()
             except (EOFError, KeyboardInterrupt):
-                return False
+                return False, plan_file
 
             if c_choice == "1":
                 editor = os.environ.get("EDITOR", "xdg-open")
@@ -426,13 +432,14 @@ def handle_plan_approval_and_changes(
                 v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
                 new_v_file = session_dir / f"PLAN_v{v_num}_manual.md"
                 new_v_file.write_text(plan_file.read_text(encoding="utf-8"), encoding="utf-8")
+                plan_file = new_v_file
                 print(f"💾 Manuell bearbeiteter Plan gesichert als {new_v_file.name}")
 
             elif c_choice == "2":
                 print("\n📋 Plan-Pfad für Claude UI:")
                 print(f"   Pfad: {plan_file.resolve()}")
                 print("   Kopiere den Inhalt der Datei in deine Claude UI / Web-Chat.")
-                input("\nDrücke [Enter], wenn du die Änderungen vorgenommen und in PLAN.md gespeichert hast...")
+                input(f"\nDrücke [Enter], wenn du die Änderungen vorgenommen und in {plan_file.name} gespeichert hast...")
 
             elif c_choice == "3":
                 feedback = input("\n📝 Gib deine Änderungswünsche ein: ").strip()
@@ -450,7 +457,7 @@ def handle_plan_approval_and_changes(
                     v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
                     new_v_file = session_dir / f"PLAN_v{v_num}.md"
                     new_v_file.write_text(new_plan, encoding="utf-8")
-                    plan_file.write_text(new_plan, encoding="utf-8")
+                    plan_file = new_v_file
                     print(f"✅ Plan aktualisiert und als {new_v_file.name} gesichert!")
 
             elif c_choice == "4":
@@ -466,7 +473,7 @@ def handle_plan_approval_and_changes(
             elif c_choice == "6":
                 continue
 
-    return False
+    return False, plan_file
 
 
 def main():
@@ -501,6 +508,14 @@ def main():
 
     loop_dir = project_path / ".dual-loop"
     loop_dir.mkdir(exist_ok=True)
+
+    # Veraltete Dateien im Root von .dual-loop bereinigen (nur noch sessions/ darin)
+    for legacy in [loop_dir / "PLAN.md", loop_dir / "REVIEW.md", loop_dir / "PLAN-REVIEW-LOG.md"]:
+        if legacy.exists():
+            try:
+                legacy.unlink()
+            except Exception:
+                pass
 
     # ==========================================
     # Resume / Fortsetzen prüfen
@@ -600,7 +615,9 @@ def main():
     # ==========================================
     # 1. & 2. Phase: Adversarial Plan Review
     # ==========================================
-    plan_file = loop_dir / "PLAN.md"
+    existing_plans = sorted(session_dir.glob("PLAN_v*.md"), key=lambda p: p.name)
+    plan_file = existing_plans[-1] if existing_plans else session_dir / "PLAN_v1.md"
+
     if state.get("phase") in ["plan", "review"] or not state.get("user_approved", False):
         state["phase"] = "review"
         save_session_state(session_dir, state)
@@ -623,7 +640,7 @@ def main():
             return
 
         # Interaktive Freigabe & Change-Routing (Approve / Changes)
-        user_confirmed = handle_plan_approval_and_changes(
+        user_confirmed, plan_file = handle_plan_approval_and_changes(
             plan_file, planner, reviewer, task, project_path, session_dir, state, planner_flags=planner_perm_flags
         )
 
