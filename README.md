@@ -102,7 +102,7 @@ ln -sf ~/Projekte/claudegravity-loop/loop.py ~/.local/bin/claudegravity-loop
 
 ---
 
-### 4. Voraussetzungen & KI-Prüfung (`--check`)
+### 4. Voraussetzungen & KI-Prüfung (`--check` / `--info`)
 
 Du benötigst lediglich:
 1. **Python 3.10 oder neuer** (auf fast jedem Linux/Mac bereits vorinstalliert).
@@ -110,8 +110,10 @@ Du benötigst lediglich:
    * **Claude Code** (`claude`)
    * **Google Antigravity** (`agy`) oder **Gemini CLI** (`gemini`)
 
-Prüfe deine Installation mit einem einzigen Befehl:
+Prüfe deine Installation und sieh dir die genauen Standard-Modelle an mit:
 ```bash
+claudegravity --info
+# oder:
 claudegravity --check
 ```
 
@@ -121,7 +123,7 @@ claudegravity --check
 
 | Befehl | Wofür wird er benutzt? |
 | :--- | :--- |
-| `claudegravity --check` | Prüft installierte KIs, Rollen (Architekt & Prüfstatiker) und Optionen |
+| `claudegravity --info` / `--check` | Zeigt Standardmodelle, Rollen (Architekt & Prüfstatiker) und Optionen |
 | `claudegravity "Aufgabe"` | Startet den Loop im aktuellen Ordner (Claude = Architekt, Antigravity = Prüfstatiker) |
 | `claudegravity --swap "Aufgabe"` | **Rollen tauschen:** Antigravity plant/baut (Architekt), Claude prüft (Prüfstatiker) |
 | `claudegravity -i "Aufgabe"` | **Fragen-Modus:** Beide KIs stellen dir Rückfragen bei Unklarheiten |
@@ -410,8 +412,18 @@ You only need:
    * **Claude Code** (`claude`)
    * **Google Antigravity** (`agy`) or **Gemini CLI** (`gemini`)
 
-Verify your installation with:
+### 4. Prerequisites & Verification (`--check` / `--info`)
+
+You only need:
+1. **Python 3.10+** (preinstalled on Linux and macOS).
+2. At least two AI CLIs logged in on your system:
+   * **Claude Code** (`claude`)
+   * **Google Antigravity** (`agy`) or **Gemini CLI** (`gemini`)
+
+Verify your installation and see exact default model assignments with:
 ```bash
+claudegravity --info
+# or:
 claudegravity --check
 ```
 
@@ -421,7 +433,7 @@ claudegravity --check
 
 | Command | Description |
 | :--- | :--- |
-| `claudegravity --check` | Verify installed AIs, default models, roles, and options |
+| `claudegravity --info` / `--check` | Verify installed AIs, default models, roles, and options |
 | `claudegravity "Task"` | Run task in the current folder (Claude = Architect, Antigravity = Inspector) |
 | `claudegravity --swap "Task"` | **Swap Roles:** Antigravity builds (Architect), Claude reviews (Inspector) |
 | `claudegravity -i "Task"` | **Interview Mode:** Both AIs ask clarifying questions if anything is ambiguous |
