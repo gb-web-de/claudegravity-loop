@@ -15,10 +15,10 @@
   * [6. Schritt-für-Schritt: Dein erster Durchlauf](#6-schritt-für-schritt-dein-erster-durchlauf)
   * [7. Das Menü: Plan freigeben oder ändern (Approve & Changes)](#7-das-menü-plan-freigeben-oder-ändern-approve--changes)
   * [8. Fragen-Modus: KIs stellen Fragen an dich (`-i` / `--ask`)](#8-fragen-modus-kis-stellen-fragen-an-dich--i----ask)
-  * [9. Modelle & Intensität anpassen (`--model`, `--effort`)](#9-modelle--intensität-anpassen---model---effort)
+  * [9. Modelle, Effort & Rollenwechsel (`--swap`, `--architekt`, `--pruefstatiker`)](#9-modelle-effort--rollenwechsel---swap---architekt---pruefstatiker)
   * [10. Weitermachen nach Pause oder Absturz (`--resume`)](#10-weitermachen-nach-pause-oder-absturz---resume)
   * [11. Schreibrechte & der Autopilot (`--yolo`)](#11-schreibrechte--der-autopilot---yolo)
-  * [12. Was passiert bei AI-Sitzungslimits? (Token-Limits)](#12-was-passiert-bei-ai-sitzungslimits-token-limits)
+  * [12. Was passiert bei AI-Sitzungslimits? (Token-Limits & Audit)](#12-was-passiert-bei-ai-sitzungslimits-token-limits--kosten-audit)
   * [13. Wo liegen meine Dateien? (Saubere Ordnerstruktur)](#13-wo-liegen-meine-dateien-saubere-ordnerstruktur)
   * [14. Häufige Fragen & Fehlerbehebung (FAQ)](#14-häufige-fragen--fehlerbehebung-faq)
 * [🇬🇧 English Documentation (Beginner's Guide)](#-english-documentation-for-beginners)
@@ -30,10 +30,10 @@
   * [6. Step-by-Step: Your First Run](#6-step-by-step-your-first-run)
   * [7. Plan Approval & Changes Menu](#7-plan-approval--changes-menu)
   * [8. Interview Mode: AIs Ask You Questions (`-i` / `--ask`)](#8-interview-mode-ais-ask-you-questions--i----ask)
-  * [9. Model Selection & Reasoning Effort (`--model`, `--effort`)](#9-model-selection--reasoning-effort---model---effort)
+  * [9. Model Selection, Effort & Role Swapping (`--swap`, `--architekt`, `--pruefstatiker`)](#9-model-selection-effort--role-swapping---swap---architekt---pruefstatiker)
   * [10. Crash Recovery & Resuming (`--resume`)](#10-crash-recovery--resuming---resume)
   * [11. File Permissions & Autopilot (`--yolo`)](#11-file-permissions--autopilot---yolo)
-  * [12. What Happens When AI Limits Are Hit? (Session Limits)](#12-what-happens-when-ai-limits-are-hit-session-limits)
+  * [12. What Happens When AI Limits Are Hit? (Session Limits & Cost Audit)](#12-what-happens-when-ai-limits-are-hit-session-limits--cost-audit)
   * [13. Directory Structure & File Storage](#13-directory-structure--file-storage)
   * [14. Frequently Asked Questions (FAQ)](#14-frequently-asked-questions-faq)
 
@@ -46,23 +46,26 @@
 ### 1. Was ist ClaudeGravity Loop? (Einfach erklärt)
 
 Stell dir eine Baustelle vor:
-* **Der Architekt (z. B. Claude Code):** Zeichnet den Bauplan und baut das Haus.
-* **Der Prüfstatiker (z. B. Antigravity / Gemini):** Prüft den Plan völlig unabhängig auf Einsturzgefahr, Sicherheitslücken und vergessene Details.
+* **Der Architekt (z. B. Claude Code):** Zeichnet den Bauplan und baut das Haus (Planung & Bau).
+* **Der Prüfstatiker (z. B. Antigravity / Gemini):** Prüft den Plan völlig unabhängig auf Einsturzgefahr, Sicherheitslücken und vergessene Details (Prüfung & Review).
+* **Flexible Rollenverteilung:** Standardmäßig ist Claude der Architekt und Antigravity der Prüfstatiker. Mit `--swap` (oder direkt im Plan-Freigabe-Menü mit `[3] Swap`) kannst du die Rollen jederzeit umdrehen!
 
 Wenn eine Programmier-KI ihre eigenen Pläne prüft, übersieht sie eigene Denkfehler (*Confirmation Bias*). **ClaudeGravity Loop** lässt zwei KIs als eingespieltes Team arbeiten:
-1. **Claude** schreibt den Plan.
-2. **Antigravity** grillt und prüft den Plan schonungslos.
+1. **Der Architekt** schreibt den Plan.
+2. **Der Prüfstatiker** grillt und prüft den Plan schonungslos.
 3. Erst wenn der Plan wasserdicht ist (oder du ihn freigibst), wird der Code geschrieben und getestet.
 4. **Keine Zusatzkosten:** Nutzt deine vorhandenen Terminal-CLIs mit deinen normalen Abos – keine teuren API-Keys nötig!
 
 ```mermaid
 flowchart TD
-    A["1. Aufgabe stellen"] --> B["2. Plan-Entwurf (Claude)"]
-    B --> C["3. Unabhängige Prüfung (Antigravity)"]
+    A["1. Aufgabe stellen"] --> B["2. Plan-Entwurf (Architekt)"]
+    B --> C["3. Unabhängige Prüfung (Prüfstatiker)"]
     C -->|Kritikpunkte| B
-    C -->|Freigabe / Genehmigung| D["4. Dein Menü: Approve oder Changes?"]
-    D -->|Approve| E["5. Code wird geschrieben (Build)"]
-    D -->|Changes| F["6. Änderungen (Editor, Web-UI oder Chat)"]
+    C -->|Freigabe / Genehmigung| D["4. Dein Menü: Approve, Changes oder Swap?"]
+    D -->|Approve| E["5. Code wird geschrieben (Build durch Architekt)"]
+    D -->|Swap| G["6. Rollen tauschen (Architekt <-> Prüfstatiker)"]
+    G --> D
+    D -->|Changes| F["7. Änderungen (Editor, Web-UI oder Chat)"]
     F --> B
 ```
 
@@ -118,13 +121,15 @@ claudegravity --check
 
 | Befehl | Wofür wird er benutzt? |
 | :--- | :--- |
-| `claudegravity --check` | Prüft installierte KIs, Standard-Modelle und Optionen |
-| `claudegravity "Aufgabe"` | Startet den Loop im aktuellen Ordner |
-| `claudegravity -i "Aufgabe"` | **Fragen-Modus:** KIs stellen dir Rückfragen bei Unklarheiten |
+| `claudegravity --check` | Prüft installierte KIs, Rollen (Architekt & Prüfstatiker) und Optionen |
+| `claudegravity "Aufgabe"` | Startet den Loop im aktuellen Ordner (Claude = Architekt, Antigravity = Prüfstatiker) |
+| `claudegravity --swap "Aufgabe"` | **Rollen tauschen:** Antigravity plant/baut (Architekt), Claude prüft (Prüfstatiker) |
+| `claudegravity -i "Aufgabe"` | **Fragen-Modus:** Beide KIs stellen dir Rückfragen bei Unklarheiten |
+| `claudegravity --effort max "Aufgabe"` | Thinking/Reasoning-Intensität festlegen (`low` bis `max`) |
 | `claudegravity --yolo "Aufgabe"` | **Autopilot:** Startet direkt mit vollen Schreibrechten (keine Nachfragen) |
+| `claudegravity --architekt agy --pruefstatiker claude "Aufgabe"` | KIs für Architekt und Prüfstatiker explizit zuweisen |
 | `claudegravity -p /pfad/zum/projekt "Aufgabe"` | Führt die Aufgabe in einem anderen Projektordner aus |
 | `claudegravity --resume` oder `claudegravity -c` | Setzt eine unterbrochene Sitzung exakt an gleicher Stelle fort |
-| `claudegravity --reviewer-effort high "Aufgabe"` | Maximale Prüf-Intensität / Thinking Effort für Antigravity |
 | `claudegravity --auto-switch "Aufgabe"` | **Auto-Fallback:** Wechselt bei Kontingentlimit nahtlos zum Alternativmodell |
 
 ---
@@ -148,26 +153,30 @@ claudegravity --check
 
 ---
 
-### 7. Das Menü: Plan freigeben oder ändern (Approve & Changes)
+### 7. Das Menü: Plan freigeben oder ändern (Approve, Changes & Swap)
 
 Sobald Phase 2 abgeschlossen ist, erscheint dieses Menü:
 
 ```text
 ============================================================
 📋 PLAN-STATUS: Fertiggestellt & Geprüft
-📄 Aktuelle Plan-Datei: .dual-loop/sessions/<session>/PLAN_v2.md
+📄 Aktuelle Plan-Datei             : .dual-loop/sessions/<session>/PLAN_v2.md
+🏗️ Architekt (Planung & Bau)       : Claude Code (`claude-sonnet-5`)
+🧐 Prüfstatiker (Prüfung & Review) : Antigravity (agy) (`gemini-2.5-pro`) [high]
 ============================================================
-Möchtest du den Plan freigeben oder Änderungen vornehmen?
+Möchtest du den Plan freigeben, Rollen tauschen oder Änderungen vornehmen?
   [1] Approve  -> Plan genehmigen & weiter zur Implementierung
   [2] Changes  -> Änderungen/Feedback anbringen
-  [3] Anzeigen -> Plan direkt hier im Terminal lesen
-  [4] Beenden  -> Abbrechen (Fortsetzen später mit --resume möglich)
+  [3] Swap     -> Rollen tauschen (Architekt <-> Prüfstatiker)
+  [4] Anzeigen -> Plan direkt hier im Terminal lesen
+  [5] Beenden  -> Abbrechen (Fortsetzen später mit --resume möglich)
 ------------------------------------------------------------
-Auswahl [1/2/3/4] (Standard: 1):
+Auswahl [1/2/3/4/5] (Standard: 1):
 ```
 
-#### Wenn du `[2] Changes` wählst:
-Es öffnet sich das Change-Routing-Menü:
+* **[1] Approve:** Der Architekt beginnt sofort mit dem Bauen in Phase 3.
+* **[3] Swap:** Tauscht die Rollen direkt im Flug! Wenn du z.B. möchtest, dass Antigravity den Bau übernimmt und Claude als Prüfer fungiert, wähle einfach `[3]`.
+* **[2] Changes:** Öffnet das Change-Routing-Menü:
 
 ```text
 [UI-Varianten (Graphische Oberfläche)]:
@@ -179,8 +188,8 @@ Es öffnet sich das Change-Routing-Menü:
 [CLI-Varianten (Terminal)]:
   [3] Feedback direkt hier eintippen
       -> Tippe z. B.: "Nimm PostgreSQL statt SQLite". Die KI baut den Plan um!
-  [4] Interaktive Claude Code CLI-Session starten
-  [5] Interaktive Antigravity CLI-Session starten
+  [4] Interaktive Claude Code CLI-Session (Architekt) starten
+  [5] Interaktive Antigravity CLI-Session (Prüfstatiker) starten
   [6] Zurück zum Hauptmenü
 ```
 
@@ -195,23 +204,37 @@ claudegravity -i "Baue ein Benachrichtigungssystem"
 ```
 
 Beide KIs binden dich gezielt ein:
-1. **Planer (Claude):** Stellt dir bis zu 3 konkrete Rückfragen (z.B. Mail vs. Push, Datenformat), bevor der Entwurf finalisiert wird. Du antwortest direkt im Terminal.
-2. **Prüfer (Antigravity):** Prüft den Plan und stellt bei Zielkonflikten oder Sicherheitsrisiken Rückfragen an dich. Deine Antworten fließen direkt in Runde 2 des Plans ein.
+1. **Architekt (Claude):** Stellt dir bis zu 3 konkrete Rückfragen (z.B. Mail vs. Push, Datenformat), bevor der Entwurf finalisiert wird. Du antwortest direkt im Terminal.
+2. **Prüfstatiker (Antigravity):** Prüft den Plan und stellt bei Zielkonflikten oder Sicherheitsrisiken Rückfragen an dich. Deine Antworten fließen direkt in Runde 2 des Plans ein.
 
 ---
 
-### 9. Modelle & Intensität anpassen (`--model`, `--effort`)
+### 9. Modelle, Effort & Rollenwechsel (`--swap`, `--architekt`, `--pruefstatiker`)
 
-Standardmäßig nutzen beide Tools (`claude`, `agy`) ihre in der CLI hinterlegten Standard-Modelle. Du kannst dies pro Aufgabe frei anpassen:
+Standardmäßig nutzen beide Tools (`claude`, `agy`) ihre in der CLI hinterlegten Standard-Modelle. Du kannst Rollen, Modelle und Thinking-Intensitäten pro Aufgabe flexibel steuern:
 
-* `--planner-model <name>`: Modell für Planung/Bau (z.B. `sonnet`, `opus`, `gemini-4-argon-high`)
-* `--reviewer-model <name>`: Modell für den Prüfer (z.B. `gemini-4-argon-high`, `gemini-3.8-flash-high`)
-* `--effort <low|medium|high|xhigh|max>`: Thinking/Reasoning-Intensität für Antigravity (`agy`)
-* `--reviewer-effort <effort>`: Spezifische Prüf-Intensität (z.B. `high` oder `max` für gründliche Adversarial Reviews)
+#### 🔄 Rollen tauschen (`--swap`):
+* Standard: **Architekt** = Claude Code (Planung & Bau) | **Prüfstatiker** = Antigravity (Prüfung & Review)
+* Mit `--swap` kehrst du das Team um:
+  ```bash
+  claudegravity --swap "Baue ein Benachrichtigungssystem"
+  ```
+  Jetzt plant und baut **Antigravity**, während **Claude Code** als unbestechlicher Prüfstatiker fungiert!
 
-**Beispiel mit maximaler Prüf-Schärfe und Fragen-Modus:**
+#### 🛠️ KIs und Modelle gezielt zuweisen:
+* `--architekt <claude|agy|gemini>` (oder `--planner`): Bestimmt die KI für den Entwurf und die Implementierung.
+* `--pruefstatiker <agy|claude|gemini>` (oder `--reviewer`): Bestimmt die KI für den statischen Code-Review.
+* `--architekt-model <name>` (oder `--planner-model`): Modell für Planung/Bau (z.B. `sonnet`, `opus`, `gemini-2.5-pro`).
+* `--pruefstatiker-model <name>` (oder `--reviewer-model`): Modell für den Prüfer (z.B. `gemini-2.5-pro`, `sonnet`, `gemini-3.8-flash-high`).
+
+#### 🧠 Reasoning-Effort (Thinking-Intensität):
+* `--effort <low|medium|high|xhigh|max>`: Globale Denk-Intensität.
+* `--pruefstatiker-effort <effort>` (oder `--reviewer-effort`): Spezifische Prüf-Intensität für Antigravity (z.B. `high` oder `max` für tiefste Sicherheitsanalysen).
+* `--architekt-effort <effort>` (oder `--planner-effort`): Spezifische Intensität für den Architekten.
+
+**Beispiel mit Rollentausch, maximaler Prüf-Schärfe und Fragen-Modus:**
 ```bash
-claudegravity --reviewer-effort max -i "Refaktoriere das Spielplan-Modul"
+claudegravity --swap --pruefstatiker-effort max -i "Refaktoriere das Spielplan-Modul"
 ```
 
 ---
@@ -226,7 +249,7 @@ claudegravity --resume
 # oder kurz:
 claudegravity -c
 ```
-Das Skript liest die gespeicherte `state.json` aus dem Session-Ordner ein und macht **an genau der Stelle weiter**, an der gestoppt wurde.
+Das Skript liest die gespeicherte `state.json` aus dem Session-Ordner ein und macht **an genau der Stelle weiter**, an der gestoppt wurde (inklusive aller Modell- und Rolleneinstellungen).
 
 ---
 
@@ -254,7 +277,7 @@ Wenn Claude Code oder Antigravity an das persönliche Abonnements-Limit stößt 
 Mit `--auto-switch` (oder `--fallback`) wechselt das System bei Limits sogar vollautomatisch auf das Alternativ-Modell!
 
 #### 📊 Automatischer Token- & Kostenbericht in `.done`:
-Sobald eine Aufgabe abgeschlossen ist, trägt `claudegravity` die verbrauchten Tokens und geschätzten Kosten automatisch in die `.done`-Datei ein:
+Sobald eine Aufgabe abgeschlossen ist, trägt `claudegravity` die verbrauchten Tokens, Rollen, Modelle, Effort und geschätzten Kosten automatisch in die `.done`-Datei ein:
 
 ```markdown
 ---
@@ -262,10 +285,20 @@ Sobald eine Aufgabe abgeschlossen ist, trägt `claudegravity` die verbrauchten T
 * **Gesamt-Tokens:** 24.850 Tokens
   * **Input-Tokens:** 21.600
   * **Output-Tokens:** 3.250
-* **Entstandene Kosten (geschätzt):** ~$0.24 USD
-* **Aufschlüsselung nach Modell / Phase:**
-  * **Claude Code:** 19.400 Tokens (~$0.24 USD)
-  * **Antigravity (agy):** 5.450 Tokens (Abo-Inklusivkontingent)
+* **Entstandene Kosten (geschätzt):** ~$0.2400 USD
+* **Aufschlüsselung nach Agent, Rolle, Modell & Effort:**
+  * **Claude Code**
+    * **Rolle:** 🏗️ Architekt (Planung & Bau)
+    * **Modell:** `claude-sonnet-5`
+    * **Reasoning-Effort:** `standard`
+    * **Verbrauch:** 19.400 Tokens (Input: 16.500, Output: 2.900)
+    * **Kosten:** ~$0.2400 USD
+  * **Antigravity (agy)**
+    * **Rolle:** 🧐 Prüfstatiker (Prüfung & Review)
+    * **Modell:** `gemini-2.5-pro`
+    * **Reasoning-Effort:** `high`
+    * **Verbrauch:** 5.450 Tokens (Input: 5.100, Output: 350)
+    * **Kosten:** Abo-Inklusivkontingent
 * **Audit-Zeitstempel:** 2026-10-17 16:15:30
 ```
 
@@ -313,14 +346,28 @@ Drücke einfach einmal `Ctrl+C`. Das Programm beendet die aktuelle Runde sauber 
 ### 1. What is ClaudeGravity Loop? (Explained Simply)
 
 Imagine a building construction site:
-* **The Architect (e.g., Claude Code):** Drafts the blueprints and builds the house.
-* **The Independent Inspector (e.g., Antigravity / Gemini):** Scrutinizes the blueprint for structural flaws, security issues, and missing details.
+* **The Architect (e.g., Claude Code):** Drafts the blueprints and builds the structure (Plan & Build).
+* **The Independent Inspector (e.g., Antigravity / Gemini):** Scrutinizes the blueprint for structural flaws, security vulnerabilities, and edge cases (Review & Audit).
+* **Flexible Roles & Swapping:** By default, Claude is the Architect and Antigravity is the Inspector. You can swap roles anytime using `--swap` or directly in the approval menu (`[3] Swap`)!
 
 When an AI evaluates its own plans, it suffers from *confirmation bias*. **ClaudeGravity Loop** pairs two independent AIs:
-1. **Claude** writes the plan.
-2. **Antigravity** ruthlessly stress-tests and reviews the plan.
+1. **The Architect** drafts the plan.
+2. **The Inspector** ruthlessly stress-tests and reviews the plan.
 3. Once approved, the code is implemented and verified.
 4. **Zero API Fees:** Runs through your existing terminal subscriptions—no expensive per-token API keys required!
+
+```mermaid
+flowchart TD
+    A["1. Define Task"] --> B["2. Plan Drafting (Architect)"]
+    B --> C["3. Independent Review (Inspector)"]
+    C -->|Critique| B
+    C -->|Approval| D["4. Interactive Menu: Approve, Changes, or Swap?"]
+    D -->|Approve| E["5. Code Implementation (Build by Architect)"]
+    D -->|Swap| G["6. Swap Roles (Architect <-> Inspector)"]
+    G --> D
+    D -->|Changes| F["7. Modifications (Editor, Web UI, or Chat)"]
+    F --> B
+```
 
 ---
 
@@ -374,13 +421,15 @@ claudegravity --check
 
 | Command | Description |
 | :--- | :--- |
-| `claudegravity --check` | Verify installed AIs, default models, and available options |
-| `claudegravity "Task"` | Run task in the current folder (asks for permission before building) |
+| `claudegravity --check` | Verify installed AIs, default models, roles, and options |
+| `claudegravity "Task"` | Run task in the current folder (Claude = Architect, Antigravity = Inspector) |
+| `claudegravity --swap "Task"` | **Swap Roles:** Antigravity builds (Architect), Claude reviews (Inspector) |
 | `claudegravity -i "Task"` | **Interview Mode:** Both AIs ask clarifying questions if anything is ambiguous |
+| `claudegravity --effort max "Task"` | Set reasoning/thinking effort (`low` to `max`) |
 | `claudegravity --yolo "Task"` | **Autopilot:** Run hands-free with full tool permissions granted automatically |
+| `claudegravity --architekt agy --pruefstatiker claude "Task"` | Explicitly assign AIs for Architect and Inspector roles |
 | `claudegravity -p /path/to/project "Task"` | Run the task in an external project directory |
 | `claudegravity --resume` or `claudegravity -c` | Resume an interrupted session exactly where it stopped |
-| `claudegravity --reviewer-effort high "Task"` | Set maximum reasoning effort for Antigravity review |
 | `claudegravity --auto-switch "Task"` | **Auto-Fallback:** Automatically switch to alternative model if limit reached |
 
 ---
@@ -404,26 +453,30 @@ claudegravity --check
 
 ---
 
-### 7. Plan Approval & Changes Menu
+### 7. Plan Approval & Changes Menu (Approve, Changes & Swap)
 
 When Phase 2 finishes, you will see this menu:
 
 ```text
 ============================================================
 📋 PLAN STATUS: Completed & Reviewed
-📄 Current Plan File: .dual-loop/sessions/<session>/PLAN_v2.md
+📄 Current Plan File               : .dual-loop/sessions/<session>/PLAN_v2.md
+🏗️ Architect (Plan & Build)       : Claude Code (`claude-sonnet-5`)
+🧐 Structural Inspector (Review)   : Antigravity (agy) (`gemini-2.5-pro`) [high]
 ============================================================
 What would you like to do?
   [1] Approve  -> Approve plan & proceed to implementation
   [2] Changes  -> Request modifications/feedback
-  [3] View     -> Read plan directly in terminal
-  [4] Exit     -> Cancel (can be resumed later with --resume)
+  [3] Swap     -> Swap roles (Architect <-> Inspector)
+  [4] View     -> Read plan directly in terminal
+  [5] Exit     -> Cancel (can be resumed later with --resume)
 ------------------------------------------------------------
-Choice [1/2/3/4] (Default: 1):
+Choice [1/2/3/4/5] (Default: 1):
 ```
 
-#### If you choose `[2] Changes`:
-The change routing menu puts comfortable graphical UI options on top and terminal CLI options at the bottom:
+* **[1] Approve:** The Architect immediately starts implementing the plan in Phase 3.
+* **[3] Swap:** Invert roles on the fly! If Claude designed the blueprint but you want Antigravity to write the code and Claude to audit, simply choose `[3]`.
+* **[2] Changes:** Opens the change routing menu:
 
 ```text
 [UI Options (Graphical Interfaces)]:
@@ -435,8 +488,8 @@ The change routing menu puts comfortable graphical UI options on top and termina
 [CLI Options (Terminal)]:
   [3] Type feedback directly here
       -> E.g. "Use PostgreSQL instead of SQLite". The AI rewrites the plan!
-  [4] Launch interactive Claude Code CLI session
-  [5] Launch interactive Antigravity CLI session
+  [4] Launch interactive Claude Code CLI session (Architect)
+  [5] Launch interactive Antigravity CLI session (Inspector)
   [6] Return to main menu
 ```
 
@@ -451,23 +504,37 @@ claudegravity -i "Build an authentication service"
 ```
 
 Both agents will interact with you directly:
-1. **Planner (Claude):** Asks up to 3 specific clarifying questions before finalizing the roadmap. You answer in the terminal.
-2. **Reviewer (Antigravity):** Highlights critical edge cases or trade-offs and asks for your guidance. Your answers are passed into Plan Round 2.
+1. **Architect (Claude):** Asks up to 3 specific clarifying questions before finalizing the roadmap. You answer in the terminal.
+2. **Structural Inspector (Antigravity):** Highlights critical edge cases or trade-offs and asks for your guidance. Your answers are passed into Plan Round 2.
 
 ---
 
-### 9. Model Selection & Reasoning Effort (`--model`, `--effort`)
+### 9. Model Selection, Effort & Role Swapping (`--swap`, `--architekt`, `--pruefstatiker`)
 
-By default, the CLIs use their configured default models and effort. You can customize them per task:
+By default, the CLIs use their configured default models and effort. You can configure roles, models, and reasoning effort per task:
 
-* `--planner-model <name>`: Model for planning/coding (e.g., `sonnet`, `opus`, `gemini-4-argon-high`)
-* `--reviewer-model <name>`: Model for review (e.g., `gemini-4-argon-high`, `gemini-3.8-flash-high`)
-* `--effort <low|medium|high|xhigh|max>`: Reasoning effort for Antigravity (`agy`)
-* `--reviewer-effort <effort>`: Specific effort for the review stage (e.g., `high` or `max` for deeper critique)
+#### 🔄 Swapping Roles (`--swap`):
+* Default: **Architect** = Claude Code (Plan & Build) | **Inspector** = Antigravity (Review & Audit)
+* Invert the team with `--swap`:
+  ```bash
+  claudegravity --swap "Build an authentication service"
+  ```
+  Now **Antigravity** acts as the Architect (Plan & Build), and **Claude Code** acts as the rigorous Inspector!
 
-**Example with high reviewer reasoning effort and interview mode:**
+#### 🛠️ Explicitly Assigning AIs & Models:
+* `--architekt <claude|agy|gemini>` (or `--planner`): Assign the AI for drafting and implementation.
+* `--pruefstatiker <agy|claude|gemini>` (or `--reviewer`): Assign the AI for independent review.
+* `--architekt-model <name>` (or `--planner-model`): Model for the Architect (e.g., `sonnet`, `opus`, `gemini-2.5-pro`).
+* `--pruefstatiker-model <name>` (or `--reviewer-model`): Model for the Inspector (e.g., `gemini-2.5-pro`, `sonnet`, `gemini-3.8-flash-high`).
+
+#### 🧠 Reasoning Effort (Thinking Intensity):
+* `--effort <low|medium|high|xhigh|max>`: Global thinking effort.
+* `--pruefstatiker-effort <effort>` (or `--reviewer-effort`): Specific reasoning effort for the Inspector (e.g., `high` or `max` for thorough security auditing).
+* `--architekt-effort <effort>` (or `--planner-effort`): Specific reasoning effort for the Architect.
+
+**Example with swapped roles, max inspector effort, and interview mode:**
 ```bash
-claudegravity --reviewer-effort max -i "Refactor payment module"
+claudegravity --swap --pruefstatiker-effort max -i "Refactor payment module"
 ```
 
 ---
@@ -482,7 +549,7 @@ claudegravity --resume
 # or:
 claudegravity -c
 ```
-It reads the session state from `state.json` and resumes execution right where it stopped.
+It reads the session state from `state.json` and resumes execution right where it stopped (including all model and role configurations).
 
 ---
 
@@ -508,7 +575,7 @@ If Claude Code or Antigravity hits a personal subscription limit (`You've hit yo
 With `--auto-switch` (or `--fallback`), the tool will automatically failover to the alternative model without blocking!
 
 #### 📊 Automatic Token & Cost Audit in `.done`:
-When the task finishes, `claudegravity` automatically audits consumed tokens and estimated costs directly into the session's `.done` file:
+When the task finishes, `claudegravity` automatically audits consumed tokens, roles, models, effort, and estimated costs directly into the session's `.done` file:
 
 ```markdown
 ---
@@ -516,10 +583,20 @@ When the task finishes, `claudegravity` automatically audits consumed tokens and
 * **Gesamt-Tokens:** 24.850 Tokens
   * **Input-Tokens:** 21.600
   * **Output-Tokens:** 3.250
-* **Entstandene Kosten (geschätzt):** ~$0.24 USD
-* **Aufschlüsselung nach Modell / Phase:**
-  * **Claude Code:** 19.400 Tokens (~$0.24 USD)
-  * **Antigravity (agy):** 5.450 Tokens (Abo-Inklusivkontingent)
+* **Entstandene Kosten (geschätzt):** ~$0.2400 USD
+* **Aufschlüsselung nach Agent, Rolle, Modell & Effort:**
+  * **Claude Code**
+    * **Rolle:** 🏗️ Architekt (Planung & Bau)
+    * **Modell:** `claude-sonnet-5`
+    * **Reasoning-Effort:** `standard`
+    * **Verbrauch:** 19.400 Tokens (Input: 16.500, Output: 2.900)
+    * **Kosten:** ~$0.2400 USD
+  * **Antigravity (agy)**
+    * **Rolle:** 🧐 Prüfstatiker (Prüfung & Review)
+    * **Modell:** `gemini-2.5-pro`
+    * **Reasoning-Effort:** `high`
+    * **Verbrauch:** 5.450 Tokens (Input: 5.100, Output: 350)
+    * **Kosten:** Abo-Inklusivkontingent
 * **Audit-Zeitstempel:** 2026-10-17 16:15:30
 ```
 

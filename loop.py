@@ -139,6 +139,18 @@ def wait_countdown(seconds: int, reset_str: str = "") -> bool:
         return False
 
 
+def extract_flag_value(flags: list[str] | None, flag_name: str) -> str | None:
+    """Extrahiert den Wert eines Flags wie --model <name> oder --effort=<val> aus einer Flag-Liste."""
+    if not flags:
+        return None
+    for i, f in enumerate(flags):
+        if f == flag_name and i + 1 < len(flags):
+            return flags[i + 1]
+        elif f.startswith(f"{flag_name}="):
+            return f.split("=", 1)[1]
+    return None
+
+
 class SessionMetrics:
     def __init__(self):
         self.input_tokens = 0
@@ -147,7 +159,17 @@ class SessionMetrics:
         self.cost_usd = 0.0
         self.by_agent: dict[str, dict] = {}
 
-    def add(self, agent_name: str, input_tokens: int = 0, output_tokens: int = 0, total_tokens: int = 0, cost_usd: float = 0.0):
+    def add(
+        self,
+        agent_name: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        total_tokens: int = 0,
+        cost_usd: float = 0.0,
+        role: str | None = None,
+        model: str | None = None,
+        effort: str | None = None
+    ):
         if total_tokens == 0:
             total_tokens = input_tokens + output_tokens
         self.input_tokens += input_tokens
@@ -156,11 +178,27 @@ class SessionMetrics:
         self.cost_usd += cost_usd
 
         if agent_name not in self.by_agent:
-            self.by_agent[agent_name] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0}
-        self.by_agent[agent_name]["input_tokens"] += input_tokens
-        self.by_agent[agent_name]["output_tokens"] += output_tokens
-        self.by_agent[agent_name]["total_tokens"] += total_tokens
-        self.by_agent[agent_name]["cost_usd"] += cost_usd
+            self.by_agent[agent_name] = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "cost_usd": 0.0,
+                "role": role or "",
+                "model": model or "",
+                "effort": effort or "",
+            }
+
+        entry = self.by_agent[agent_name]
+        entry["input_tokens"] += input_tokens
+        entry["output_tokens"] += output_tokens
+        entry["total_tokens"] += total_tokens
+        entry["cost_usd"] += cost_usd
+        if role:
+            entry["role"] = role
+        if model:
+            entry["model"] = model
+        if effort:
+            entry["effort"] = effort
 
     def to_dict(self) -> dict:
         return {
@@ -193,12 +231,20 @@ def format_metrics_report(metrics: SessionMetrics) -> str:
         f"  * **Input-Tokens:** {metrics.input_tokens:,}",
         f"  * **Output-Tokens:** {metrics.output_tokens:,}",
         f"* **Entstandene Kosten (geschätzt):** ~${metrics.cost_usd:.4f} USD",
-        "* **Aufschlüsselung nach Modell / Phase:**"
+        "* **Aufschlüsselung nach Agent, Rolle, Modell & Effort:**"
     ]
     if metrics.by_agent:
         for agent_name, usage in metrics.by_agent.items():
-            cost_str = f"~${usage['cost_usd']:.4f} USD" if usage['cost_usd'] > 0 else "Abo-Inklusivkontingent"
-            lines.append(f"  * **{agent_name}:** {usage['total_tokens']:,} Tokens (Input: {usage['input_tokens']:,}, Output: {usage['output_tokens']:,} | {cost_str})")
+            lines.append(f"  * **{agent_name}**")
+            if usage.get("role"):
+                lines.append(f"    * **Rolle:** {usage['role']}")
+            if usage.get("model"):
+                lines.append(f"    * **Modell:** `{usage['model']}`")
+            if usage.get("effort"):
+                lines.append(f"    * **Reasoning-Effort:** `{usage['effort']}`")
+            cost_str = f"~${usage['cost_usd']:.4f} USD" if usage.get("cost_usd", 0.0) > 0 else "Abo-Inklusivkontingent"
+            lines.append(f"    * **Verbrauch:** {usage['total_tokens']:,} Tokens (Input: {usage['input_tokens']:,}, Output: {usage['output_tokens']:,})")
+            lines.append(f"    * **Kosten:** {cost_str}")
     else:
         lines.append("  * Keine detaillierte Modell-Aufschlüsselung verfügbar.")
     lines.append(f"* **Audit-Zeitstempel:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -229,22 +275,44 @@ def append_metrics_to_done(session_dir: Path, project_path: Path, metrics: Sessi
 
 
 class AgentCLI:
-    def __init__(self, name: str, binary: str, run_fn, metrics_tracker: SessionMetrics | None = None):
+    def __init__(
+        self,
+        name: str,
+        binary: str,
+        run_fn,
+        metrics_tracker: SessionMetrics | None = None,
+        role: str = "Architekt",
+        model: str | None = None,
+        effort: str | None = None
+    ):
         self.name = name
         self.binary = binary
         self.run_fn = run_fn
         self.metrics_tracker = metrics_tracker
+        self.role = role
+        self.model = model
+        self.effort = effort
 
     def run(self, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
         text, metrics = self.run_fn(self.binary, prompt, cwd, extra_flags)
-        if self.metrics_tracker and metrics:
-            self.metrics_tracker.add(
-                agent_name=self.name,
-                input_tokens=metrics.get("input_tokens", 0),
-                output_tokens=metrics.get("output_tokens", 0),
-                total_tokens=metrics.get("total_tokens", 0),
-                cost_usd=metrics.get("cost_usd", 0.0)
-            )
+        if metrics:
+            used_model = metrics.get("model") or extract_flag_value(extra_flags, "--model") or self.model
+            used_effort = metrics.get("effort") or extract_flag_value(extra_flags, "--effort") or self.effort
+            if used_model:
+                self.model = used_model
+            if used_effort:
+                self.effort = used_effort
+            if self.metrics_tracker:
+                self.metrics_tracker.add(
+                    agent_name=self.name,
+                    input_tokens=metrics.get("input_tokens", 0),
+                    output_tokens=metrics.get("output_tokens", 0),
+                    total_tokens=metrics.get("total_tokens", 0),
+                    cost_usd=metrics.get("cost_usd", 0.0),
+                    role=self.role,
+                    model=used_model,
+                    effort=used_effort
+                )
         return text
 
 
@@ -284,11 +352,22 @@ def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags:
         out = usage.get("output_tokens", 0)
         tot = inp + out
         cost = float(data.get("total_cost_usd", 0.0))
+
+        model_name = None
+        model_usage = data.get("modelUsage", {})
+        if model_usage:
+            model_name = list(model_usage.keys())[0]
+        if not model_name:
+            model_name = extract_flag_value(extra_flags, "--model")
+        effort_val = extract_flag_value(extra_flags, "--effort")
+
         metrics = {
             "input_tokens": inp,
             "output_tokens": out,
             "total_tokens": tot,
-            "cost_usd": cost
+            "cost_usd": cost,
+            "model": model_name,
+            "effort": effort_val
         }
         return text, metrics
     except json.JSONDecodeError:
@@ -296,7 +375,9 @@ def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags:
             "input_tokens": len(prompt) // 4,
             "output_tokens": len(raw) // 4,
             "total_tokens": (len(prompt) + len(raw)) // 4,
-            "cost_usd": 0.0
+            "cost_usd": 0.0,
+            "model": extract_flag_value(extra_flags, "--model"),
+            "effort": extract_flag_value(extra_flags, "--effort")
         }
 
 
@@ -322,11 +403,19 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
         inp = usage.get("input_tokens", 0)
         out = usage.get("output_tokens", 0)
         tot = usage.get("total_tokens", inp + out)
+
+        model_name = extract_flag_value(extra_flags, "--model")
+        effort_val = extract_flag_value(extra_flags, "--effort")
+        if not effort_val and usage.get("thinking_tokens", 0) > 0:
+            effort_val = f"high ({usage['thinking_tokens']} thinking tokens)"
+
         metrics = {
             "input_tokens": inp,
             "output_tokens": out,
             "total_tokens": tot,
-            "cost_usd": 0.0
+            "cost_usd": 0.0,
+            "model": model_name,
+            "effort": effort_val
         }
         return text, metrics
     except json.JSONDecodeError:
@@ -334,7 +423,9 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
             "input_tokens": len(prompt) // 4,
             "output_tokens": len(raw) // 4,
             "total_tokens": (len(prompt) + len(raw)) // 4,
-            "cost_usd": 0.0
+            "cost_usd": 0.0,
+            "model": extract_flag_value(extra_flags, "--model"),
+            "effort": extract_flag_value(extra_flags, "--effort")
         }
 
 
@@ -581,8 +672,10 @@ def safe_agent_run(
         except RateLimitError as err:
             action, new_agent = handle_rate_limit(agent, agents, err, session_dir, state, auto_switch=auto_switch)
             if action == "switch" and new_agent:
-                print(f"🔄 Rolle '{role.capitalize()}' wechselt zu {new_agent.name}!")
+                role_label = "Architekt" if role == "planner" else "Prüfstatiker"
+                print(f"🔄 Rolle '{role_label}' wechselt zu {new_agent.name}!")
                 agent = new_agent
+                agent.role = "🏗️ Architekt (Planung & Bau)" if role == "planner" else "🧐 Prüfstatiker (Prüfung & Review)"
                 if metrics_tracker:
                     agent.metrics_tracker = metrics_tracker
                 flags = get_permission_flags(new_agent.binary)
@@ -636,9 +729,10 @@ def run_adversarial_plan(
 
     # Wenn Plan v1 noch nicht existiert (oder von vorn begonnen wird):
     if not plan_v1_file.exists():
+        p_desc = f"{planner.name}" + (f" (`{planner.model}`)" if planner.model else "") + (f" [{planner.effort}]" if planner.effort else "")
         print(f"\n📁 Session-Ordner: {session_dir.relative_to(project_path)}")
-        print(f"🚀 Phase 1: Plan-Entwurf durch {planner.name} (im Kontext von {project_path.name})...")
-        print(f"⏳ Warte auf {planner.name}...", flush=True)
+        print(f"🚀 Phase 1: Plan-Entwurf durch 🏗️ Architekt ({p_desc}) im Kontext von {project_path.name}...")
+        print(f"⏳ Warte auf 🏗️ Architekt ({planner.name})...", flush=True)
 
         prompt_plan = (
             f"Du bist der leitende Software-Architekt für das Projekt in '{project_path}'.\n"
@@ -686,7 +780,7 @@ def run_adversarial_plan(
             questions = extract_questions(plan)
             if questions:
                 print("\n" + "=" * 60)
-                print(f"❓ {planner.name} (Planer) hat Rückfragen an dich:")
+                print(f"❓ 🏗️ Architekt ({planner.name}) hat Rückfragen an dich:")
                 print("=" * 60)
                 print(questions)
                 print("-" * 60)
@@ -695,7 +789,7 @@ def run_adversarial_plan(
                 except (EOFError, KeyboardInterrupt):
                     user_ans = ""
                 if user_ans:
-                    print(f"⏳ {planner.name} bezieht deine Vorgaben in Plan v1 ein...", flush=True)
+                    print(f"⏳ 🏗️ Architekt ({planner.name}) bezieht deine Vorgaben in Plan v1 ein...", flush=True)
                     prompt_refine = (
                         f"Du hattest dem Nutzer folgende Fragen gestellt:\n{questions}\n\n"
                         f"Der Nutzer hat wie folgt geantwortet:\n{user_ans}\n\n"
@@ -752,10 +846,13 @@ def run_adversarial_plan(
         print("🎉 Plan wurde in einer früheren Sitzung bereits genehmigt!")
         return True, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
 
+    p_details = f"{planner.name}" + (f" (`{planner.model}`)" if planner.model else "") + (f" [{planner.effort}]" if planner.effort else "")
+    r_details = f"{reviewer.name}" + (f" (`{reviewer.model}`)" if reviewer.model else "") + (f" [{reviewer.effort}]" if reviewer.effort else "")
     log_entry = [
         f"\n## [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Session: {session_dir.name}",
         f"- **Aufgabe:** {task}",
-        f"- **Planer:** {planner.name} | **Prüfer:** {reviewer.name}",
+        f"- **🏗️ Architekt (Planung & Bau):** {p_details}",
+        f"- **🧐 Prüfstatiker (Prüfung & Review):** {r_details}",
         f"- **Session-Pfad:** `{session_dir.relative_to(project_path)}`"
     ]
 
@@ -765,14 +862,15 @@ def run_adversarial_plan(
             save_session_state(session_dir, state)
             return False, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
 
-        print(f"\n🔍 Phase 2: Unabhängiges Adversarial Review (Runde {r}/{max_rounds}) durch {reviewer.name}...")
-        print(f"⏳ Warte auf Review von {reviewer.name}...", flush=True)
+        r_desc = f"{reviewer.name}" + (f" (`{reviewer.model}`)" if reviewer.model else "") + (f" [{reviewer.effort}]" if reviewer.effort else "")
+        print(f"\n🔍 Phase 2: Unabhängiges Review (Runde {r}/{max_rounds}) durch 🧐 Prüfstatiker ({r_desc})...")
+        print(f"⏳ Warte auf Review von 🧐 Prüfstatiker ({reviewer.name})...", flush=True)
 
         prompt_rev = (
-            f"Du bist ein unbarmherziger Sicherheits- und Code-Reviewer für das Projekt in '{project_path}'.\n"
-            f"Grille den folgenden Plan auf Schwachstellen, Race Conditions, fehlende Tests und logische Lücken:\n\n"
+            f"Du bist der unabhängige Prüfstatiker und Code-Auditor für das Projekt in '{project_path}'.\n"
+            f"Prüfe und grille den folgenden Plan des Architekten unbarmherzig auf Schwachstellen, Race Conditions, fehlende Tests, Sicherheitslücken und architektonische Risiken:\n\n"
             f"Aufgabe: {task}\n\n"
-            f"Plan:\n{plan}\n\n"
+            f"Plan des Architekten:\n{plan}\n\n"
             f"Antworte strukturiert mit:\n"
             f"VERDICT: APPROVED (oder VERDICT: REVISE)\n"
             f"KRITIK:\n- [Punkte...]\n"
@@ -805,7 +903,7 @@ def run_adversarial_plan(
 
         state["rounds_completed"] = r
         if is_approved:
-            print(f"🎉 Plan von {reviewer.name} genehmigt!")
+            print(f"🎉 Plan von 🧐 Prüfstatiker ({reviewer.name}) genehmigt!")
             approved = True
             state["plan_approved"] = True
             save_session_state(session_dir, state)
@@ -816,7 +914,7 @@ def run_adversarial_plan(
                 rev_questions = extract_questions(review)
                 if rev_questions:
                     print("\n" + "=" * 60)
-                    print(f"❓ {reviewer.name} (Prüfer) hat Rückfragen an dich:")
+                    print(f"❓ 🧐 Prüfstatiker ({reviewer.name}) hat Rückfragen an dich:")
                     print("=" * 60)
                     print(rev_questions)
                     print("-" * 60)
@@ -827,14 +925,14 @@ def run_adversarial_plan(
                     if user_rev_ans:
                         user_rev_feedback = f"\n\nDer Nutzer hat auf die Rückfragen folgendes klargestellt:\n{user_rev_ans}\n"
 
-            print(f"⚠️ Kritikpunkte von {reviewer.name}. {planner.name} bessert den Plan nach...")
-            print(f"⏳ Warte auf Überarbeitung durch {planner.name}...", flush=True)
+            print(f"⚠️ Kritikpunkte von 🧐 Prüfstatiker ({reviewer.name}). 🏗️ Architekt ({planner.name}) bessert den Plan nach...")
+            print(f"⏳ Warte auf Überarbeitung durch 🏗️ Architekt ({planner.name})...", flush=True)
             prompt_fix = (
-                f"Der Reviewer ({reviewer.name}) hat folgende Kritikpunkte am Plan geäußert:\n\n"
+                f"Der Prüfstatiker ({reviewer.name}) hat folgende statische & sicherheitsrelevante Kritikpunkte am Plan geäußert:\n\n"
                 f"{review}\n"
                 f"{user_rev_feedback}\n"
                 f"Bisheriger Plan:\n{plan}\n\n"
-                f"Bitte überarbeite den Plan und behebe alle genannten Mängel vollständig."
+                f"Als Architekt: Bitte überarbeite den Plan und behebe alle genannten Mängel vollständig."
                 f"{PLANNING_DIRECTIVE}"
             )
             plan, planner, planner_flags = safe_agent_run(
@@ -896,40 +994,73 @@ def handle_plan_approval_and_changes(
     state: dict,
     agents: dict[str, AgentCLI],
     auto_switch: bool = False,
-    planner_flags: list[str] | None = None
-) -> tuple[bool, Path, AgentCLI, list[str]]:
+    planner_flags: list[str] | None = None,
+    reviewer_flags: list[str] | None = None
+) -> tuple[bool, Path, AgentCLI, AgentCLI, list[str], list[str]]:
     planner_flags = list(planner_flags or [])
+    reviewer_flags = list(reviewer_flags or [])
     while not STOP_REQUESTED:
+        p_desc = f"{planner.name}" + (f" (`{planner.model}`)" if planner.model else "") + (f" [{planner.effort}]" if planner.effort else "")
+        r_desc = f"{reviewer.name}" + (f" (`{reviewer.model}`)" if reviewer.model else "") + (f" [{reviewer.effort}]" if reviewer.effort else "")
         print("\n" + "=" * 60)
         print("📋 PLAN-STATUS: Fertiggestellt & Geprüft")
-        print(f"📄 Aktuelle Plan-Datei: {plan_file.relative_to(project_path)}")
+        print(f"📄 Aktuelle Plan-Datei             : {plan_file.relative_to(project_path)}")
+        print(f"🏗️ Architekt (Planung & Bau)       : {p_desc}")
+        print(f"🧐 Prüfstatiker (Prüfung & Review) : {r_desc}")
         print("=" * 60)
-        print("Möchtest du den Plan freigeben oder Änderungen vornehmen?")
+        print("Möchtest du den Plan freigeben, Rollen tauschen oder Änderungen vornehmen?")
         print("  [1] Approve  -> Plan genehmigen & weiter zur Implementierung")
         print("  [2] Changes  -> Änderungen/Feedback anbringen")
-        print("  [3] Anzeigen -> Plan direkt hier im Terminal lesen")
-        print("  [4] Beenden  -> Abbrechen (Fortsetzen später mit --resume möglich)")
+        print("  [3] Swap     -> Rollen tauschen (Architekt <-> Prüfstatiker)")
+        print("  [4] Anzeigen -> Plan direkt hier im Terminal lesen")
+        print("  [5] Beenden  -> Abbrechen (Fortsetzen später mit --resume möglich)")
         print("-" * 60)
 
         try:
-            choice = input("Auswahl [1/2/3/4] (Standard: 1): ").strip()
+            choice = input("Auswahl [1/2/3/4/5] (Standard: 1): ").strip()
         except (EOFError, KeyboardInterrupt):
-            return False, plan_file, planner, planner_flags
+            return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
         if choice in ["", "1", "approve", "a"]:
             state["user_approved"] = True
             save_session_state(session_dir, state)
-            return True, plan_file, planner, planner_flags
+            return True, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
-        elif choice in ["3", "view", "v"]:
+        elif choice in ["3", "swap", "s"]:
+            planner, reviewer = reviewer, planner
+            planner.role = "🏗️ Architekt (Planung & Bau)"
+            reviewer.role = "🧐 Prüfstatiker (Prüfung & Review)"
+
+            yolo_active = state.get("yolo_enabled", False)
+            planner_flags = get_permission_flags(planner.binary) if yolo_active else []
+            reviewer_flags = []
+            if planner.model:
+                planner_flags.extend(["--model", planner.model])
+            if planner.effort and planner.binary == "agy":
+                planner_flags.extend(["--effort", planner.effort])
+            if reviewer.model:
+                reviewer_flags.extend(["--model", reviewer.model])
+            if reviewer.effort and reviewer.binary == "agy":
+                reviewer_flags.extend(["--effort", reviewer.effort])
+
+            state["swap_roles"] = True
+            state["planner_binary"] = planner.binary
+            state["reviewer_binary"] = reviewer.binary
+            save_session_state(session_dir, state)
+            print(f"\n🔄 Rollen erfolgreich getauscht:")
+            print(f"   🏗️ Neuer Architekt (Planung & Bau)    : {planner.name}")
+            print(f"   🧐 Neuer Prüfstatiker (Prüfung & Review): {reviewer.name}")
+            continue
+
+        elif choice in ["4", "view", "v"]:
             print("\n" + "-" * 50)
             print(plan_file.read_text(encoding="utf-8"))
             print("-" * 50)
             continue
 
-        elif choice in ["4", "exit", "q"]:
+        elif choice in ["5", "exit", "q"]:
             print("Abgebrochen. Du kannst diesen Stand jederzeit mit 'claudegravity --resume' fortsetzen.")
-            return False, plan_file, planner, planner_flags
+            return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
         elif choice in ["2", "changes", "c"]:
             print("\n" + "=" * 60)
@@ -943,15 +1074,15 @@ def handle_plan_approval_and_changes(
             print("\n[CLI-Varianten (Terminal)]:")
             print("  [3] Feedback direkt hier eintippen")
             print("      -> KI überarbeitet den Plan anhand deiner Anweisung automatisch")
-            print(f"  [4] Interaktive {planner.name} CLI-Session starten")
-            print(f"  [5] Interaktive {reviewer.name} CLI-Session starten")
+            print(f"  [4] Interaktive {planner.name} CLI-Session (Architekt) starten")
+            print(f"  [5] Interaktive {reviewer.name} CLI-Session (Prüfstatiker) starten")
             print("  [6] Zurück zum Hauptmenü")
             print("-" * 60)
 
             try:
                 c_choice = input("Auswahl [1-6]: ").strip()
             except (EOFError, KeyboardInterrupt):
-                return False, plan_file, planner, planner_flags
+                return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
             if c_choice == "1":
                 editor = os.environ.get("EDITOR", "xdg-open")
@@ -1000,19 +1131,19 @@ def handle_plan_approval_and_changes(
                     print(f"✅ Plan aktualisiert und als {new_v_file.name} gesichert!")
 
             elif c_choice == "4":
-                print(f"🚀 Starte interaktive {planner.name}-Sitzung in {project_path}...")
+                print(f"🚀 Starte interaktive {planner.name}-Sitzung (Architekt) in {project_path}...")
                 subprocess.run([planner.binary], cwd=str(project_path))
                 print(f"Zurück im Loop.")
 
             elif c_choice == "5":
-                print(f"🚀 Starte interaktive {reviewer.name}-Sitzung in {project_path}...")
+                print(f"🚀 Starte interaktive {reviewer.name}-Sitzung (Prüfstatiker) in {project_path}...")
                 subprocess.run([reviewer.binary], cwd=str(project_path))
                 print(f"Zurück im Loop.")
 
             elif c_choice == "6":
                 continue
 
-    return False, plan_file, planner, planner_flags
+    return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
 
 def main():
@@ -1022,16 +1153,17 @@ def main():
     parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Maximale autonome Iterationen (Standard: 10)")
     parser.add_argument("-c", "--resume", "--continue", dest="resume", action="store_true", help="Unterbrochene Sitzung fortsetzen")
     parser.add_argument("-i", "--ask", "--interview", "--clarify", action="store_true", help="Fragen-Modus: Beide Agenten stellen bei Unklarheiten gezielte Fragen an dich, bevor der Plan finalisiert wird")
-    parser.add_argument("--planner", default=None, help="Explizite CLI für Planung/Bau (z.B. claude)")
-    parser.add_argument("--reviewer", default=None, help="Explizite CLI für Review (z.B. agy oder gemini)")
-    parser.add_argument("--planner-model", default=None, help="Modell für den Planer (z.B. sonnet, opus, gemini-4-argon-high)")
-    parser.add_argument("--reviewer-model", default=None, help="Modell für den Prüfer (z.B. gemini-4-argon-high, gemini-3.8-flash-high, opus)")
+    parser.add_argument("--planner", "--architekt", default=None, help="Explizite CLI für Architekt / Bau (z.B. claude oder agy)")
+    parser.add_argument("--reviewer", "--pruefstatiker", default=None, help="Explizite CLI für Prüfstatiker / Review (z.B. agy oder claude)")
+    parser.add_argument("--swap", "--swap-roles", "--reverse", action="store_true", help="Rollen tauschen: Antigravity wird Architekt (Bau), Claude wird Prüfstatiker (Review)")
+    parser.add_argument("--planner-model", "--architekt-model", default=None, help="Modell für den Architekten (z.B. sonnet, opus, gemini-2.5-pro)")
+    parser.add_argument("--reviewer-model", "--pruefstatiker-model", default=None, help="Modell für den Prüfstatiker (z.B. gemini-2.5-pro, sonnet, opus)")
     parser.add_argument("--effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität / Thinking Effort (für agy)")
-    parser.add_argument("--reviewer-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Prüfer (für agy)")
-    parser.add_argument("--planner-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Planer (falls agy)")
+    parser.add_argument("--reviewer-effort", "--pruefstatiker-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Prüfstatiker (für agy)")
+    parser.add_argument("--planner-effort", "--architekt-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Architekten (falls agy)")
     parser.add_argument("--auto-switch", "--fallback", action="store_true", help="Bei Erreichen eines AI-Limits automatisch zum alternativen Modell wechseln")
     parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
-    parser.add_argument("--check", action="store_true", help="Installierte AI-CLIs prüfen")
+    parser.add_argument("--check", action="store_true", help="Installierte AI-CLIs und Rollenkonfiguration prüfen")
     parser.add_argument("-d", "--delay", type=int, default=3, help="Pause zwischen Runden in Sekunden")
 
     args = parser.parse_args()
@@ -1042,14 +1174,17 @@ def main():
         print("🔍 Erkannte AI-CLIs auf deinem System:")
         for key, agent in agents.items():
             print(f"  [x] {agent.name} (`{agent.binary}` im PATH)")
-        print("\n⚙️  Modell- und Intensitäts-Steuerung:")
-        print("  - Standard: Es werden die in deinen CLIs hinterlegten Standard-Modelle und -Intensitäten genutzt.")
-        print("  - Planer-Modell anpassen : --planner-model <name>  (z.B. sonnet, opus, gemini-4-argon-high)")
-        print("  - Prüfer-Modell anpassen : --reviewer-model <name> (z.B. gemini-4-argon-high, gemini-3.8-flash-high)")
-        print("  - Reasoning-Effort (agy) : --effort <low|medium|high|xhigh|max> (oder --reviewer-effort / --planner-effort)")
+        print("\n⚙️  Rollen- und Modell-Steuerung (Architekt & Prüfstatiker):")
+        print("  - Standard-Rollen        : Architekt = Claude Code (Bau), Prüfstatiker = Antigravity (Prüfung)")
+        print("  - Rollen tauschen        : --swap / --swap-roles (Antigravity = Architekt, Claude = Prüfstatiker)")
+        print("  - Architekt festlegen    : --architekt / --planner <claude|agy|gemini|codex>")
+        print("  - Prüfstatiker festlegen : --pruefstatiker / --reviewer <agy|claude|gemini|codex>")
+        print("  - Architekt-Modell       : --architekt-model / --planner-model <name> (z.B. sonnet, gemini-2.5-pro)")
+        print("  - Prüfstatiker-Modell    : --pruefstatiker-model / --reviewer-model <name> (z.B. gemini-2.5-pro, sonnet)")
+        print("  - Reasoning-Effort       : --effort <low|medium|high|xhigh|max> (oder --pruefstatiker-effort / --architekt-effort)")
         print("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Kontingentlimit nahtlos zum Alternativmodell)")
         print("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
-        print("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert)")
+        print("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert inkl. Rolle, Modell & Effort)")
         if len(agents) >= 2:
             print("\n🚀 Mindestens 2 Modelle vorhanden. Dual-Loop ist voll einsatzbereit!")
         else:
@@ -1127,20 +1262,43 @@ def main():
         save_session_state(session_dir, state)
 
     # Paarung festlegen
-    if args.planner and args.planner in agents:
-        planner = agents[args.planner]
-    elif "claude" in agents:
+    swap_roles = args.swap or state.get("swap_roles", False)
+    if args.swap:
+        state["swap_roles"] = True
+
+    architekt_choice = args.planner
+    pruefstatiker_choice = args.reviewer
+
+    if swap_roles:
+        if not architekt_choice and "agy" in agents:
+            architekt_choice = "agy"
+        elif not architekt_choice and "gemini" in agents:
+            architekt_choice = "gemini"
+        if not pruefstatiker_choice and "claude" in agents:
+            pruefstatiker_choice = "claude"
+
+    if architekt_choice and architekt_choice in agents:
+        planner = agents[architekt_choice]
+    elif "claude" in agents and not swap_roles:
         planner = agents["claude"]
     else:
         planner = list(agents.values())[0]
 
-    remaining = [a for k, a in agents.items() if a != planner]
-    if args.reviewer and args.reviewer in agents:
-        reviewer = agents[args.reviewer]
+    remaining = [a for k, a in agents.items() if a.binary != planner.binary]
+    if pruefstatiker_choice and pruefstatiker_choice in agents:
+        reviewer = agents[pruefstatiker_choice]
     elif remaining:
-        reviewer = remaining[0]
+        agy_cand = [a for a in remaining if a.binary == "agy"]
+        reviewer = agy_cand[0] if agy_cand else remaining[0]
     else:
         reviewer = planner
+
+    if swap_roles and not args.planner and not args.reviewer:
+        if planner.binary == "claude" and reviewer.binary == "agy":
+            planner, reviewer = reviewer, planner
+
+    planner.role = "🏗️ Architekt (Planung & Bau)"
+    reviewer.role = "🧐 Prüfstatiker (Prüfung & Review)"
 
     # ==========================================
     # Metriken (Token & Kosten-Tracking)
@@ -1166,29 +1324,43 @@ def main():
     planner_flags = list(planner_perm_flags)
     reviewer_flags = list(reviewer_perm_flags)
 
-    # Modell für Planer
+    # Modell für Architekt
     planner_model = args.planner_model or state.get("planner_model")
     if planner_model:
         planner_flags.extend(["--model", planner_model])
         state["planner_model"] = planner_model
+        planner.model = planner_model
+    else:
+        planner.model = "claude-sonnet (CLI Default)" if planner.binary == "claude" else ("gemini-2.5-pro (CLI Default)" if planner.binary in ["agy", "gemini"] else "CLI Default")
 
-    # Effort für Planer (falls agy)
+    # Effort für Architekt (falls agy)
     p_effort = args.planner_effort or args.effort or state.get("planner_effort")
-    if p_effort and planner.binary == "agy":
-        planner_flags.extend(["--effort", p_effort])
+    if p_effort:
+        if planner.binary == "agy":
+            planner_flags.extend(["--effort", p_effort])
         state["planner_effort"] = p_effort
+        planner.effort = p_effort
+    else:
+        planner.effort = "high (CLI Default)" if planner.binary == "agy" else None
 
-    # Modell für Prüfer
+    # Modell für Prüfstatiker
     reviewer_model = args.reviewer_model or state.get("reviewer_model")
     if reviewer_model:
         reviewer_flags.extend(["--model", reviewer_model])
         state["reviewer_model"] = reviewer_model
+        reviewer.model = reviewer_model
+    else:
+        reviewer.model = "gemini-2.5-pro (CLI Default)" if reviewer.binary in ["agy", "gemini"] else ("claude-sonnet (CLI Default)" if reviewer.binary == "claude" else "CLI Default")
 
-    # Effort für Prüfer (falls agy)
+    # Effort für Prüfstatiker (falls agy)
     r_effort = args.reviewer_effort or args.effort or state.get("reviewer_effort")
-    if r_effort and reviewer.binary == "agy":
-        reviewer_flags.extend(["--effort", r_effort])
+    if r_effort:
+        if reviewer.binary == "agy":
+            reviewer_flags.extend(["--effort", r_effort])
         state["reviewer_effort"] = r_effort
+        reviewer.effort = r_effort
+    else:
+        reviewer.effort = "high (CLI Default)" if reviewer.binary == "agy" else None
 
     # Auto-Switch Modus
     auto_switch = args.auto_switch or state.get("auto_switch", False)
@@ -1203,26 +1375,28 @@ def main():
 
     print(f"\n=======================================================")
     print(f"[*] ClaudeGravity Loop gestartet")
-    print(f"[*] Ziel-Projekt : {project_path}")
+    print(f"[*] Ziel-Projekt      : {project_path}")
     p_info = f"{planner.name}"
-    if planner_model:
-        p_info += f" (Modell: {planner_model})"
-    if p_effort and planner.binary == "agy":
-        p_info += f" [Effort: {p_effort}]"
-    print(f"[*] Planer/Bau   : {p_info}")
+    if planner.model:
+        p_info += f" (Modell: {planner.model})"
+    if planner.effort:
+        p_info += f" [Effort: {planner.effort}]"
+    print(f"[*] 🏗️ Architekt      : {p_info}")
 
     r_info = f"{reviewer.name}"
-    if reviewer_model:
-        r_info += f" (Modell: {reviewer_model})"
-    if r_effort and reviewer.binary == "agy":
-        r_info += f" [Effort: {r_effort}]"
-    print(f"[*] Prüfer/Review: {r_info}")
+    if reviewer.model:
+        r_info += f" (Modell: {reviewer.model})"
+    if reviewer.effort:
+        r_info += f" [Effort: {reviewer.effort}]"
+    print(f"[*] 🧐 Prüfstatiker   : {r_info}")
 
     if ask_mode:
-        print(f"[*] Modus        : ❓ Fragen-Modus aktiv (--ask)")
+        print(f"[*] Modus             : ❓ Fragen-Modus aktiv (--ask)")
     if auto_switch:
-        print(f"[*] Fallback     : 🔄 Auto-Switch aktiv (--auto-switch)")
-    print(f"[*] Session-ID   : {session_dir.name}")
+        print(f"[*] Fallback          : 🔄 Auto-Switch aktiv (--auto-switch)")
+    if swap_roles:
+        print(f"[*] Rollen-Status     : 🔄 Rollen getauscht (--swap)")
+    print(f"[*] Session-ID        : {session_dir.name}")
     print(f"=======================================================\n")
 
     project_ctx = load_project_context(project_path)
@@ -1257,10 +1431,10 @@ def main():
         if STOP_REQUESTED:
             return
 
-        # Interaktive Freigabe & Change-Routing (Approve / Changes)
-        user_confirmed, plan_file, planner, planner_flags = handle_plan_approval_and_changes(
+        # Interaktive Freigabe & Change-Routing (Approve / Changes / Swap)
+        user_confirmed, plan_file, planner, reviewer, planner_flags, reviewer_flags = handle_plan_approval_and_changes(
             plan_file, planner, reviewer, task, project_path, session_dir, state,
-            agents=agents, auto_switch=auto_switch, planner_flags=planner_flags
+            agents=agents, auto_switch=auto_switch, planner_flags=planner_flags, reviewer_flags=reviewer_flags
         )
 
         if not user_confirmed or STOP_REQUESTED:
@@ -1297,6 +1471,8 @@ def main():
     session_log = logs_dir / f"loop_{session_dir.name}.log"
 
     print(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {project_path}...")
+    p_build_desc = f"{planner.name}" + (f" (`{planner.model}`)" if planner.model else "") + (f" [{planner.effort}]" if planner.effort else "")
+    print(f"🏗️ Ausführender Architekt: {p_build_desc}")
     start_iter = state.get("last_iteration", 0) + 1
     max_iters = args.max_iterations
 
@@ -1331,7 +1507,7 @@ def main():
         )
 
         try:
-            print(f"⏳ Warte auf {planner.name} (führt genehmigten Plan aus)...", flush=True)
+            print(f"⏳ Warte auf 🏗️ Architekt ({planner.name}) (führt genehmigten Plan aus)...", flush=True)
             res, planner, planner_flags = safe_agent_run(
                 agent=planner,
                 prompt=prompt_build,
@@ -1344,7 +1520,7 @@ def main():
                 role="planner",
                 metrics_tracker=session_metrics
             )
-            print(f"\n📋 Zusammenfassung von {planner.name} (Iteration {iteration}):")
+            print(f"\n📋 Zusammenfassung von 🏗️ Architekt ({planner.name}) [Iteration {iteration}]:")
             print(res)
 
             with open(session_log, "a", encoding="utf-8") as f_log:
