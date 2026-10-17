@@ -3,25 +3,45 @@
 ClaudeGravity MCP Server & Command Optimizer
 Zero-dependency JSON-RPC 2.0 stdio Model Context Protocol (MCP) server for Claude Code, Antigravity, and AI assistants.
 Analyzes tasks, selects optimal model pairings (Architekt, Prüfstatiker, Bauleiter),
-minimizes token costs by up to 70%, and outputs/executes the optimal claudegravity command.
+minimizes token costs by up to 70% (or 100% in Phase 3 via local models), and outputs/executes the optimal claudegravity command.
 
 Usage:
   - As MCP Server (stdio): python3 mcp_server.py
-  - As CLI Optimizer:      python3 mcp_server.py --optimize "Task description" [--priority best-code|lowest-cost|balanced]
+  - As CLI Optimizer:      python3 mcp_server.py --optimize "Task description" [--priority best-code|lowest-cost|local-free|balanced]
 """
 
 import argparse
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
+
+# Cross-Platform Console-Encoding (Windows CMD/PowerShell UTF-8 Fix)
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "claudegravity-mcp"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
+
+
+def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
+    try:
+        req = urllib.request.Request(url, method="GET", headers={"User-Agent": "ClaudeGravity-MCP/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status in [200, 401, 403, 404, 405]
+    except Exception:
+        return False
 
 
 def detect_installed_agents() -> dict[str, str]:
@@ -34,6 +54,26 @@ def detect_installed_agents() -> dict[str, str]:
         agents["gemini"] = "Gemini CLI"
     if shutil.which("codex"):
         agents["codex"] = "Codex CLI"
+    if shutil.which("copilot") or shutil.which("gh"):
+        agents["copilot"] = "GitHub Copilot CLI"
+    if shutil.which("ollama"):
+        agents["ollama-cli"] = "Ollama CLI"
+
+    if is_endpoint_reachable("http://localhost:11434"):
+        agents["ollama"] = "Ollama (Lokal: http://localhost:11434)"
+    if is_endpoint_reachable("http://localhost:1234"):
+        agents["lmstudio"] = "LM Studio (Lokal: http://localhost:1234)"
+
+    env_endpoint = (
+        os.environ.get("CLAUDEGRAVITY_ENDPOINT") or
+        os.environ.get("OPENAI_BASE_URL") or
+        os.environ.get("AI_ENDPOINT")
+    )
+    if env_endpoint:
+        is_gb = "ai.gb-web.de" in env_endpoint
+        label = "ai.gb-web.de (Netzwerk-Server)" if is_gb else "Benutzerdefinierter KI-Server"
+        agents["endpoint"] = f"{label} ({env_endpoint})"
+
     return agents
 
 
@@ -61,6 +101,7 @@ def optimize_claudegravity_command(
     task: str,
     priority: str = "balanced",
     project_path: str = ".",
+    endpoint: str | None = None,
     ask_mode: bool = False,
     yolo: bool = False,
     max_iterations: int = 10
@@ -72,6 +113,8 @@ def optimize_claudegravity_command(
         p_norm = "best-code"
     elif p_norm in ["lowest-cost", "eco", "economy", "cost", "lowest"]:
         p_norm = "lowest-cost"
+    elif p_norm in ["local-free", "free", "local"]:
+        p_norm = "local-free"
     else:
         p_norm = "balanced"
 
@@ -124,6 +167,35 @@ def optimize_claudegravity_command(
             "   • Phase 1 (Planung) & Phase 2 (Review) verbrauchen nur ~10-15% aller Tokens -> Spitzenmodell sichert fehlerfreie Architektur.\n"
             f"   • Phase 3 (Bau-Loop) verbraucht ~85-90% aller Tokens -> Schnelles Spar-Modell ({builder_model}) setzt den genehmigten Plan kostengünstig um."
         )
+    elif p_norm == "local-free":
+        strategy_flag = "local-free"
+        planner_model = "claude-3-7-sonnet" if planner_cli == "claude" else "gemini-2.5-pro"
+        planner_effort = "high"
+        reviewer_model = "gemini-2.5-pro" if reviewer_cli in ["agy", "gemini"] else "claude-3-7-sonnet"
+        reviewer_effort = "high"
+
+        if endpoint:
+            builder_cli = f"Endpoint ({endpoint})"
+            builder_model = "qwen2.5-coder:32b"
+        elif "endpoint" in agents:
+            builder_cli = agents["endpoint"]
+            builder_model = "qwen2.5-coder:32b"
+        elif "ollama" in agents:
+            builder_cli = "Ollama (Lokal)"
+            builder_model = "qwen2.5-coder:latest"
+        elif "lmstudio" in agents:
+            builder_cli = "LM Studio (Lokal)"
+            builder_model = "default"
+        else:
+            builder_cli = planner_cli
+            builder_model = "qwen2.5-coder:latest"
+
+        builder_effort = "low"
+        cost_benefit = (
+            "💎 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3!):\n"
+            "   • Phase 1 & 2 nutzen exzellente Cloud-Architektur (Claude/Gemini).\n"
+            f"   • Phase 3 (Bau-Loop) wird komplett an das lokale / private KI-Modell ({builder_cli}) übergeben."
+        )
     else:  # balanced
         strategy_flag = "balanced"
         planner_model = "claude-sonnet (Standard)" if planner_cli == "claude" else "gemini-2.5-pro (Standard)"
@@ -141,7 +213,11 @@ def optimize_claudegravity_command(
     cmd_parts = ["claudegravity", f'"{task}"']
     if strategy_flag != "balanced":
         cmd_parts.append(f"--strategy {strategy_flag}")
+    if endpoint:
+        cmd_parts.append(f"--endpoint {endpoint}")
     if p_norm == "lowest-cost":
+        cmd_parts.append(f"--bauer-model {builder_model}")
+    elif p_norm == "local-free":
         cmd_parts.append(f"--bauer-model {builder_model}")
     if ask_mode or comp["is_architectural"]:
         cmd_parts.append("-i")
@@ -190,6 +266,10 @@ def optimize_claudegravity_command(
 
 def format_optimization_markdown(opt: dict) -> str:
     r = opt["roles"]
+    cmd_base = opt["recommended_command"]
+    cmd_cmd = cmd_base.replace("claudegravity", "claudegravity.bat", 1)
+    cmd_ps = ".\\" + cmd_base.replace("claudegravity", "claudegravity.ps1", 1)
+
     lines = [
         "### 🎯 ClaudeGravity Optimierungs-Empfehlung",
         f"* **Aufgabe:** {opt['task']}",
@@ -197,21 +277,30 @@ def format_optimization_markdown(opt: dict) -> str:
         "",
         "#### 👥 Rollen- und Modellbelegung:",
         f"1. **{r['architekt']['role']}**",
-        f"   • CLI: `{r['architekt']['cli']}` | Modell: `{r['architekt']['model']}` | Effort: `{r['architekt']['effort']}`",
+        f"   • CLI/Endpoint: `{r['architekt']['cli']}` | Modell: `{r['architekt']['model']}` | Effort: `{r['architekt']['effort']}`",
         f"   • Token-Anteil: {r['architekt']['token_share']}",
         f"2. **{r['pruefstatiker']['role']}**",
-        f"   • CLI: `{r['pruefstatiker']['cli']}` | Modell: `{r['pruefstatiker']['model']}` | Effort: `{r['pruefstatiker']['effort']}`",
+        f"   • CLI/Endpoint: `{r['pruefstatiker']['cli']}` | Modell: `{r['pruefstatiker']['model']}` | Effort: `{r['pruefstatiker']['effort']}`",
         f"   • Token-Anteil: {r['pruefstatiker']['token_share']}",
         f"3. **{r['bauleiter']['role']}**",
-        f"   • CLI: `{r['bauleiter']['cli']}` | Modell: `{r['bauleiter']['model']}` | Effort: `{r['bauleiter']['effort']}`",
+        f"   • CLI/Endpoint: `{r['bauleiter']['cli']}` | Modell: `{r['bauleiter']['model']}` | Effort: `{r['bauleiter']['effort']}`",
         f"   • Token-Anteil: {r['bauleiter']['token_share']}",
         "",
         "#### 💡 Wirtschaftlichkeits- & Qualitäts-Analyse:",
         opt["cost_benefit_analysis"],
         "",
-        "#### 🚀 Empfohlener Shell-Befehl:",
+        "#### 🚀 Empfohlener Befehl für dein System:",
+        "*Linux / macOS (Bash / Zsh):*",
         "```bash",
-        opt["recommended_command"],
+        cmd_base,
+        "```",
+        "*Windows (CMD / Eingabeaufforderung):*",
+        "```cmd",
+        cmd_cmd,
+        "```",
+        "*Windows (PowerShell):*",
+        "```powershell",
+        cmd_ps,
         "```",
     ]
     return "\n".join(lines)
@@ -227,7 +316,7 @@ MCP_TOOLS = [
         "description": (
             "Analysiert eine Programmieraufgabe und ermittelt die optimale Kombination aus Modellen, "
             "Reasoning-Effort und Rollen (Architekt, Prüfstatiker, Bauleiter) für ClaudeGravity Loop basierend auf dem Ziel "
-            "(bester Code vs. geringste Kosten). Liefert den exakten, ausführbaren Shell-Befehl und spart bis zu 70% Kosten."
+            "(bester Code vs. geringste Kosten vs. 0€ lokale Modelle). Liefert den exakten, plattformunabhängigen Shell-Befehl."
         ),
         "inputSchema": {
             "type": "object",
@@ -238,9 +327,13 @@ MCP_TOOLS = [
                 },
                 "priority": {
                     "type": "string",
-                    "enum": ["best-code", "lowest-cost", "balanced"],
+                    "enum": ["best-code", "lowest-cost", "local-free", "balanced"],
                     "default": "balanced",
-                    "description": "best-code (beste Codequalität), lowest-cost (minimale Kosten / bis zu 70% Ersparnis), balanced (ausgewogen)."
+                    "description": "best-code (Frontier-Modelle), lowest-cost (bis zu 70% Ersparnis), local-free (0€ Bauleiter via Ollama/ai.gb-web.de), balanced (ausgewogen)."
+                },
+                "endpoint": {
+                    "type": "string",
+                    "description": "Optionaler KI-Endpunkt (z.B. https://ai.gb-web.de/v1 oder http://localhost:11434/v1)."
                 },
                 "project_path": {
                     "type": "string",
@@ -278,8 +371,12 @@ MCP_TOOLS = [
                 },
                 "priority": {
                     "type": "string",
-                    "enum": ["best-code", "lowest-cost", "balanced"],
+                    "enum": ["best-code", "lowest-cost", "local-free", "balanced"],
                     "default": "balanced"
+                },
+                "endpoint": {
+                    "type": "string",
+                    "description": "Optionaler KI-Endpunkt."
                 },
                 "project_path": {
                     "type": "string",
@@ -309,7 +406,7 @@ MCP_TOOLS = [
     },
     {
         "name": "claudegravity_info",
-        "description": "Prüft die installierten AI-CLIs (Claude Code, Google Antigravity, Gemini, Codex) und gibt Empfehlungen für das Setup.",
+        "description": "Prüft die installierten AI-CLIs (Claude, Antigravity, Gemini, Codex, Copilot, Ollama, LM Studio, ai.gb-web.de) und gibt Empfehlungen.",
         "inputSchema": {
             "type": "object",
             "properties": {}
@@ -323,6 +420,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         task = arguments.get("task", "")
         priority = arguments.get("priority", "balanced")
         project_path = arguments.get("project_path", ".")
+        endpoint = arguments.get("endpoint")
         ask_mode = arguments.get("ask_mode", False)
         yolo = arguments.get("yolo", False)
         max_iterations = arguments.get("max_iterations", 10)
@@ -331,6 +429,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             task=task,
             priority=priority,
             project_path=project_path,
+            endpoint=endpoint,
             ask_mode=ask_mode,
             yolo=yolo,
             max_iterations=max_iterations
@@ -347,6 +446,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         task = arguments.get("task", "")
         priority = arguments.get("priority", "balanced")
         project_path = arguments.get("project_path", ".")
+        endpoint = arguments.get("endpoint")
         ask_mode = arguments.get("ask_mode", False)
         yolo = arguments.get("yolo", True)
         max_iterations = arguments.get("max_iterations", 10)
@@ -356,6 +456,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             task=task,
             priority=priority,
             project_path=project_path,
+            endpoint=endpoint,
             ask_mode=ask_mode,
             yolo=yolo,
             max_iterations=max_iterations
@@ -400,19 +501,21 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
 
     elif name == "claudegravity_info":
         agents = detect_installed_agents()
+        os_name = f"{platform.system()} {platform.release()}"
         lines = [
-            "### 🔍 Erkannte AI-Coding CLIs auf diesem System:",
+            f"### 🖥️ Betriebssystem: {os_name} (Python {platform.python_version()})",
+            "### 🔍 Erkannte KI-Systeme & Endpoints auf diesem System:",
             ""
         ]
         for k, a in agents.items():
-            lines.append(f"* **{a}** (`{k}` im PATH verfügbar)")
+            lines.append(f"* **{a}** (`{k}`)")
         if not agents:
-            lines.append("⚠️ Keine unterstützten AI-CLIs im PATH gefunden (claude, agy, gemini, codex).")
+            lines.append("⚠️ Keine unterstützten AI-CLIs oder lokalen Server gefunden.")
         lines.append("")
-        lines.append("💡 **Empfohlenes Setup für Dual-Loop:**")
-        lines.append("1. **Architekt:** Claude Code (`claude`) für Plan & Entwurf")
-        lines.append("2. **Prüfstatiker:** Google Antigravity (`agy`) für unabhängigen Stresstest")
-        lines.append("3. **Bauleiter:** Kostengünstiges Modell (`gemini-2.5-flash` oder `claude-3-5-haiku`) für Phase 3 Umsetzung (spart bis zu 70% Kosten).")
+        lines.append("💡 **Empfohlene Strategien:**")
+        lines.append("1. **best-code:** Maximale Codequalität mit Claude Sonnet 3.7 & Gemini 2.5 Pro.")
+        lines.append("2. **eco:** Bis zu 70% Ersparnis (Architekt=Sonnet, Bauleiter=Haiku oder Flash).")
+        lines.append("3. **local-free:** 0 € Kosten im Bau-Loop! Cloud-Architekt plant, lokaler Server (Ollama, LM Studio oder https://ai.gb-web.de/) baut autonom.")
         return {
             "content": [{"type": "text", "text": "\n".join(lines)}],
             "isError": False
@@ -536,12 +639,13 @@ def main():
     parser = argparse.ArgumentParser(description="ClaudeGravity MCP Server & Command Optimizer")
     parser.add_argument("task_pos", nargs="?", default=None, help="Aufgabe (für direkten CLI-Aufruf)")
     parser.add_argument("--optimize", "-o", dest="optimize_task", default=None, help="Aufgabe analysieren und optimalen Befehl ausgeben")
-    parser.add_argument("--priority", default="balanced", choices=["best-code", "quality", "eco", "lowest-cost", "cost", "balanced"], help="Priorität: best-code, lowest-cost, balanced")
+    parser.add_argument("--priority", default="balanced", choices=["best-code", "quality", "eco", "lowest-cost", "cost", "local-free", "free", "local", "balanced"], help="Priorität: best-code, lowest-cost, local-free, balanced")
+    parser.add_argument("--endpoint", default=None, help="KI-Endpunkt (z.B. https://ai.gb-web.de/v1 oder http://localhost:11434/v1)")
     parser.add_argument("-p", "--project", default=".", help="Zielprojekt-Pfad")
     parser.add_argument("-i", "--ask", action="store_true", help="Fragen-Modus (-i)")
     parser.add_argument("--yolo", action="store_true", help="YOLO-Modus (--yolo)")
     parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Max Iterationen")
-    parser.add_argument("--info", action="store_true", help="Installierte AI-CLIs prüfen")
+    parser.add_argument("--info", action="store_true", help="Installierte AI-CLIs und Endpunkte prüfen")
     parser.add_argument("--mcp", action="store_true", help="Als MCP-Server (stdio JSON-RPC) starten")
 
     args = parser.parse_args()
@@ -558,6 +662,7 @@ def main():
             task=cli_task,
             priority=args.priority,
             project_path=args.project,
+            endpoint=args.endpoint,
             ask_mode=args.ask,
             yolo=args.yolo,
             max_iterations=args.max_iterations

@@ -1,26 +1,41 @@
 #!/usr/bin/env python3
 """
 ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop
-Auto-detects available CLIs (Claude Code, Google Antigravity agy, Gemini CLI, Codex).
+Auto-detects available CLIs (Claude Code, Google Antigravity agy, Gemini CLI, Codex, Copilot, Ollama)
+and OpenAI-compatible REST endpoints (Ollama, LM Studio, vLLM, custom intranet servers like ai.gb-web.de).
 Supports:
+- Cross-platform operation on Windows, macOS, and Linux
 - Universal YOLO permission propagation across all phases (Planning, Review, Build)
-- Automatic detection and recovery if a model attempts file writes during planning
-- Resume after crashes/interrupts (--resume / -c)
-- Interactive Plan Approval & Change Routing (UI options on top, CLI options at bottom)
-- Versioned plan archives, audit logs, and permission handling (--yolo)
+- Multi-role architecture: 🏗️ Architekt, 🧐 Prüfstatiker, 🔨 Bauleiter
+- Zero-cost build loops via local/intranet models (--strategy local-free)
+- Interactive Plan Approval & Change Routing
+- Versioned plan archives, token/cost audits, and rate-limit recovery
 """
 
 import argparse
 import datetime
 import json
 import os
+import platform
 import re
 import signal
 import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
+
+# Cross-Platform Console-Encoding (Windows CMD/PowerShell UTF-8 Fix)
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 STOP_REQUESTED = False
 
@@ -40,7 +55,8 @@ def sigint_handler(signum, frame):
 
 
 signal.signal(signal.SIGINT, sigint_handler)
-signal.signal(signal.SIGTERM, sigint_handler)
+if hasattr(signal, "SIGTERM"):
+    signal.signal(signal.SIGTERM, sigint_handler)
 
 
 class RateLimitError(Exception):
@@ -342,8 +358,11 @@ def create_agent(
 
 
 def _exec_cli(binary: str, args: list[str], cwd: Path | None = None) -> str:
-    cmd = [binary] + args
-    res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True)
+    resolved = shutil.which(binary) or binary
+    is_win = sys.platform == "win32"
+    use_shell = is_win and (str(resolved).lower().endswith((".cmd", ".bat")) or not Path(resolved).suffix)
+    cmd = [str(resolved)] + args
+    res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, shell=use_shell)
     if res.returncode != 0:
         err_msg = res.stderr.strip() or res.stdout.strip() or f"Fehlercode {res.returncode}"
         if is_rate_limit(err_msg):
@@ -479,8 +498,184 @@ def _exec_codex(binary: str, prompt: str, cwd: Path | None = None, extra_flags: 
     }
 
 
-def detect_installed_agents() -> dict[str, AgentCLI]:
+def _exec_copilot(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
+    if binary == "gh":
+        args = ["copilot", "suggest", "-t", "shell", prompt]
+    else:
+        args = ["suggest", "-t", "shell", prompt]
+    if extra_flags:
+        args.extend(extra_flags)
+    raw = _exec_cli(binary, args, cwd)
+    return raw, {
+        "input_tokens": len(prompt) // 4,
+        "output_tokens": len(raw) // 4,
+        "total_tokens": (len(prompt) + len(raw)) // 4,
+        "cost_usd": 0.0,
+        "model": "copilot",
+        "effort": "CLI"
+    }
+
+
+def _exec_ollama_cli(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
+    model = extract_flag_value(extra_flags, "--model") or "qwen2.5-coder:latest"
+    args = ["run", model, prompt]
+    raw = _exec_cli(binary, args, cwd)
+    return raw, {
+        "input_tokens": len(prompt) // 4,
+        "output_tokens": len(raw) // 4,
+        "total_tokens": (len(prompt) + len(raw)) // 4,
+        "cost_usd": 0.0,
+        "model": model,
+        "effort": "local"
+    }
+
+
+def normalize_endpoint_url(raw_url: str) -> str:
+    url = raw_url.strip().rstrip("/")
+    if url.endswith("/chat/completions"):
+        return url
+    if url.endswith("/v1"):
+        return f"{url}/chat/completions"
+    return f"{url}/v1/chat/completions"
+
+
+def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
+    try:
+        req = urllib.request.Request(url, method="GET", headers={"User-Agent": "ClaudeGravity/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status in [200, 401, 403, 404, 405]
+    except Exception:
+        return False
+
+
+def _exec_openai_api(
+    endpoint_url: str,
+    model: str,
+    prompt: str,
+    api_key: str | None = None,
+    extra_flags: list[str] | None = None
+) -> tuple[str, dict]:
+    full_url = normalize_endpoint_url(endpoint_url)
+    key = api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("CLAUDEGRAVITY_API_KEY") or ""
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "ClaudeGravity/1.0"
+    }
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+
+    chosen_model = extract_flag_value(extra_flags, "--model") or model or "default"
+    payload = {
+        "model": chosen_model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Du bist ein erfahrener Software-Architekt und Senior Developer. Antworte präzise und befolge alle Anweisungen strikt."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.2
+    }
+
+    data_bytes = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(full_url, data=data_bytes, headers=headers, method="POST")
+
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            resp_body = resp.read().decode("utf-8")
+            data = json.loads(resp_body)
+
+            choices = data.get("choices", [])
+            if not choices:
+                raise RuntimeError(f"Leere Antwort vom Endpunkt {endpoint_url}: {resp_body[:200]}")
+
+            text = choices[0].get("message", {}).get("content", "")
+            usage = data.get("usage", {})
+            inp = usage.get("prompt_tokens") or len(prompt) // 4
+            out = usage.get("completion_tokens") or len(text) // 4
+            tot = usage.get("total_tokens") or (inp + out)
+
+            is_local_or_private = any(h in endpoint_url for h in ["localhost", "127.0.0.1", "ai.gb-web.de", "192.168.", "10."])
+            cost = 0.0 if is_local_or_private else float(data.get("cost_usd", 0.0))
+
+            metrics = {
+                "input_tokens": inp,
+                "output_tokens": out,
+                "total_tokens": tot,
+                "cost_usd": cost,
+                "model": chosen_model,
+                "effort": extract_flag_value(extra_flags, "--effort") or ("0€ Lokal/Intranet" if is_local_or_private else "API")
+            }
+            return text, metrics
+
+    except urllib.error.HTTPError as http_err:
+        err_body = ""
+        try:
+            err_body = http_err.read().decode("utf-8")
+        except Exception:
+            pass
+        err_msg = f"HTTP {http_err.code} ({http_err.reason}): {err_body}"
+        if is_rate_limit(err_msg) or http_err.code == 429:
+            r_time = extract_reset_time(err_msg)
+            r_secs = parse_reset_seconds(r_time) if r_time else 60
+            raise RateLimitError(endpoint_url, err_msg, r_time, r_secs)
+        raise RuntimeError(f"API-Fehler an {endpoint_url}: {err_msg}")
+    except urllib.error.URLError as url_err:
+        raise RuntimeError(f"Verbindungsfehler zu {endpoint_url}: {url_err.reason}")
+
+
+def _exec_endpoint_runner(endpoint_url: str, default_model: str, api_key: str | None = None):
+    def runner(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
+        model = extract_flag_value(extra_flags, "--model") or default_model
+        return _exec_openai_api(endpoint_url, model, prompt, api_key=api_key, extra_flags=extra_flags)
+    return runner
+
+
+def apply_code_blocks(project_path: Path, text: str) -> list[str]:
+    """Extrahiert Code-Blöcke mit Dateipfaden aus Modell-Antworten und schreibt sie auf die Festplatte."""
+    written_files = []
+
+    # Muster 1: ```filepath: path/to/file.ext oder ```file: path/to/file.ext
+    pattern1 = re.compile(r'```(?:filepath:|file:)\s*([^\s\n\r`]+)\r?\n(.*?)```', re.DOTALL)
+    for match in pattern1.finditer(text):
+        rel_path = match.group(1).strip().strip('"\'')
+        content = match.group(2)
+        target = project_path / rel_path
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            written_files.append(rel_path)
+        except Exception as ex:
+            print(f"[!] Fehler beim Schreiben von {rel_path}: {ex}")
+
+    # Muster 2: Dateiname in Header vor Code-Block (### Datei: path/to/file.ext)
+    pattern2 = re.compile(r'(?:###|##|\*\*)\s*(?:Datei|File|Pfad|Path)[:\s]+`?([a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]+)`?.*?\n\s*```[a-zA-Z0-9_-]*\r?\n(.*?)```', re.DOTALL)
+    for match in pattern2.finditer(text):
+        rel_path = match.group(1).strip().strip('"\'')
+        if rel_path not in written_files:
+            content = match.group(2)
+            target = project_path / rel_path
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+                written_files.append(rel_path)
+            except Exception as ex:
+                print(f"[!] Fehler beim Schreiben von {rel_path}: {ex}")
+
+    return written_files
+
+
+def detect_installed_agents(
+    custom_endpoint: str | None = None,
+    api_key: str | None = None,
+    default_model: str | None = None
+) -> dict[str, AgentCLI]:
     agents = {}
+
+    # 1. Standard-CLIs
     if shutil.which("claude"):
         agents["claude"] = AgentCLI("Claude Code", "claude", _exec_claude)
     if shutil.which("agy"):
@@ -489,6 +684,45 @@ def detect_installed_agents() -> dict[str, AgentCLI]:
         agents["gemini"] = AgentCLI("Gemini CLI", "gemini", _exec_gemini)
     if shutil.which("codex"):
         agents["codex"] = AgentCLI("Codex CLI", "codex", _exec_codex)
+    if shutil.which("copilot"):
+        agents["copilot"] = AgentCLI("GitHub Copilot CLI", "copilot", _exec_copilot)
+    elif shutil.which("gh"):
+        agents["copilot"] = AgentCLI("GitHub Copilot CLI (gh)", "gh", _exec_copilot)
+    if shutil.which("ollama"):
+        agents["ollama-cli"] = AgentCLI("Ollama CLI", "ollama", _exec_ollama_cli)
+
+    # 2. Lokale Server prüfen (Ollama, LM Studio)
+    if is_endpoint_reachable("http://localhost:11434"):
+        agents["ollama"] = AgentCLI(
+            "Ollama (Lokal: http://localhost:11434)",
+            "ollama",
+            _exec_endpoint_runner("http://localhost:11434", default_model or "qwen2.5-coder:latest", api_key)
+        )
+    if is_endpoint_reachable("http://localhost:1234"):
+        agents["lmstudio"] = AgentCLI(
+            "LM Studio (Lokal: http://localhost:1234)",
+            "lmstudio",
+            _exec_endpoint_runner("http://localhost:1234", default_model or "default", api_key)
+        )
+
+    # 3. Benutzerdefiniertes Netzwerk / Firmen-Server / Env-Var
+    env_endpoint = (
+        custom_endpoint or
+        os.environ.get("CLAUDEGRAVITY_ENDPOINT") or
+        os.environ.get("OPENAI_BASE_URL") or
+        os.environ.get("AI_ENDPOINT")
+    )
+    if env_endpoint:
+        is_gb = "ai.gb-web.de" in env_endpoint
+        label = "ai.gb-web.de (Netzwerk-Server)" if is_gb else ("Lokaler/Custom Endpoint" if any(h in env_endpoint for h in ["localhost", "127.0.0.1"]) else "KI-Server")
+        agents["endpoint"] = AgentCLI(
+            f"{label} ({env_endpoint})",
+            "endpoint",
+            _exec_endpoint_runner(env_endpoint, default_model or "qwen2.5-coder:32b", api_key)
+        )
+        if is_gb:
+            agents["gb-web"] = agents["endpoint"]
+
     return agents
 
 
@@ -1197,7 +1431,12 @@ def main():
     parser.add_argument("--reviewer-effort", "--pruefstatiker-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Prüfstatiker (für agy)")
     parser.add_argument("--planner-effort", "--architekt-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Architekten (falls agy)")
     parser.add_argument("--builder-effort", "--bauer-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität für den Bauleiter in Phase 3 (für agy)")
-    parser.add_argument("--strategy", "--preset", default="balanced", choices=["best-code", "quality", "eco", "economy", "cost", "balanced"], help="Optimierungs-Strategie: best-code (beste Qualität), eco (geringste Kosten / bis zu 70%% Ersparnis), balanced (ausgewogen, Standard)")
+    parser.add_argument("--endpoint", "--api-base", default=None, help="OpenAI-kompatibler Endpunkt (z.B. https://ai.gb-web.de/v1 oder http://localhost:11434/v1)")
+    parser.add_argument("--api-key", default=None, help="Optionaler API-Key für geschützte KI-Endpunkte")
+    parser.add_argument("--architekt-endpoint", default=None, help="Spezifischer Endpunkt für den Architekten")
+    parser.add_argument("--pruefstatiker-endpoint", default=None, help="Spezifischer Endpunkt für den Prüfstatiker")
+    parser.add_argument("--bauer-endpoint", default=None, help="Spezifischer Endpunkt für den Bauleiter (Phase 3)")
+    parser.add_argument("--strategy", "--preset", default="balanced", choices=["best-code", "quality", "eco", "economy", "cost", "local-free", "free", "local", "balanced"], help="Optimierungs-Strategie: best-code (beste Qualität), eco (bis zu 70%% Ersparnis), local-free (0€ Kosten in Phase 3 via Lokal/Intranet-Modell), balanced (Standard)")
     parser.add_argument("--dry-run", action="store_true", help="Trockenlauf: Zeigt Rollen, Modelle, Kosten-Analyse und generierten Befehl ohne Ausführung")
     parser.add_argument("--auto-switch", "--fallback", action="store_true", help="Bei Erreichen eines AI-Limits automatisch zum alternativen Modell wechseln")
     parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
@@ -1206,55 +1445,69 @@ def main():
 
     args = parser.parse_args()
 
-    agents = detect_installed_agents()
+    custom_ep = args.endpoint or args.bauer_endpoint or args.architekt_endpoint or args.pruefstatiker_endpoint
+    agents = detect_installed_agents(custom_endpoint=custom_ep, api_key=args.api_key, default_model=args.builder_model or args.planner_model)
+
+    if args.architekt_endpoint and "architekt_ep" not in agents:
+        agents["architekt_ep"] = AgentCLI(
+            f"Architekt Endpoint ({args.architekt_endpoint})",
+            "architekt_ep",
+            _exec_endpoint_runner(args.architekt_endpoint, args.planner_model or "default", args.api_key)
+        )
+    if args.pruefstatiker_endpoint and "pruefstatiker_ep" not in agents:
+        agents["pruefstatiker_ep"] = AgentCLI(
+            f"Prüfstatiker Endpoint ({args.pruefstatiker_endpoint})",
+            "pruefstatiker_ep",
+            _exec_endpoint_runner(args.pruefstatiker_endpoint, args.reviewer_model or "default", args.api_key)
+        )
+    if args.bauer_endpoint and "bauer_ep" not in agents:
+        agents["bauer_ep"] = AgentCLI(
+            f"Bauleiter Endpoint ({args.bauer_endpoint})",
+            "bauer_ep",
+            _exec_endpoint_runner(args.bauer_endpoint, args.builder_model or "qwen2.5-coder:32b", args.api_key)
+        )
 
     if args.check:
-        print("🔍 Erkannte AI-CLIs auf deinem System:")
+        os_name = f"{platform.system()} {platform.release()}"
+        print(f"🖥️  Betriebssystem: {os_name} (Python {platform.python_version()})")
+        print("🔍 Erkannte KI-Systeme & Endpoints auf deinem System:")
         for key, agent in agents.items():
-            print(f"  [x] {agent.name} (`{agent.binary}` im PATH)")
+            print(f"  [x] {agent.name} (`{key}` / `{agent.binary}`)")
         print("\n" + "=" * 68)
         print("🎯 Standard-Belegung (wenn NICHTS explizit angegeben wird):")
         print("=" * 68)
         print("1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
-        print("   • CLI           : Claude Code (`claude`)")
+        print("   • CLI           : Claude Code (`claude`) oder erster gefundener Agent")
         print("   • Standardmodell: Claude Sonnet 5 / 3.7 Sonnet (CLI-Default)")
         print("   • Thinking-Effort: high (CLI-Default)")
         print("   • Aufgabe       : Entwirft den Plan (Phase 1) [nur ~10-15% aller Tokens]")
         print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
-        print("   • CLI           : Google Antigravity (`agy`)")
+        print("   • CLI           : Google Antigravity (`agy`) oder zweites Modell")
         print("   • Standardmodell: Gemini 4 Argon / Gemini 2.5 Pro (CLI-Default)")
         print("   • Thinking-Effort: high (CLI-Default)")
         print("   • Aufgabe       : Grillt den Plan unabhängig auf Schwachstellen (Phase 2) [nur ~5-10% aller Tokens]")
         print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
         print("   • CLI           : Folgt dem Architekten (oder separat via --bauer / --builder)")
-        print("   • Standardmodell: Folgt dem Architekten (oder Sparmodell via --bauer-model)")
+        print("   • Standardmodell: Folgt dem Architekten (oder Sparmodell via --bauer-model / lokaler Server)")
         print("   • Thinking-Effort: CLI-Default (oder steuerbar via --bauer-effort)")
         print("   • Aufgabe       : Setzt den Plan autonom im Code um [verbraucht ~80-90% aller Tokens!]")
         print("=" * 68)
-        print("\n💡 Kostenspar-Tipp (Warum Planung & Bau trennen?):")
-        print("  Planung & Prüfung benötigen hohes Denkvermögen, aber wenige Tokens.")
-        print("  Der Bau-Loop (Phase 3) verbraucht fast das gesamte Kontingent!")
-        print("  Mit '--strategy eco' oder '--bauer-model claude-3-5-haiku / gemini-2.5-flash'")
-        print("  sparst du bis zu 70% deiner Token-Kosten bei maximaler Architektur-Qualität!")
+        print("\n💡 Spar-Strategien & Kombi-Möglichkeiten:")
+        print("  • '--strategy eco'        : Bis zu 70% Token-Ersparnis (Architekt=Sonnet/Pro, Bauleiter=Haiku/Flash)")
+        print("  • '--strategy local-free' : 0 € Kosten im Bau-Loop! Architekt plant in der Cloud, lokales")
+        print("                             Modell (Ollama, LM Studio oder https://ai.gb-web.de/) baut!")
+        print("  • '--strategy best-code'  : Flaggschiff-Modelle mit hohem Thinking-Effort in allen 3 Phasen")
         print("=" * 68)
-        print("\n⚙️  Rollen- und Modell-Steuerung (Anpassungen per Flag):")
-        print("  - Strategie-Presets      : --strategy <best-code|eco|balanced> (eco = bis zu 70% günstiger)")
+        print("\n⚙️  Wichtigste Steuerungs-Flags:")
+        print("  - Strategie-Presets      : --strategy <best-code|eco|local-free|balanced>")
         print("  - Trockenlauf            : --dry-run (zeigt Rollen, Modelle & Befehl ohne Ausführung)")
-        print("  - Rollen umkehren        : --swap / --swap-roles (Antigravity = Architekt, Claude = Prüfstatiker)")
-        print("  - Architekt festlegen    : --architekt / --planner <claude|agy|gemini|codex>")
-        print("  - Prüfstatiker festlegen : --pruefstatiker / --reviewer <agy|claude|gemini|codex>")
-        print("  - Bauleiter festlegen    : --bauer / --builder <claude|agy|gemini|codex>")
-        print("  - Architekt-Modell       : --architekt-model / --planner-model <name> (z.B. sonnet, gemini-2.5-pro)")
-        print("  - Prüfstatiker-Modell    : --pruefstatiker-model / --reviewer-model <name> (z.B. gemini-2.5-pro, sonnet)")
-        print("  - Bauleiter-Modell       : --bauer-model / --builder-model <name> (z.B. claude-3-5-haiku, gemini-2.5-flash)")
-        print("  - Reasoning-Effort       : --effort / --pruefstatiker-effort / --architekt-effort / --bauer-effort")
-        print("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Kontingentlimit nahtlos zum Alternativmodell)")
+        print("  - Eigener Endpunkt       : --endpoint <url> (z.B. https://ai.gb-web.de/v1 oder http://localhost:11434/v1)")
+        print("  - Bauleiter-Endpunkt     : --bauer-endpoint <url> (z.B. http://localhost:11434/v1)")
+        print("  - Bauleiter festlegen    : --bauer / --builder <claude|agy|ollama|lmstudio|endpoint|codex|copilot>")
+        print("  - Bauleiter-Modell       : --bauer-model <name> (z.B. qwen2.5-coder:32b, claude-3-5-haiku)")
+        print("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Limit nahtlos zum Alternativmodell)")
         print("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
         print("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert inkl. Rolle, Modell & Effort)")
-        if len(agents) >= 2:
-            print("\n🚀 Mindestens 2 Modelle vorhanden. Dual-Loop ist voll einsatzbereit!")
-        else:
-            print("\n⚠️ Hinweis: Für echte Cross-Model Reviews werden mindestens 2 CLIs empfohlen (z.B. claude und agy).")
         return
 
     project_path = Path(args.project).resolve()
@@ -1264,8 +1517,8 @@ def main():
     if args.dry_run:
         dry_task = args.task or "Refaktoriere das Modul und erstelle Unit-Tests"
         swap_roles = args.swap
-        architekt_choice = args.planner
-        pruefstatiker_choice = args.reviewer
+        architekt_choice = args.planner or ("architekt_ep" if args.architekt_endpoint else None)
+        pruefstatiker_choice = args.reviewer or ("pruefstatiker_ep" if args.pruefstatiker_endpoint else None)
 
         if swap_roles:
             if not architekt_choice and "agy" in agents:
@@ -1295,38 +1548,60 @@ def main():
             if planner.binary == "claude" and reviewer.binary == "agy":
                 planner, reviewer = reviewer, planner
 
-        builder_choice = args.builder or planner.binary
-        builder = agents.get(builder_choice, planner)
-
         # Strategy
         strat = (args.strategy or "balanced").lower()
         if strat in ["quality", "best"]:
             strat = "best-code"
         elif strat in ["economy", "cost"]:
             strat = "eco"
+        elif strat in ["local-free", "free", "local"]:
+            strat = "local-free"
 
         default_p_effort = None
         default_r_effort = None
         default_b_effort = None
         default_b_model = None
+        local_cand = None
+
+        for k in ["bauer_ep", "ollama", "lmstudio", "endpoint", "gb-web", "ollama-cli"]:
+            if k in agents:
+                local_cand = agents[k]
+                break
 
         if strat == "best-code":
             default_p_effort = "high"
             default_r_effort = "high"
             default_b_effort = "high"
+            builder_choice = args.builder or planner.binary
+            builder = agents.get(builder_choice, planner)
         elif strat == "eco":
             default_p_effort = "medium"
             default_r_effort = "medium"
             default_b_effort = "low"
+            builder_choice = args.builder or planner.binary
+            builder = agents.get(builder_choice, planner)
             default_b_model = "claude-3-5-haiku" if builder.binary == "claude" else "gemini-2.5-flash"
-        else:
+        elif strat == "local-free":
+            default_p_effort = "high"
+            default_r_effort = "high"
+            default_b_effort = "low"
+            if args.builder and args.builder in agents:
+                builder = agents[args.builder]
+            elif local_cand:
+                builder = local_cand
+            else:
+                builder = planner
+            default_b_model = args.builder_model or ("qwen2.5-coder:32b" if "gb-web" in builder.name or "endpoint" in builder.binary else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model"))
+        else:  # balanced
             default_p_effort = "high" if planner.binary == "agy" else None
             default_r_effort = "high" if reviewer.binary == "agy" else None
+            builder_choice = args.builder or planner.binary
+            builder = agents.get(builder_choice, planner)
 
-        p_model = args.planner_model or ("claude-sonnet (CLI Default)" if planner.binary == "claude" else ("gemini-2.5-pro (CLI Default)" if planner.binary in ["agy", "gemini"] else "CLI Default"))
+        p_model = args.planner_model or ("claude-sonnet (CLI Default)" if planner.binary == "claude" else ("gemini-2.5-pro (CLI Default)" if planner.binary in ["agy", "gemini"] else "Standard-Modell"))
         p_effort = args.planner_effort or args.effort or default_p_effort or ("high (CLI Default)" if planner.binary == "agy" else None)
 
-        r_model = args.reviewer_model or ("gemini-2.5-pro (CLI Default)" if reviewer.binary in ["agy", "gemini"] else ("claude-sonnet (CLI Default)" if reviewer.binary == "claude" else "CLI Default"))
+        r_model = args.reviewer_model or ("gemini-2.5-pro (CLI Default)" if reviewer.binary in ["agy", "gemini"] else ("claude-sonnet (CLI Default)" if reviewer.binary == "claude" else "Standard-Modell"))
         r_effort = args.reviewer_effort or args.effort or default_r_effort or ("high (CLI Default)" if reviewer.binary == "agy" else None)
 
         b_model = args.builder_model or default_b_model or p_model
@@ -1339,22 +1614,26 @@ def main():
         print(f"🎯 Strategie      : {strat.upper()}")
         print(f"📁 Ziel-Projekt   : {project_path}")
         print("\n1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
-        print(f"   • CLI           : {planner.name} (`{planner.binary}`)")
+        print(f"   • CLI/Endpoint  : {planner.name} (`{planner.binary}`)")
         print(f"   • Modell        : {p_model}")
         print(f"   • Effort        : {p_effort or 'Standard'}")
         print(f"   • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)")
         print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
-        print(f"   • CLI           : {reviewer.name} (`{reviewer.binary}`)")
+        print(f"   • CLI/Endpoint  : {reviewer.name} (`{reviewer.binary}`)")
         print(f"   • Modell        : {r_model}")
         print(f"   • Effort        : {r_effort or 'Standard'}")
         print(f"   • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)")
         print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
-        print(f"   • CLI           : {builder.name} (`{builder.binary}`)")
+        print(f"   • CLI/Endpoint  : {builder.name} (`{builder.binary}`)")
         print(f"   • Modell        : {b_model}")
         print(f"   • Effort        : {b_effort or 'Standard'}")
         print(f"   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)")
         print("\n💡 Wirtschaftlichkeits- & Qualitäts-Analyse:")
-        if strat == "eco":
+        if strat == "local-free":
+            print(f"   • Spareffekt: 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3)!")
+            print(f"   • Grund: Phase 1 & 2 nutzen erstklassige Cloud-Planung. Der rechenintensive Bau-Loop")
+            print(f"     läuft komplett auf deinem lokalen Modell oder Netzwerk-Server ({builder.name}).")
+        elif strat == "eco":
             print(f"   • Spareffekt: Bis zu ~70% Kosten- und Tokenersparnis!")
             print(f"   • Grund: Phase 1 & 2 nutzen solide Architekturplanung. Das ressourcenintensive")
             print(f"     Bauen in Phase 3 wird an das Spar-Modell `{b_model}` delegiert.")
@@ -1367,6 +1646,8 @@ def main():
         cmd_parts = ["claudegravity", f'"{dry_task}"']
         if strat != "balanced":
             cmd_parts.append(f"--strategy {strat}")
+        if args.endpoint:
+            cmd_parts.append(f"--endpoint {args.endpoint}")
         if args.planner_model:
             cmd_parts.append(f"--architekt-model {args.planner_model}")
         if args.reviewer_model:
@@ -1533,6 +1814,8 @@ def main():
         strat = "best-code"
     elif strat in ["economy", "cost"]:
         strat = "eco"
+    elif strat in ["local-free", "free", "local"]:
+        strat = "local-free"
     state["strategy"] = strat
 
     default_p_effort = None
@@ -1549,6 +1832,17 @@ def main():
         default_r_effort = "medium"
         default_b_effort = "low"
         default_b_model = "claude-3-5-haiku" if builder.binary == "claude" else "gemini-2.5-flash"
+    elif strat == "local-free":
+        default_p_effort = "high"
+        default_r_effort = "high"
+        default_b_effort = "low"
+        if not args.builder:
+            for k in ["bauer_ep", "ollama", "lmstudio", "endpoint", "gb-web", "ollama-cli"]:
+                if k in agents:
+                    builder_base = agents[k]
+                    builder = create_agent(builder_base.binary, agents, role="🔨 Bauleiter (Bau & Umsetzung)", metrics_tracker=session_metrics)
+                    break
+        default_b_model = args.builder_model or ("qwen2.5-coder:32b" if "gb-web" in builder.name or "endpoint" in builder.binary else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model"))
     else:  # balanced
         default_p_effort = "high" if planner.binary == "agy" else None
         default_r_effort = "high" if reviewer.binary == "agy" else None
@@ -1770,6 +2064,20 @@ def main():
             f"erstelle die Fertigmeldungs-Datei genau im Session-Ordner unter: '{rel_done_path}' (NICHT im Projekt-Hauptverzeichnis)."
         )
 
+        is_endpoint_builder = builder.binary in ["endpoint", "ollama", "lmstudio", "gb-web", "copilot", "architekt_ep", "pruefstatiker_ep", "bauer_ep"]
+        if is_endpoint_builder:
+            prompt_build += (
+                f"\n\nFORMATIERUNGS-HINWEIS FÜR DATEI-ÄNDERUNGEN:\n"
+                f"Gib alle zu erstellenden oder zu ändernden Dateien im Format an:\n"
+                f"```filepath: relativer/pfad/zur/datei.ext\n"
+                f"<vollständiger neuer Dateiinhalt>\n"
+                f"```\n"
+                f"Sobald alles fertig und getestet ist, erstelle die Fertigmeldung mit:\n"
+                f"```filepath: {rel_done_path}\n"
+                f"# Aufgabe abgeschlossen\n"
+                f"```"
+            )
+
         try:
             print(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) (führt genehmigten Plan aus)...", flush=True)
             res, builder, builder_flags = safe_agent_run(
@@ -1786,6 +2094,13 @@ def main():
             )
             print(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [Iteration {iteration}]:")
             print(res)
+
+            if is_endpoint_builder:
+                written = apply_code_blocks(project_path, res)
+                if written:
+                    print(f"\n📝 {len(written)} Datei(en) durch 🔨 Bauleiter ({builder.name}) aktualisiert:")
+                    for w in written:
+                        print(f"   • {w}")
 
             with open(session_log, "a", encoding="utf-8") as f_log:
                 f_log.write(log_header)
