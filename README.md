@@ -22,14 +22,9 @@ Ein einzelnes KI-Modell (z. B. Claude) übersieht beim Überprüfen eigener Entw
 * Python 3.10 oder neuer.
 * Die offiziellen CLIs im Terminal angemeldet (z. B. `claude` und `agy` oder `gemini`).
 
-### 2. Installierte KIs prüfen
+### 2. Eine Aufgabe ausführen
 ```bash
-claudegravity --check
-```
-
-### 3. Eine Aufgabe ausführen
-```bash
-# Im aktuellen Verzeichnis (fragt vor Phase 3 nach Schreibrechten):
+# Im aktuellen Verzeichnis (fragt vor Phase 3 nach Rechten):
 claudegravity "Refaktoriere das Spielplan-Modul"
 
 # Automatisch mit vollen Schreibrechten ausführen (--yolo):
@@ -39,15 +34,56 @@ claudegravity --yolo "Refaktoriere das Spielplan-Modul"
 claudegravity -p /home/gordon/Projekte/handball --yolo "Füge Unit-Tests hinzu"
 ```
 
+### 3. Sitzung fortsetzen (Crash-Recovery / Resume)
+Wurde der Rechner neu gestartet, der Prozess unterbrochen oder soll eine alte Aufgabe weitergeführt werden?
+```bash
+# Setzt die letzte unterbrochene Sitzung exakt an der Stelle fort:
+claudegravity --resume
+
+# Kurzform:
+claudegravity -c
+```
+
 ### 4. Parameter & Optionen
 | Parameter | Beschreibung |
 | :--- | :--- |
 | `-p`, `--project` | Zielverzeichnis des Projekts (Standard: `.`) |
+| `-c`, `--resume` | Unterbrochene Sitzung an exakt derselben Iteration fortsetzen |
 | `-m`, `--max-iterations` | Maximale Runden für den autonomen Loop (Standard: `10`) |
-| `--yolo`, `--auto-approve`| Erteilt der KI in Phase 3 automatisch Schreibrechte (`--dangerously-skip-permissions`) |
+| `--yolo`, `--auto-approve`| Erteilt in Phase 3 automatisch Schreibrechte (`--dangerously-skip-permissions`) |
 | `--planner` | Bestimmt das Planer-Modell (z. B. `claude`) |
 | `--reviewer` | Bestimmt das Prüfer-Modell (z. B. `agy` oder `gemini`) |
 | `--check` | Zeigt erkannte AI-CLIs an |
+
+---
+
+## 🎯 Interaktive Plan-Freigabe & Change-Routing
+
+Sobald der Plan fertiggestellt und von Antigravity geprüft wurde, wirst du gefragt:
+```text
+Möchtest du den Plan freigeben oder Änderungen vornehmen?
+  [1] Approve  -> Plan genehmigen & weiter zur Implementierung
+  [2] Changes  -> Änderungen/Feedback anbringen
+  [3] Anzeigen -> Plan direkt hier im Terminal lesen
+  [4] Beenden  -> Abbrechen (Fortsetzen später mit --resume)
+```
+
+Wählst du **[2] Changes**, erscheint das übersichtliche Routing-Menü:
+
+```text
+[UI-Varianten (Graphische Oberfläche)]:
+  [1] Im Editor öffnen (VS Code / Antigravity / Cursor / System)
+      -> Öffnet die Plan-Datei direkt zum Bearbeiten
+  [2] Claude UI (Web / Desktop)
+      -> Zeigt den Plan-Pfad zum einfachen Kopieren in die Claude Web-UI
+
+[CLI-Varianten (Terminal)]:
+  [3] Feedback direkt hier eintippen
+      -> KI überarbeitet den Plan anhand deiner Anweisung automatisch
+  [4] Interaktive Claude Code CLI-Session starten
+  [5] Interaktive Antigravity CLI-Session starten
+  [6] Zurück zum Hauptmenü
+```
 
 ---
 
@@ -61,7 +97,8 @@ Nichts geht verloren! Jeder Durchlauf legt automatisch ein eigenes Session-Archi
 ├── REVIEW.md                                  # 📋 Das aktuellste Review
 ├── PLAN-REVIEW-LOG.md                         # 📜 Fortlaufendes Audit-Logbuch
 └── sessions/
-    └── 20261017_102220_refaktoriere_.../      # 📦 Revisionssicheres Archiv
+    └── 20261017_102220_refaktoriere_.../      # 📦 Revisionssicheres Session-Archiv
+        ├── state.json                         # 💾 Sitzungsstatus für --resume
         ├── PLAN_v1.md                         # Erster Entwurf
         ├── REVIEW_round1.md                   # Review von Modell B
         ├── PLAN_v2.md                         # Überarbeiteter Plan
@@ -72,21 +109,14 @@ Nichts geht verloren! Jeder Durchlauf legt automatisch ein eigenes Session-Archi
 
 ## 🇬🇧 Quickstart (English)
 
-### 1. Check AI Tools
+### 1. Run a Task
 ```bash
-claudegravity --check
+claudegravity --yolo "Refactor tournament module"
 ```
 
-### 2. Run a Task
+### 2. Resume Interrupted Session
 ```bash
-# Prompt for write permissions before build:
-claudegravity "Refactor tournament module"
-
-# Auto-approve write permissions (--yolo):
-claudegravity --yolo "Refactor tournament module"
-
-# Run for a specific project:
-claudegravity -p /home/gordon/Projekte/handball --yolo "Add unit tests"
+claudegravity --resume
 ```
 
 ---

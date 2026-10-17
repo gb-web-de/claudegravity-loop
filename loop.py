@@ -2,12 +2,15 @@
 """
 ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop
 Auto-detects available CLIs (Claude Code, Google Antigravity agy, Gemini CLI, Codex).
-Supports any local or external project path (-p /path/to/project or -p ../project).
-Provides versioned plan archives, review logs, and full write-tool permission control.
+Supports:
+- Resume after crashes/interrupts (--resume / -c)
+- Interactive Plan Approval & Change Routing (UI options on top, CLI options at bottom)
+- Versioned plan archives, audit logs, and permission handling (--yolo)
 """
 
 import argparse
 import datetime
+import json
 import os
 import re
 import signal
@@ -119,7 +122,6 @@ def sanitize_filename(text: str) -> str:
 
 
 def get_permission_flags(binary: str) -> list[str]:
-    """Gibt die passenden Flags für Schreib-/Tool-Rechte zurück."""
     if binary in ["claude", "agy"]:
         return ["--dangerously-skip-permissions"]
     elif binary == "gemini":
@@ -129,49 +131,96 @@ def get_permission_flags(binary: str) -> list[str]:
     return []
 
 
-def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, project_path: Path, project_ctx: str, max_rounds: int = 2) -> tuple[bool, Path]:
+# ==========================================
+# Session & State Management (Resume-Support)
+# ==========================================
+def save_session_state(session_dir: Path, state: dict):
+    state_file = session_dir / "state.json"
+    state["updated_at"] = datetime.datetime.now().isoformat()
+    state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def load_session_state(session_dir: Path) -> dict:
+    state_file = session_dir / "state.json"
+    if state_file.exists():
+        try:
+            return json.loads(state_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def find_latest_session(loop_dir: Path) -> Path | None:
+    sessions_dir = loop_dir / "sessions"
+    if not sessions_dir.exists():
+        return None
+    sessions = sorted([p for p in sessions_dir.iterdir() if p.is_dir()], key=lambda p: p.name, reverse=True)
+    return sessions[0] if sessions else None
+
+
+# ==========================================
+# Plan-Erstellung & Adversarial Review
+# ==========================================
+def run_adversarial_plan(
+    planner: AgentCLI,
+    reviewer: AgentCLI,
+    task: str,
+    project_path: Path,
+    project_ctx: str,
+    session_dir: Path,
+    state: dict,
+    max_rounds: int = 2
+) -> tuple[bool, Path]:
     loop_dir = project_path / ".dual-loop"
     active_plan_file = loop_dir / "PLAN.md"
     active_review_file = loop_dir / "REVIEW.md"
     log_file = loop_dir / "PLAN-REVIEW-LOG.md"
 
-    # Neues Session-Verzeichnis für jede Ausführung erstellen (kein Überschreiben alter Pläne!)
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    slug = sanitize_filename(task)
-    session_dir = loop_dir / "sessions" / f"{timestamp}_{slug}"
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"\n📁 Session-Ordner angelegt: {session_dir.relative_to(project_path)}")
-    print(f"🚀 Phase 1: Plan-Entwurf durch {planner.name} (im Kontext von {project_path.name})...")
-    print(f"⏳ Warte auf {planner.name}...", flush=True)
-
-    prompt_plan = (
-        f"Du bist der leitende Software-Architekt für das Projekt in '{project_path}'.\n"
-        f"Erstelle einen präzisen, token-effizienten Implementierungsplan für folgende Aufgabe:\n"
-        f"Aufgabe: {task}\n\n"
-        f"{project_ctx}\n\n"
-        f"Enthalte: Betroffene Dateien, Architektur, Randfälle und Testkriterien. Antworte nur mit dem Markdown-Plan."
-    )
-    plan = planner.run(prompt_plan, cwd=project_path)
-
-    # Plan v1 speichern (im Session-Archiv UND als aktive PLAN.md)
     plan_v1_file = session_dir / "PLAN_v1.md"
-    plan_v1_file.write_text(plan, encoding="utf-8")
-    active_plan_file.write_text(plan, encoding="utf-8")
-    print(f"📄 Plan v1 gespeichert in {plan_v1_file.relative_to(project_path)} & {active_plan_file.relative_to(project_path)}")
 
-    # Audit Log Header
+    # Wenn Plan v1 noch nicht existiert (oder von vorn begonnen wird):
+    if not plan_v1_file.exists():
+        print(f"\n📁 Session-Ordner: {session_dir.relative_to(project_path)}")
+        print(f"🚀 Phase 1: Plan-Entwurf durch {planner.name} (im Kontext von {project_path.name})...")
+        print(f"⏳ Warte auf {planner.name}...", flush=True)
+
+        prompt_plan = (
+            f"Du bist der leitende Software-Architekt für das Projekt in '{project_path}'.\n"
+            f"Erstelle einen präzisen, token-effizienten Implementierungsplan für folgende Aufgabe:\n"
+            f"Aufgabe: {task}\n\n"
+            f"{project_ctx}\n\n"
+            f"Enthalte: Betroffene Dateien, Architektur, Randfälle und Testkriterien. Antworte nur mit dem Markdown-Plan."
+        )
+        plan = planner.run(prompt_plan, cwd=project_path)
+        plan_v1_file.write_text(plan, encoding="utf-8")
+        active_plan_file.write_text(plan, encoding="utf-8")
+        print(f"📄 Plan v1 gespeichert in {plan_v1_file.relative_to(project_path)}")
+    else:
+        # Resume: Den neuesten Plan aus der Session laden
+        existing_plans = sorted(session_dir.glob("PLAN_v*.md"), key=lambda p: p.name)
+        active_plan_file_source = existing_plans[-1]
+        plan = active_plan_file_source.read_text(encoding="utf-8")
+        active_plan_file.write_text(plan, encoding="utf-8")
+        print(f"🔄 Wiederaufnahme: Geladen {active_plan_file_source.name}")
+
+    start_round = state.get("rounds_completed", 0) + 1
+    approved = state.get("plan_approved", False)
+
+    if approved:
+        print("🎉 Plan wurde in einer früheren Sitzung bereits genehmigt!")
+        return True, active_plan_file
+
     log_entry = [
-        f"\n## [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Session: {slug}",
+        f"\n## [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Session: {session_dir.name}",
         f"- **Aufgabe:** {task}",
         f"- **Planer:** {planner.name} | **Prüfer:** {reviewer.name}",
-        f"- **Session-Pfad:** `{session_dir.relative_to(project_path)}`",
-        f"- **Runde 1:** Plan v1 erstellt"
+        f"- **Session-Pfad:** `{session_dir.relative_to(project_path)}`"
     ]
 
-    approved = False
-    for r in range(1, max_rounds + 1):
+    for r in range(start_round, max_rounds + 1):
         if STOP_REQUESTED:
+            state["rounds_completed"] = r - 1
+            save_session_state(session_dir, state)
             return False, active_plan_file
 
         print(f"\n🔍 Phase 2: Unabhängiges Adversarial Review (Runde {r}/{max_rounds}) durch {reviewer.name}...")
@@ -189,7 +238,6 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
         )
         review = reviewer.run(prompt_rev, cwd=project_path)
 
-        # Review archivieren
         review_r_file = session_dir / f"REVIEW_round{r}.md"
         review_r_file.write_text(review, encoding="utf-8")
         active_review_file.write_text(review, encoding="utf-8")
@@ -197,11 +245,14 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
 
         is_approved = "VERDICT: APPROVED" in review
         verdict_str = "APPROVED" if is_approved else "REVISE"
-        log_entry.append(f"  - Review Runde {r}: **VERDICT: {verdict_str}** ([Details]({review_r_file.name}))")
+        log_entry.append(f"  - Review Runde {r}: **VERDICT: {verdict_str}**")
 
+        state["rounds_completed"] = r
         if is_approved:
             print(f"🎉 Plan von {reviewer.name} genehmigt!")
             approved = True
+            state["plan_approved"] = True
+            save_session_state(session_dir, state)
             break
         elif r < max_rounds:
             print(f"⚠️ Kritikpunkte von {reviewer.name}. {planner.name} bessert den Plan nach...")
@@ -213,30 +264,153 @@ def run_adversarial_plan(planner: AgentCLI, reviewer: AgentCLI, task: str, proje
             )
             plan = planner.run(prompt_fix, cwd=project_path)
 
-            # Neue Version speichern
             plan_next_file = session_dir / f"PLAN_v{r+1}.md"
             plan_next_file.write_text(plan, encoding="utf-8")
             active_plan_file.write_text(plan, encoding="utf-8")
             print(f"📄 Plan v{r+1} gespeichert in {plan_next_file.relative_to(project_path)}")
-            log_entry.append(f"- **Runde {r+1}:** Plan v{r+1} erstellt ([Details]({plan_next_file.name}))")
+            save_session_state(session_dir, state)
         else:
-            print("🛑 Maximale Review-Runden erreicht. Manuelle Prüfung empfohlen.")
+            print("🛑 Maximale Review-Runden erreicht.")
             approved = False
+            state["plan_approved"] = False
+            save_session_state(session_dir, state)
 
-    # Audit Log fortschreiben
-    log_entry.append(f"- **Ergebnis:** {'Genehmigt' if approved else 'Nicht genehmigt (Limit erreicht)'}\n")
+    log_entry.append(f"- **Ergebnis:** {'Genehmigt' if approved else 'Review-Limit erreicht'}\n")
     with open(log_file, "a", encoding="utf-8") as f_log:
         f_log.write("\n".join(log_entry) + "\n")
-    print(f"📜 Audit-Log aktualisiert in {log_file.relative_to(project_path)}")
 
     return approved, active_plan_file
 
 
+# ==========================================
+# Interaktive Plan-Bestätigung & Change-Routing
+# ==========================================
+def handle_plan_approval_and_changes(
+    plan_file: Path,
+    planner: AgentCLI,
+    reviewer: AgentCLI,
+    task: str,
+    project_path: Path,
+    session_dir: Path,
+    state: dict
+) -> bool:
+    """
+    Fragt nach Fertigstellung des Plans nach Approve oder Changes.
+    Bei Changes: Auswahlmenü mit UI-Varianten oben und CLI-Varianten unten.
+    """
+    while not STOP_REQUESTED:
+        print("\n" + "=" * 60)
+        print("📋 PLAN-STATUS: Fertiggestellt & Geprüft")
+        print(f"📄 Aktuelle Plan-Datei: {plan_file.relative_to(project_path)}")
+        print("=" * 60)
+        print("Möchtest du den Plan freigeben oder Änderungen vornehmen?")
+        print("  [1] Approve  -> Plan genehmigen & weiter zur Implementierung")
+        print("  [2] Changes  -> Änderungen/Feedback anbringen")
+        print("  [3] Anzeigen -> Plan direkt hier im Terminal lesen")
+        print("  [4] Beenden  -> Abbrechen (Fortsetzen später mit --resume möglich)")
+        print("-" * 60)
+
+        try:
+            choice = input("Auswahl [1/2/3/4] (Standard: 1): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return False
+
+        if choice in ["", "1", "approve", "a"]:
+            state["user_approved"] = True
+            save_session_state(session_dir, state)
+            return True
+
+        elif choice in ["3", "view", "v"]:
+            print("\n" + "-" * 50)
+            print(plan_file.read_text(encoding="utf-8"))
+            print("-" * 50)
+            continue
+
+        elif choice in ["4", "exit", "q"]:
+            print("Abgebrochen. Du kannst diesen Stand jederzeit mit 'claudegravity --resume' fortsetzen.")
+            return False
+
+        elif choice in ["2", "changes", "c"]:
+            # Changes Menü: UI oben, CLI unten
+            print("\n" + "=" * 60)
+            print("💬 WO / WIE MÖCHTEST DU DIE ÄNDERUNGEN VORNEHMEN?")
+            print("=" * 60)
+            print("[UI-Varianten (Graphische Oberfläche)]:")
+            print("  [1] Im Editor öffnen (VS Code / Antigravity / Cursor / System)")
+            print("      -> Öffnet die Plan-Datei direkt zum Bearbeiten")
+            print("  [2] Claude UI (Web / Desktop)")
+            print("      -> Zeigt den Plan-Text zum einfachen Kopieren in die Claude Web-UI")
+            print("\n[CLI-Varianten (Terminal)]:")
+            print("  [3] Feedback direkt hier eintippen")
+            print("      -> KI überarbeitet den Plan anhand deiner Anweisung automatisch")
+            print(f"  [4] Interaktive {planner.name} CLI-Session starten")
+            print(f"  [5] Interaktive {reviewer.name} CLI-Session starten")
+            print("  [6] Zurück zum Hauptmenü")
+            print("-" * 60)
+
+            try:
+                c_choice = input("Auswahl [1-6]: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return False
+
+            if c_choice == "1":
+                # Im Editor öffnen
+                editor = os.environ.get("EDITOR", "xdg-open")
+                print(f"🚀 Öffne {plan_file.name} mit {editor}...")
+                subprocess.run([editor, str(plan_file)])
+                input("\nDrücke [Enter], sobald du mit dem Bearbeiten im Editor fertig bist...")
+                # Plan-Update sichern
+                v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
+                new_v_file = session_dir / f"PLAN_v{v_num}_manual.md"
+                new_v_file.write_text(plan_file.read_text(encoding="utf-8"), encoding="utf-8")
+                print(f"💾 Manuell bearbeiteter Plan gesichert als {new_v_file.name}")
+
+            elif c_choice == "2":
+                print("\n📋 Plan-Pfad für Claude UI:")
+                print(f"   Pfad: {plan_file.resolve()}")
+                print("   Kopiere den Inhalt der Datei in deine Claude UI / Web-Chat.")
+                input("\nDrücke [Enter], wenn du die Änderungen vorgenommen und in PLAN.md gespeichert hast...")
+
+            elif c_choice == "3":
+                feedback = input("\n📝 Gib deine Änderungswünsche ein: ").strip()
+                if feedback:
+                    print(f"⏳ {planner.name} überarbeitet den Plan basierend auf deinem Feedback...")
+                    old_plan = plan_file.read_text(encoding="utf-8")
+                    prompt_user_fix = (
+                        f"Der Nutzer hat folgende Änderungswünsche am Plan geäußert:\n\n"
+                        f"Feedback: {feedback}\n\n"
+                        f"Aktueller Plan:\n{old_plan}\n\n"
+                        f"Bitte überarbeite den Plan und gib den vollständigen neuen Markdown-Plan aus."
+                    )
+                    new_plan = planner.run(prompt_user_fix, cwd=project_path)
+                    v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
+                    new_v_file = session_dir / f"PLAN_v{v_num}.md"
+                    new_v_file.write_text(new_plan, encoding="utf-8")
+                    plan_file.write_text(new_plan, encoding="utf-8")
+                    print(f"✅ Plan aktualisiert und als {new_v_file.name} gesichert!")
+
+            elif c_choice == "4":
+                print(f"🚀 Starte interaktive {planner.name}-Sitzung in {project_path}...")
+                subprocess.run([planner.binary], cwd=str(project_path))
+                print(f"Zurück im Loop.")
+
+            elif c_choice == "5":
+                print(f"🚀 Starte interaktive {reviewer.name}-Sitzung in {project_path}...")
+                subprocess.run([reviewer.binary], cwd=str(project_path))
+                print(f"Zurück im Loop.")
+
+            elif c_choice == "6":
+                continue
+
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop")
-    parser.add_argument("task", nargs="?", help="Die Aufgabe für den Loop")
+    parser.add_argument("task", nargs="?", default="", help="Die Aufgabe für den Loop")
     parser.add_argument("-p", "--project", default=".", help="Pfad zum Ziel-Projekt (absolut oder relativ, Standard: .)")
     parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Maximale autonome Iterationen (Standard: 10)")
+    parser.add_argument("-c", "--resume", "--continue", dest="resume", action="store_true", help="Unterbrochene Sitzung fortsetzen")
     parser.add_argument("--planner", default=None, help="Explizite CLI für Planung/Bau (z.B. claude)")
     parser.add_argument("--reviewer", default=None, help="Explizite CLI für Review (z.B. agy oder gemini)")
     parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
@@ -257,13 +431,69 @@ def main():
             print("\n⚠️ Hinweis: Für echte Cross-Model Reviews werden mindestens 2 CLIs empfohlen (z.B. claude und agy).")
         return
 
-    if not args.task:
-        parser.print_help()
-        sys.exit(1)
-
     project_path = Path(args.project).resolve()
     if not project_path.exists():
         sys.exit(f"Fehler: Projektordner '{project_path}' existiert nicht.")
+
+    loop_dir = project_path / ".dual-loop"
+    loop_dir.mkdir(exist_ok=True)
+
+    # ==========================================
+    # Resume / Fortsetzen prüfen
+    # ==========================================
+    session_dir = None
+    state = {}
+    latest_sess = find_latest_session(loop_dir)
+
+    if args.resume:
+        if not latest_sess:
+            sys.exit("Fehler: Keine frühere Sitzung zum Fortsetzen gefunden.")
+        session_dir = latest_sess
+        state = load_session_state(session_dir)
+        task = state.get("task", args.task)
+        print(f"🔄 Setze letzte Sitzung fort: {session_dir.name}")
+        print(f"📌 Ursprüngliche Aufgabe: {task}")
+    elif not args.task and latest_sess:
+        # Kein Task angegeben, aber vorherige Session existiert
+        state_candidate = load_session_state(latest_sess)
+        if state_candidate and state_candidate.get("phase") != "completed":
+            print(f"\n🔍 Unterbrochene Sitzung gefunden: {latest_sess.name}")
+            print(f"📌 Aufgabe: {state_candidate.get('task')}")
+            try:
+                res_ans = input("Möchtest du diese Sitzung fortsetzen? [J/n]: ")
+            except (EOFError, KeyboardInterrupt):
+                res_ans = "n"
+            if res_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:
+                session_dir = latest_sess
+                state = state_candidate
+                task = state.get("task")
+            else:
+                parser.print_help()
+                sys.exit(1)
+        else:
+            parser.print_help()
+            sys.exit(1)
+    elif not args.task:
+        parser.print_help()
+        sys.exit(1)
+    else:
+        task = args.task
+        # Neue Session
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        slug = sanitize_filename(task)
+        session_dir = loop_dir / "sessions" / f"{timestamp}_{slug}"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        state = {
+            "session_id": session_dir.name,
+            "task": task,
+            "created_at": datetime.datetime.now().isoformat(),
+            "phase": "plan",
+            "rounds_completed": 0,
+            "plan_approved": False,
+            "last_iteration": 0,
+            "max_iterations": args.max_iterations
+        }
+        save_session_state(session_dir, state)
 
     # Paarung festlegen
     if args.planner and args.planner in agents:
@@ -286,24 +516,45 @@ def main():
     print(f"[*] Ziel-Projekt : {project_path}")
     print(f"[*] Planer/Bau   : {planner.name}")
     print(f"[*] Prüfer/Review: {reviewer.name}")
+    print(f"[*] Session-ID   : {session_dir.name}")
     print(f"=======================================================\n")
 
     project_ctx = load_project_context(project_path)
 
-    # 1. & 2. Phase: Adversarial Plan Review mit Versionierung
-    approved, plan_file = run_adversarial_plan(planner, reviewer, args.task, project_path, project_ctx, max_rounds=2)
-    if not approved and not STOP_REQUESTED:
-        try:
-            choice = input("\nPlan nicht vollständig genehmigt. Trotzdem mit Implementierung fortfahren? (j/N): ")
-        except (EOFError, KeyboardInterrupt):
-            choice = "n"
-        if choice.lower() not in ["j", "ja", "y", "yes"]:
-            print("Abbruch durch Nutzer.")
+    # ==========================================
+    # 1. & 2. Phase: Adversarial Plan Review
+    # ==========================================
+    plan_file = loop_dir / "PLAN.md"
+    if state.get("phase") in ["plan", "review"] or not state.get("user_approved", False):
+        state["phase"] = "review"
+        save_session_state(session_dir, state)
+
+        # Plan erstellen / Review durchführen
+        review_ok, plan_file = run_adversarial_plan(
+            planner, reviewer, task, project_path, project_ctx, session_dir, state, max_rounds=2
+        )
+
+        if STOP_REQUESTED:
             return
 
+        # Interaktive Freigabe & Change-Routing (Approve / Changes)
+        user_confirmed = handle_plan_approval_and_changes(
+            plan_file, planner, reviewer, task, project_path, session_dir, state
+        )
+
+        if not user_confirmed or STOP_REQUESTED:
+            print("Implementierung nicht gestartet.")
+            return
+
+        state["phase"] = "build"
+        state["user_approved"] = True
+        save_session_state(session_dir, state)
+
+    # ==========================================
     # Rechte-Steuerung für Phase 3 (Build)
+    # ==========================================
     perm_flags = []
-    if args.yolo:
+    if args.yolo or state.get("yolo_enabled", False):
         give_permissions = True
     else:
         try:
@@ -315,34 +566,43 @@ def main():
 
     if give_permissions:
         perm_flags = get_permission_flags(planner.binary)
+        state["yolo_enabled"] = True
+        save_session_state(session_dir, state)
         print(f"🔓 Schreibberechtigung aktiviert ({' '.join(perm_flags)}).")
     else:
-        print("🔒 Eingeschränkter Modus: Änderungen müssen einzeln bestätigt werden.")
+        print("🔒 Eingeschränkter Modus: Bestätigung bei jedem Tool-Call erforderlich.")
 
-    # 3. Phase: Autonomer Implementierungs-Loop im Projektverzeichnis
+    # ==========================================
+    # 3. Phase: Autonomer Implementierungs-Loop
+    # ==========================================
     logs_dir = project_path / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    session_log = logs_dir / f"loop_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    session_log = logs_dir / f"loop_{session_dir.name}.log"
 
     print(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {project_path}...")
-    iteration = 0
-    while not STOP_REQUESTED:
-        iteration += 1
-        if args.max_iterations > 0 and iteration > args.max_iterations:
-            print(f"[+] Maximale Rundenanzahl ({args.max_iterations}) erreicht. Fertig.")
+    start_iter = state.get("last_iteration", 0) + 1
+    max_iters = args.max_iterations
+
+    for iteration in range(start_iter, max_iters + 1):
+        if STOP_REQUESTED:
             break
 
         done_flag = project_path / ".done"
         if done_flag.exists():
             print(f"\n🎉 Fertigmeldung ({done_flag}) gefunden! Aufgabe erfolgreich abgeschlossen.")
+            state["phase"] = "completed"
+            save_session_state(session_dir, state)
             break
 
+        state["last_iteration"] = iteration
+        save_session_state(session_dir, state)
+
         timestamp = datetime.datetime.now().isoformat()
-        log_header = f"\n{'='*20} Iteration {iteration} @ {timestamp} {'='*20}\n"
+        log_header = f"\n{'='*20} Iteration {iteration}/{max_iters} @ {timestamp} {'='*20}\n"
         print(log_header, flush=True)
 
         prompt_build = (
-            f"Führe den genehmigten Plan ({plan_file}) für folgende Aufgabe aus:\n{args.task}\n\n"
+            f"Führe den genehmigten Plan ({plan_file}) für folgende Aufgabe aus:\n{task}\n\n"
             f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch. "
             f"Wenn alle Anforderungen erfüllt und getestet sind, erstelle die Datei .done im Projektverzeichnis."
         )
@@ -377,6 +637,10 @@ def main():
 
         if args.delay > 0:
             time.sleep(args.delay)
+
+    if iteration >= max_iters and not (project_path / ".done").exists():
+        print(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
+        print(f"💡 Du kannst jederzeit mit 'claudegravity -c' weitere Runden anhängen.")
 
     print("\n[*] ClaudeGravity Loop beendet.")
 
