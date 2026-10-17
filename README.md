@@ -125,6 +125,7 @@ claudegravity --check
 | `claudegravity -p /pfad/zum/projekt "Aufgabe"` | Führt die Aufgabe in einem anderen Projektordner aus |
 | `claudegravity --resume` oder `claudegravity -c` | Setzt eine unterbrochene Sitzung exakt an gleicher Stelle fort |
 | `claudegravity --reviewer-effort high "Aufgabe"` | Maximale Prüf-Intensität / Thinking Effort für Antigravity |
+| `claudegravity --auto-switch "Aufgabe"` | **Auto-Fallback:** Wechselt bei Kontingentlimit nahtlos zum Alternativmodell |
 
 ---
 
@@ -243,14 +244,30 @@ KIs laufen im Hintergrund ohne Fenster. Damit eine KI nicht unbemerkt Dateien ve
 
 ---
 
-### 12. Was passiert bei AI-Sitzungslimits? (Token-Limits)
+### 12. Was passiert bei AI-Sitzungslimits? (Token-Limits & Kosten-Audit)
 
 Wenn Claude Code oder Antigravity an das persönliche Abonnements-Limit stößt (`You've hit your session limit · resets 3:20pm`), stürzt `claudegravity` **nicht** ab. Es sichert den Stand sofort in `state.json` und gibt dir die Wahl:
 1. **Modell-Wechsel:** Das andere installierte Modell (z. B. `agy` statt `claude`) übernimmt sofort die Rolle und führt den Schritt nahtlos zu Ende.
 2. **Warten per Countdown:** Wartet per Timer bis zur angegebenen Reset-Uhrzeit und setzt danach automatisch fort.
 3. **Sauber beenden:** Sichert den Stand – du kannst später mit `claudegravity -c` weitermachen.
 
-Mit `--auto-switch` wechselt das System bei Limits sogar vollautomatisch auf das Alternativ-Modell!
+Mit `--auto-switch` (oder `--fallback`) wechselt das System bei Limits sogar vollautomatisch auf das Alternativ-Modell!
+
+#### 📊 Automatischer Token- & Kostenbericht in `.done`:
+Sobald eine Aufgabe abgeschlossen ist, trägt `claudegravity` die verbrauchten Tokens und geschätzten Kosten automatisch in die `.done`-Datei ein:
+
+```markdown
+---
+### 📊 Ressourcen-Verbrauch & Kosten (ClaudeGravity Audit)
+* **Gesamt-Tokens:** 24.850 Tokens
+  * **Input-Tokens:** 21.600
+  * **Output-Tokens:** 3.250
+* **Entstandene Kosten (geschätzt):** ~$0.24 USD
+* **Aufschlüsselung nach Modell / Phase:**
+  * **Claude Code:** 19.400 Tokens (~$0.24 USD)
+  * **Antigravity (agy):** 5.450 Tokens (Abo-Inklusivkontingent)
+* **Audit-Zeitstempel:** 2026-10-17 16:15:30
+```
 
 ---
 
@@ -364,6 +381,7 @@ claudegravity --check
 | `claudegravity -p /path/to/project "Task"` | Run the task in an external project directory |
 | `claudegravity --resume` or `claudegravity -c` | Resume an interrupted session exactly where it stopped |
 | `claudegravity --reviewer-effort high "Task"` | Set maximum reasoning effort for Antigravity review |
+| `claudegravity --auto-switch "Task"` | **Auto-Fallback:** Automatically switch to alternative model if limit reached |
 
 ---
 
@@ -480,14 +498,30 @@ Headless AI tools require permissions to modify files on disk.
 
 ---
 
-### 12. What Happens When AI Limits Are Hit? (Session Limits)
+### 12. What Happens When AI Limits Are Hit? (Session Limits & Cost Audit)
 
 If Claude Code or Antigravity hits a personal subscription limit (`You've hit your session limit · resets 3:20pm`), `claudegravity` does **not** crash. It safely saves state and offers 3 options:
 1. **Model Switch:** The alternative installed model (e.g. `agy` taking over for `claude`) seamlessly finishes the task.
-2. **Wait Timer:** Waits with a countdown until the reset time and resumes automatically.
+2. **Wait Timer:** Waits with a live countdown until the reset time and resumes automatically.
 3. **Safe Exit:** Cleanly saves progress so you can resume later with `claudegravity -c`.
 
-With `--auto-switch`, the tool will automatically failover to the alternative model without asking!
+With `--auto-switch` (or `--fallback`), the tool will automatically failover to the alternative model without blocking!
+
+#### 📊 Automatic Token & Cost Audit in `.done`:
+When the task finishes, `claudegravity` automatically audits consumed tokens and estimated costs directly into the session's `.done` file:
+
+```markdown
+---
+### 📊 Ressourcen-Verbrauch & Kosten (ClaudeGravity Audit)
+* **Gesamt-Tokens:** 24.850 Tokens
+  * **Input-Tokens:** 21.600
+  * **Output-Tokens:** 3.250
+* **Entstandene Kosten (geschätzt):** ~$0.24 USD
+* **Aufschlüsselung nach Modell / Phase:**
+  * **Claude Code:** 19.400 Tokens (~$0.24 USD)
+  * **Antigravity (agy):** 5.450 Tokens (Abo-Inklusivkontingent)
+* **Audit-Zeitstempel:** 2026-10-17 16:15:30
+```
 
 ---
 

@@ -43,14 +43,209 @@ signal.signal(signal.SIGINT, sigint_handler)
 signal.signal(signal.SIGTERM, sigint_handler)
 
 
+class RateLimitError(Exception):
+    def __init__(self, binary: str, message: str, reset_time: str | None = None, reset_seconds: int | None = None):
+        super().__init__(f"{binary} Limit erreicht: {message}")
+        self.binary = binary
+        self.message = message
+        self.reset_time = reset_time
+        self.reset_seconds = reset_seconds
+
+
+RATE_LIMIT_PATTERNS = [
+    r"hit your session limit",
+    r"rate limit",
+    r"rate_limit",
+    r"quota exceeded",
+    r"resource_exhausted",
+    r"too many requests",
+    r"usage limit",
+    r"hit your limit",
+    r"credit balance is too low",
+    r"capacity",
+    r"overloaded",
+]
+
+TIME_PATTERNS = [
+    r"resets?\s+(?:in\s+|at\s+)?([0-9]+\s*(?:hours?|hrs?|minutes?|mins?|seconds?|secs?|h|m|s))\b",
+    r"resets?\s+(?:in\s+|at\s+)?([0-9]+(?::[0-9]+)?\s*(?:am|pm)?(?:\s*\([^\)]+\))?)\b",
+    r"try again in\s+([0-9]+\s*(?:hours?|hrs?|minutes?|mins?|seconds?|secs?|h|m|s))\b",
+]
+
+
+def is_rate_limit(text: str) -> bool:
+    return any(re.search(p, text, re.IGNORECASE) for p in RATE_LIMIT_PATTERNS)
+
+
+def extract_reset_time(text: str) -> str | None:
+    for p in TIME_PATTERNS:
+        m = re.search(p, text, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+def parse_reset_seconds(time_str: str | None) -> int | None:
+    if not time_str:
+        return None
+    s = time_str.strip().lower()
+
+    dur_m = re.match(r'^([0-9]+(?:\.[0-9]+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)$', s)
+    if dur_m:
+        val = float(dur_m.group(1))
+        unit = dur_m.group(2)
+        if unit.startswith('h'):
+            return int(val * 3600)
+        elif unit.startswith('m'):
+            return int(val * 60)
+        elif unit.startswith('s'):
+            return int(val)
+
+    now = datetime.datetime.now()
+    s_clean = re.sub(r'\(.*?\)', '', s).strip()
+    for fmt in ['%I:%M%p', '%I%p', '%H:%M', '%H:%M:%S']:
+        try:
+            t = datetime.datetime.strptime(s_clean, fmt).time()
+            target = datetime.datetime.combine(now.date(), t)
+            diff = int((target - now).total_seconds())
+            if -3600 <= diff <= 0:
+                return 15
+            elif diff < -3600:
+                target += datetime.timedelta(days=1)
+                diff = int((target - now).total_seconds())
+            if diff > 0:
+                return diff
+        except ValueError:
+            continue
+    return None
+
+
+def wait_countdown(seconds: int, reset_str: str = "") -> bool:
+    print(f"\n⏳ Starte Countdown ({seconds}s bis {reset_str or 'Reset'}). Drücke [Strg+C] zum Abbrechen...")
+    try:
+        for remaining in range(seconds, 0, -1):
+            if STOP_REQUESTED:
+                return False
+            mins, secs = divmod(remaining, 60)
+            hours, mins = divmod(mins, 60)
+            time_display = f"{hours:02d}:{mins:02d}:{secs:02d}" if hours else f"{mins:02d}:{secs:02d}"
+            sys.stdout.write(f"\r⏳ Warte noch: {time_display} ... ")
+            sys.stdout.flush()
+            time.sleep(1)
+        print("\n⏰ Wartezeit abgelaufen! Setze Ausführung fort...")
+        return True
+    except KeyboardInterrupt:
+        print("\n[!] Warten durch Nutzer abgebrochen.")
+        return False
+
+
+class SessionMetrics:
+    def __init__(self):
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.total_tokens = 0
+        self.cost_usd = 0.0
+        self.by_agent: dict[str, dict] = {}
+
+    def add(self, agent_name: str, input_tokens: int = 0, output_tokens: int = 0, total_tokens: int = 0, cost_usd: float = 0.0):
+        if total_tokens == 0:
+            total_tokens = input_tokens + output_tokens
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
+        self.total_tokens += total_tokens
+        self.cost_usd += cost_usd
+
+        if agent_name not in self.by_agent:
+            self.by_agent[agent_name] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0}
+        self.by_agent[agent_name]["input_tokens"] += input_tokens
+        self.by_agent[agent_name]["output_tokens"] += output_tokens
+        self.by_agent[agent_name]["total_tokens"] += total_tokens
+        self.by_agent[agent_name]["cost_usd"] += cost_usd
+
+    def to_dict(self) -> dict:
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "cost_usd": round(self.cost_usd, 4),
+            "by_agent": self.by_agent
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "SessionMetrics":
+        m = cls()
+        if not data:
+            return m
+        m.input_tokens = data.get("input_tokens", 0)
+        m.output_tokens = data.get("output_tokens", 0)
+        m.total_tokens = data.get("total_tokens", 0)
+        m.cost_usd = data.get("cost_usd", 0.0)
+        m.by_agent = data.get("by_agent", {})
+        return m
+
+
+def format_metrics_report(metrics: SessionMetrics) -> str:
+    lines = [
+        "",
+        "---",
+        "### 📊 Ressourcen-Verbrauch & Kosten (ClaudeGravity Audit)",
+        f"* **Gesamt-Tokens:** {metrics.total_tokens:,} Tokens",
+        f"  * **Input-Tokens:** {metrics.input_tokens:,}",
+        f"  * **Output-Tokens:** {metrics.output_tokens:,}",
+        f"* **Entstandene Kosten (geschätzt):** ~${metrics.cost_usd:.4f} USD",
+        "* **Aufschlüsselung nach Modell / Phase:**"
+    ]
+    if metrics.by_agent:
+        for agent_name, usage in metrics.by_agent.items():
+            cost_str = f"~${usage['cost_usd']:.4f} USD" if usage['cost_usd'] > 0 else "Abo-Inklusivkontingent"
+            lines.append(f"  * **{agent_name}:** {usage['total_tokens']:,} Tokens (Input: {usage['input_tokens']:,}, Output: {usage['output_tokens']:,} | {cost_str})")
+    else:
+        lines.append("  * Keine detaillierte Modell-Aufschlüsselung verfügbar.")
+    lines.append(f"* **Audit-Zeitstempel:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def append_metrics_to_done(session_dir: Path, project_path: Path, metrics: SessionMetrics):
+    """Schreibt den Token- und Kostenbericht in die .done-Datei des Session-Ordners."""
+    session_done = session_dir / ".done"
+    root_done = project_path / ".done"
+
+    if root_done.exists() and not session_done.exists():
+        try:
+            shutil.move(str(root_done), str(session_done))
+        except Exception:
+            pass
+
+    if not session_done.exists():
+        session_done.write_text("# Aufgabe abgeschlossen\n", encoding="utf-8")
+
+    content = session_done.read_text(encoding="utf-8")
+    if "ClaudeGravity Audit" not in content:
+        report = format_metrics_report(metrics)
+        with open(session_done, "a", encoding="utf-8") as f:
+            f.write(report)
+        print(f"📊 Ressourcen-Audit erfolgreich in {session_done.relative_to(project_path)} eingetragen.")
+
+
 class AgentCLI:
-    def __init__(self, name: str, binary: str, run_fn):
+    def __init__(self, name: str, binary: str, run_fn, metrics_tracker: SessionMetrics | None = None):
         self.name = name
         self.binary = binary
         self.run_fn = run_fn
+        self.metrics_tracker = metrics_tracker
 
     def run(self, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
-        return self.run_fn(self.binary, prompt, cwd, extra_flags)
+        text, metrics = self.run_fn(self.binary, prompt, cwd, extra_flags)
+        if self.metrics_tracker and metrics:
+            self.metrics_tracker.add(
+                agent_name=self.name,
+                input_tokens=metrics.get("input_tokens", 0),
+                output_tokens=metrics.get("output_tokens", 0),
+                total_tokens=metrics.get("total_tokens", 0),
+                cost_usd=metrics.get("cost_usd", 0.0)
+            )
+        return text
 
 
 def _exec_cli(binary: str, args: list[str], cwd: Path | None = None) -> str:
@@ -58,35 +253,114 @@ def _exec_cli(binary: str, args: list[str], cwd: Path | None = None) -> str:
     res = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True)
     if res.returncode != 0:
         err_msg = res.stderr.strip() or res.stdout.strip() or f"Fehlercode {res.returncode}"
+        if is_rate_limit(err_msg):
+            r_time = extract_reset_time(err_msg)
+            r_secs = parse_reset_seconds(r_time) if r_time else None
+            raise RateLimitError(binary, err_msg, r_time, r_secs)
         raise RuntimeError(f"{binary} Fehler (Code {res.returncode}): {err_msg}")
     return res.stdout.strip()
 
 
-def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
+def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
+    args = ["-p", prompt, "--output-format", "json"]
+    if extra_flags:
+        for f in extra_flags:
+            if f not in ["--output-format", "json", "text"]:
+                args.append(f)
+    raw = _exec_cli(binary, args, cwd)
+    try:
+        data = json.loads(raw)
+        if data.get("is_error"):
+            err_msg = data.get("result") or data.get("api_error_status") or "Unbekannter Fehler"
+            if is_rate_limit(str(err_msg)):
+                r_time = extract_reset_time(str(err_msg))
+                r_secs = parse_reset_seconds(r_time) if r_time else None
+                raise RateLimitError(binary, str(err_msg), r_time, r_secs)
+            raise RuntimeError(f"Claude Fehler: {err_msg}")
+
+        text = data.get("result", "")
+        usage = data.get("usage", {})
+        inp = usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+        out = usage.get("output_tokens", 0)
+        tot = inp + out
+        cost = float(data.get("total_cost_usd", 0.0))
+        metrics = {
+            "input_tokens": inp,
+            "output_tokens": out,
+            "total_tokens": tot,
+            "cost_usd": cost
+        }
+        return text, metrics
+    except json.JSONDecodeError:
+        return raw, {
+            "input_tokens": len(prompt) // 4,
+            "output_tokens": len(raw) // 4,
+            "total_tokens": (len(prompt) + len(raw)) // 4,
+            "cost_usd": 0.0
+        }
+
+
+def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
+    args = ["-p", prompt, "--output-format", "json"]
+    if extra_flags:
+        for f in extra_flags:
+            if f not in ["--output-format", "json", "text"]:
+                args.append(f)
+    raw = _exec_cli(binary, args, cwd)
+    try:
+        data = json.loads(raw)
+        if data.get("status") == "ERROR":
+            err_msg = data.get("response") or "Unbekannter Fehler"
+            if is_rate_limit(str(err_msg)):
+                r_time = extract_reset_time(str(err_msg))
+                r_secs = parse_reset_seconds(r_time) if r_time else None
+                raise RateLimitError(binary, str(err_msg), r_time, r_secs)
+            raise RuntimeError(f"Antigravity Fehler: {err_msg}")
+
+        text = data.get("response", "")
+        usage = data.get("usage", {})
+        inp = usage.get("input_tokens", 0)
+        out = usage.get("output_tokens", 0)
+        tot = usage.get("total_tokens", inp + out)
+        metrics = {
+            "input_tokens": inp,
+            "output_tokens": out,
+            "total_tokens": tot,
+            "cost_usd": 0.0
+        }
+        return text, metrics
+    except json.JSONDecodeError:
+        return raw, {
+            "input_tokens": len(prompt) // 4,
+            "output_tokens": len(raw) // 4,
+            "total_tokens": (len(prompt) + len(raw)) // 4,
+            "cost_usd": 0.0
+        }
+
+
+def _exec_gemini(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
     args = ["-p", prompt]
     if extra_flags:
         args.extend(extra_flags)
-    return _exec_cli(binary, args, cwd)
+    raw = _exec_cli(binary, args, cwd)
+    return raw, {
+        "input_tokens": len(prompt) // 4,
+        "output_tokens": len(raw) // 4,
+        "total_tokens": (len(prompt) + len(raw)) // 4,
+        "cost_usd": 0.0
+    }
 
 
-def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
-    args = ["-p", prompt]
-    if extra_flags:
-        args.extend(extra_flags)
-    return _exec_cli(binary, args, cwd)
-
-
-def _exec_gemini(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
-    args = ["-p", prompt]
-    if extra_flags:
-        args.extend(extra_flags)
-    return _exec_cli(binary, args, cwd)
-
-
-def _exec_codex(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
+def _exec_codex(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
     sandbox = "workspace-write" if extra_flags and "--dangerously-skip-permissions" in extra_flags else "read-only"
     args = ["exec", "-s", sandbox, prompt]
-    return _exec_cli(binary, args, cwd)
+    raw = _exec_cli(binary, args, cwd)
+    return raw, {
+        "input_tokens": len(prompt) // 4,
+        "output_tokens": len(raw) // 4,
+        "total_tokens": (len(prompt) + len(raw)) // 4,
+        "cost_usd": 0.0
+    }
 
 
 def detect_installed_agents() -> dict[str, AgentCLI]:
@@ -95,7 +369,7 @@ def detect_installed_agents() -> dict[str, AgentCLI]:
         agents["claude"] = AgentCLI("Claude Code", "claude", _exec_claude)
     if shutil.which("agy"):
         agents["agy"] = AgentCLI("Antigravity (agy)", "agy", _exec_agy)
-    elif shutil.which("gemini"):
+    if shutil.which("gemini"):
         agents["gemini"] = AgentCLI("Gemini CLI", "gemini", _exec_gemini)
     if shutil.which("codex"):
         agents["codex"] = AgentCLI("Codex CLI", "codex", _exec_codex)
@@ -216,6 +490,115 @@ def find_latest_session(loop_dir: Path) -> Path | None:
     return sessions[0] if sessions else None
 
 
+def get_alternative_agent(current_agent: AgentCLI, agents: dict[str, AgentCLI]) -> AgentCLI | None:
+    """Findet eine alternative installierte CLI für Modell-Wechsel bei Limits."""
+    if current_agent.binary == "claude" and "agy" in agents:
+        return agents["agy"]
+    elif current_agent.binary == "agy" and "claude" in agents:
+        return agents["claude"]
+    for k, a in agents.items():
+        if a.binary != current_agent.binary:
+            return a
+    return None
+
+
+def handle_rate_limit(
+    current_agent: AgentCLI,
+    agents: dict[str, AgentCLI],
+    err: RateLimitError,
+    session_dir: Path,
+    state: dict,
+    auto_switch: bool = False
+) -> tuple[str, AgentCLI | None]:
+    """Behandelt RateLimit-Fehler interaktiv oder per automatischem Modell-Wechsel."""
+    alt_agent = get_alternative_agent(current_agent, agents)
+
+    if auto_switch and alt_agent:
+        print(f"\n🔄 Auto-Switch aktiv: Wechsle automatisch von {current_agent.name} zu {alt_agent.name}...")
+        return "switch", alt_agent
+
+    print("\n" + "=" * 65)
+    print(f"🚨 AI-LIMIT ERREICHT: {current_agent.name} meldet Sitzungs- / Ratenlimit!")
+    print(f"   Grund: {err.message}")
+    if err.reset_time:
+        print(f"   Reset erwartet: {err.reset_time}")
+    print("=" * 65)
+    print("Wie möchtest du fortfahren?")
+    if alt_agent:
+        print(f"  [1] 🔄 Modell-Wechsel -> Zu {alt_agent.name} wechseln und sofort weiterarbeiten")
+    else:
+        print(f"  [1] 🔄 Modell-Wechsel -> (Keine Alternative im PATH gefunden)")
+    wait_info = f" ({err.reset_time})" if err.reset_time else ""
+    print(f"  [2] ⏳ Warten         -> Countdown starten{wait_info} und automatisch wiederholen")
+    print(f"  [3] 💾 Beenden        -> Stand sichern und beenden (Fortsetzen später mit 'claudegravity -c')")
+    print("-" * 65)
+
+    try:
+        choice = input("Auswahl [1/2/3] (Standard: 1): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return "exit", None
+
+    if choice in ["", "1"] and alt_agent:
+        return "switch", alt_agent
+    elif choice in ["2", "wait", "w"]:
+        secs = err.reset_seconds
+        if not secs:
+            try:
+                user_min = input("Wieviele Minuten soll gewartet werden? [Standard: 15]: ").strip()
+                secs = int(user_min) * 60 if user_min else 15 * 60
+            except (ValueError, EOFError, KeyboardInterrupt):
+                secs = 15 * 60
+        ok = wait_countdown(secs, err.reset_time or f"{secs//60} Min")
+        if ok:
+            return "wait", current_agent
+        else:
+            return "exit", None
+    elif choice in ["3", "exit", "q"]:
+        return "exit", None
+    else:
+        if alt_agent:
+            return "switch", alt_agent
+        return "exit", None
+
+
+def safe_agent_run(
+    agent: AgentCLI,
+    prompt: str,
+    cwd: Path,
+    flags: list[str],
+    agents: dict[str, AgentCLI],
+    session_dir: Path,
+    state: dict,
+    auto_switch: bool,
+    role: str = "planner",
+    metrics_tracker: SessionMetrics | None = None
+) -> tuple[str, AgentCLI, list[str]]:
+    """Führt einen Prompt aus und fängt Raten- und Sitzungslimits mit Wiederholungs-Logik ab."""
+    while not STOP_REQUESTED:
+        try:
+            res = agent.run(prompt, cwd=cwd, extra_flags=flags)
+            return res, agent, flags
+        except RateLimitError as err:
+            action, new_agent = handle_rate_limit(agent, agents, err, session_dir, state, auto_switch=auto_switch)
+            if action == "switch" and new_agent:
+                print(f"🔄 Rolle '{role.capitalize()}' wechselt zu {new_agent.name}!")
+                agent = new_agent
+                if metrics_tracker:
+                    agent.metrics_tracker = metrics_tracker
+                flags = get_permission_flags(new_agent.binary)
+                state[f"{role}_binary"] = new_agent.binary
+                state[f"{role}_name"] = new_agent.name
+                save_session_state(session_dir, state)
+                continue
+            elif action == "wait":
+                continue
+            else:
+                save_session_state(session_dir, state)
+                print("\n💾 Sitzung gesichert. Setze jederzeit fort mit 'claudegravity -c'.")
+                sys.exit(0)
+    return "", agent, flags
+
+
 # ==========================================
 # Plan-Erstellung & Adversarial Review
 # ==========================================
@@ -227,11 +610,13 @@ def run_adversarial_plan(
     project_ctx: str,
     session_dir: Path,
     state: dict,
+    agents: dict[str, AgentCLI],
+    auto_switch: bool = False,
     planner_flags: list[str] | None = None,
     reviewer_flags: list[str] | None = None,
     max_rounds: int = 2,
     ask_mode: bool = False
-) -> tuple[bool, Path]:
+) -> tuple[bool, Path, AgentCLI, AgentCLI, list[str], list[str]]:
     loop_dir = project_path / ".dual-loop"
 
     # Alte temporäre Dateien im Root von .dual-loop aufräumen
@@ -245,6 +630,9 @@ def run_adversarial_plan(
     log_file = session_dir / "LOG.md"
     plan_v1_file = session_dir / "PLAN_v1.md"
     current_plan_file = plan_v1_file
+
+    planner_flags = list(planner_flags or [])
+    reviewer_flags = list(reviewer_flags or [])
 
     # Wenn Plan v1 noch nicht existiert (oder von vorn begonnen wird):
     if not plan_v1_file.exists():
@@ -266,13 +654,33 @@ def run_adversarial_plan(
                 "stelle bis zu 3 konkrete, nummerierte Fragen an den Nutzer unter der Überschrift '### FRAGEN AN DEN NUTZER:'. "
                 "Formuliere darunter deinen initialen Entwurf."
             )
-        plan = planner.run(prompt_plan, cwd=project_path, extra_flags=planner_flags)
+        plan, planner, planner_flags = safe_agent_run(
+            agent=planner,
+            prompt=prompt_plan,
+            cwd=project_path,
+            flags=planner_flags,
+            agents=agents,
+            session_dir=session_dir,
+            state=state,
+            auto_switch=auto_switch,
+            role="planner"
+        )
 
         # Sicherheitsprüfung: Hat Modell versehentlich eine Permission-Meldung zurückgegeben?
         if is_permission_error_response(plan):
             print("⚠️ Modell versuchte eine Datei anzulegen. Erzwinge reine Textausgabe...")
             retry_prompt = prompt_plan + "\nACHTUNG: Lege KEINE Datei an! Gib den Plan ausschließlich als Text aus!"
-            plan = planner.run(retry_prompt, cwd=project_path, extra_flags=planner_flags)
+            plan, planner, planner_flags = safe_agent_run(
+                agent=planner,
+                prompt=retry_prompt,
+                cwd=project_path,
+                flags=planner_flags,
+                agents=agents,
+                session_dir=session_dir,
+                state=state,
+                auto_switch=auto_switch,
+                role="planner"
+            )
 
         if ask_mode:
             questions = extract_questions(plan)
@@ -295,9 +703,29 @@ def run_adversarial_plan(
                         f"Finalisiere nun den Plan v1 vollständig unter Berücksichtigung dieser Nutzer-Entscheidungen."
                         f"{PLANNING_DIRECTIVE}"
                     )
-                    plan = planner.run(prompt_refine, cwd=project_path, extra_flags=planner_flags)
+                    plan, planner, planner_flags = safe_agent_run(
+                        agent=planner,
+                        prompt=prompt_refine,
+                        cwd=project_path,
+                        flags=planner_flags,
+                        agents=agents,
+                        session_dir=session_dir,
+                        state=state,
+                        auto_switch=auto_switch,
+                        role="planner"
+                    )
                     if is_permission_error_response(plan):
-                        plan = planner.run(prompt_refine + "\nACHTUNG: Lege KEINE Datei an! Gib den Plan als Text aus!", cwd=project_path, extra_flags=planner_flags)
+                        plan, planner, planner_flags = safe_agent_run(
+                            agent=planner,
+                            prompt=prompt_refine + "\nACHTUNG: Lege KEINE Datei an! Gib den Plan als Text aus!",
+                            cwd=project_path,
+                            flags=planner_flags,
+                            agents=agents,
+                            session_dir=session_dir,
+                            state=state,
+                            auto_switch=auto_switch,
+                            role="planner"
+                        )
 
         plan_v1_file.write_text(plan, encoding="utf-8")
         current_plan_file = plan_v1_file
@@ -322,7 +750,7 @@ def run_adversarial_plan(
 
     if approved:
         print("🎉 Plan wurde in einer früheren Sitzung bereits genehmigt!")
-        return True, current_plan_file
+        return True, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
 
     log_entry = [
         f"\n## [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Session: {session_dir.name}",
@@ -335,7 +763,7 @@ def run_adversarial_plan(
         if STOP_REQUESTED:
             state["rounds_completed"] = r - 1
             save_session_state(session_dir, state)
-            return False, current_plan_file
+            return False, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
 
         print(f"\n🔍 Phase 2: Unabhängiges Adversarial Review (Runde {r}/{max_rounds}) durch {reviewer.name}...")
         print(f"⏳ Warte auf Review von {reviewer.name}...", flush=True)
@@ -355,7 +783,17 @@ def run_adversarial_plan(
                 "\n\nFRAGEN-MODUS AKTIV: Wenn du kritische Zielkonflikte, Risiken oder Architektur-Entscheidungen siehst, "
                 "die zwingend menschlicher Klärung bedürfen, stelle diese gezielt unter '### FRAGEN AN DEN NUTZER:'."
             )
-        review = reviewer.run(prompt_rev, cwd=project_path, extra_flags=reviewer_flags)
+        review, reviewer, reviewer_flags = safe_agent_run(
+            agent=reviewer,
+            prompt=prompt_rev,
+            cwd=project_path,
+            flags=reviewer_flags,
+            agents=agents,
+            session_dir=session_dir,
+            state=state,
+            auto_switch=auto_switch,
+            role="reviewer"
+        )
 
         review_r_file = session_dir / f"REVIEW_round{r}.md"
         review_r_file.write_text(review, encoding="utf-8")
@@ -399,13 +837,33 @@ def run_adversarial_plan(
                 f"Bitte überarbeite den Plan und behebe alle genannten Mängel vollständig."
                 f"{PLANNING_DIRECTIVE}"
             )
-            plan = planner.run(prompt_fix, cwd=project_path, extra_flags=planner_flags)
+            plan, planner, planner_flags = safe_agent_run(
+                agent=planner,
+                prompt=prompt_fix,
+                cwd=project_path,
+                flags=planner_flags,
+                agents=agents,
+                session_dir=session_dir,
+                state=state,
+                auto_switch=auto_switch,
+                role="planner"
+            )
 
             # Prüfen ob Modell trotz Directive einen Permission-Fehler zurückgab
             if is_permission_error_response(plan):
                 print("⚠️ Modell versuchte erneut eine Datei anzulegen. Erzwinge reinen Text...")
                 retry_fix = prompt_fix + "\nACHTUNG: Lege KEINE Datei wie docs/... an! Gib den Plan als Text auf stdout aus!"
-                plan = planner.run(retry_fix, cwd=project_path, extra_flags=planner_flags)
+                plan, planner, planner_flags = safe_agent_run(
+                    agent=planner,
+                    prompt=retry_fix,
+                    cwd=project_path,
+                    flags=planner_flags,
+                    agents=agents,
+                    session_dir=session_dir,
+                    state=state,
+                    auto_switch=auto_switch,
+                    role="planner"
+                )
 
             plan_next_file = session_dir / f"PLAN_v{r+1}.md"
             plan_next_file.write_text(plan, encoding="utf-8")
@@ -422,7 +880,7 @@ def run_adversarial_plan(
     with open(log_file, "a", encoding="utf-8") as f_log:
         f_log.write("\n".join(log_entry) + "\n")
 
-    return approved, current_plan_file
+    return approved, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
 
 
 # ==========================================
@@ -436,8 +894,11 @@ def handle_plan_approval_and_changes(
     project_path: Path,
     session_dir: Path,
     state: dict,
+    agents: dict[str, AgentCLI],
+    auto_switch: bool = False,
     planner_flags: list[str] | None = None
-) -> tuple[bool, Path]:
+) -> tuple[bool, Path, AgentCLI, list[str]]:
+    planner_flags = list(planner_flags or [])
     while not STOP_REQUESTED:
         print("\n" + "=" * 60)
         print("📋 PLAN-STATUS: Fertiggestellt & Geprüft")
@@ -453,12 +914,12 @@ def handle_plan_approval_and_changes(
         try:
             choice = input("Auswahl [1/2/3/4] (Standard: 1): ").strip()
         except (EOFError, KeyboardInterrupt):
-            return False, plan_file
+            return False, plan_file, planner, planner_flags
 
         if choice in ["", "1", "approve", "a"]:
             state["user_approved"] = True
             save_session_state(session_dir, state)
-            return True, plan_file
+            return True, plan_file, planner, planner_flags
 
         elif choice in ["3", "view", "v"]:
             print("\n" + "-" * 50)
@@ -468,7 +929,7 @@ def handle_plan_approval_and_changes(
 
         elif choice in ["4", "exit", "q"]:
             print("Abgebrochen. Du kannst diesen Stand jederzeit mit 'claudegravity --resume' fortsetzen.")
-            return False, plan_file
+            return False, plan_file, planner, planner_flags
 
         elif choice in ["2", "changes", "c"]:
             print("\n" + "=" * 60)
@@ -490,7 +951,7 @@ def handle_plan_approval_and_changes(
             try:
                 c_choice = input("Auswahl [1-6]: ").strip()
             except (EOFError, KeyboardInterrupt):
-                return False, plan_file
+                return False, plan_file, planner, planner_flags
 
             if c_choice == "1":
                 editor = os.environ.get("EDITOR", "xdg-open")
@@ -521,7 +982,17 @@ def handle_plan_approval_and_changes(
                         f"Bitte überarbeite den Plan und gib den vollständigen neuen Markdown-Plan aus."
                         f"{PLANNING_DIRECTIVE}"
                     )
-                    new_plan = planner.run(prompt_user_fix, cwd=project_path, extra_flags=planner_flags)
+                    new_plan, planner, planner_flags = safe_agent_run(
+                        agent=planner,
+                        prompt=prompt_user_fix,
+                        cwd=project_path,
+                        flags=planner_flags,
+                        agents=agents,
+                        session_dir=session_dir,
+                        state=state,
+                        auto_switch=auto_switch,
+                        role="planner"
+                    )
                     v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
                     new_v_file = session_dir / f"PLAN_v{v_num}.md"
                     new_v_file.write_text(new_plan, encoding="utf-8")
@@ -541,7 +1012,7 @@ def handle_plan_approval_and_changes(
             elif c_choice == "6":
                 continue
 
-    return False, plan_file
+    return False, plan_file, planner, planner_flags
 
 
 def main():
@@ -558,6 +1029,7 @@ def main():
     parser.add_argument("--effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität / Thinking Effort (für agy)")
     parser.add_argument("--reviewer-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Prüfer (für agy)")
     parser.add_argument("--planner-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Planer (falls agy)")
+    parser.add_argument("--auto-switch", "--fallback", action="store_true", help="Bei Erreichen eines AI-Limits automatisch zum alternativen Modell wechseln")
     parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
     parser.add_argument("--check", action="store_true", help="Installierte AI-CLIs prüfen")
     parser.add_argument("-d", "--delay", type=int, default=3, help="Pause zwischen Runden in Sekunden")
@@ -575,7 +1047,9 @@ def main():
         print("  - Planer-Modell anpassen : --planner-model <name>  (z.B. sonnet, opus, gemini-4-argon-high)")
         print("  - Prüfer-Modell anpassen : --reviewer-model <name> (z.B. gemini-4-argon-high, gemini-3.8-flash-high)")
         print("  - Reasoning-Effort (agy) : --effort <low|medium|high|xhigh|max> (oder --reviewer-effort / --planner-effort)")
+        print("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Kontingentlimit nahtlos zum Alternativmodell)")
         print("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
+        print("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert)")
         if len(agents) >= 2:
             print("\n🚀 Mindestens 2 Modelle vorhanden. Dual-Loop ist voll einsatzbereit!")
         else:
@@ -669,6 +1143,13 @@ def main():
         reviewer = planner
 
     # ==========================================
+    # Metriken (Token & Kosten-Tracking)
+    # ==========================================
+    session_metrics = SessionMetrics.from_dict(state.get("metrics"))
+    planner.metrics_tracker = session_metrics
+    reviewer.metrics_tracker = session_metrics
+
+    # ==========================================
     # Rechte-, Modell- & Effort-Steuerung
     # ==========================================
     planner_perm_flags = []
@@ -709,6 +1190,11 @@ def main():
         reviewer_flags.extend(["--effort", r_effort])
         state["reviewer_effort"] = r_effort
 
+    # Auto-Switch Modus
+    auto_switch = args.auto_switch or state.get("auto_switch", False)
+    if auto_switch:
+        state["auto_switch"] = True
+
     # Fragen-Modus
     ask_mode = args.ask or state.get("ask_mode", False)
     if ask_mode:
@@ -734,6 +1220,8 @@ def main():
 
     if ask_mode:
         print(f"[*] Modus        : ❓ Fragen-Modus aktiv (--ask)")
+    if auto_switch:
+        print(f"[*] Fallback     : 🔄 Auto-Switch aktiv (--auto-switch)")
     print(f"[*] Session-ID   : {session_dir.name}")
     print(f"=======================================================\n")
 
@@ -750,7 +1238,7 @@ def main():
         save_session_state(session_dir, state)
 
         # Plan erstellen / Review durchführen mit planner_flags
-        review_ok, plan_file = run_adversarial_plan(
+        review_ok, plan_file, planner, reviewer, planner_flags, reviewer_flags = run_adversarial_plan(
             planner=planner,
             reviewer=reviewer,
             task=task,
@@ -758,6 +1246,8 @@ def main():
             project_ctx=project_ctx,
             session_dir=session_dir,
             state=state,
+            agents=agents,
+            auto_switch=auto_switch,
             planner_flags=planner_flags,
             reviewer_flags=reviewer_flags,
             max_rounds=2,
@@ -768,8 +1258,9 @@ def main():
             return
 
         # Interaktive Freigabe & Change-Routing (Approve / Changes)
-        user_confirmed, plan_file = handle_plan_approval_and_changes(
-            plan_file, planner, reviewer, task, project_path, session_dir, state, planner_flags=planner_flags
+        user_confirmed, plan_file, planner, planner_flags = handle_plan_approval_and_changes(
+            plan_file, planner, reviewer, task, project_path, session_dir, state,
+            agents=agents, auto_switch=auto_switch, planner_flags=planner_flags
         )
 
         if not user_confirmed or STOP_REQUESTED:
@@ -816,11 +1307,15 @@ def main():
         if check_and_clean_done_marker(session_dir, project_path):
             done_file = session_dir / ".done"
             print(f"\n🎉 Fertigmeldung ({done_file.relative_to(project_path)}) gefunden! Aufgabe erfolgreich abgeschlossen.")
+            append_metrics_to_done(session_dir, project_path, session_metrics)
+            print(format_metrics_report(session_metrics))
             state["phase"] = "completed"
+            state["metrics"] = session_metrics.to_dict()
             save_session_state(session_dir, state)
             break
 
         state["last_iteration"] = iteration
+        state["metrics"] = session_metrics.to_dict()
         save_session_state(session_dir, state)
 
         timestamp = datetime.datetime.now().isoformat()
@@ -832,33 +1327,44 @@ def main():
             f"Führe den genehmigten Plan ({plan_file.relative_to(project_path)}) für folgende Aufgabe aus:\n{task}\n\n"
             f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch.\n\n"
             f"WICHTIG ZUM ABSCHLUSS: Wenn alle Anforderungen vollständig erfüllt und getestet sind, "
-            f"erstelle die Fertigmeldungs-Datei genau im Session-Ordner unter: \x27{rel_done_path}\x27 (NICHT im Projekt-Hauptverzeichnis)."
+            f"erstelle die Fertigmeldungs-Datei genau im Session-Ordner unter: '{rel_done_path}' (NICHT im Projekt-Hauptverzeichnis)."
         )
 
         try:
-            cmd = [planner.binary, "-p", prompt_build] + planner_flags
-            process = subprocess.Popen(
-                cmd,
-                cwd=str(project_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                universal_newlines=True,
+            print(f"⏳ Warte auf {planner.name} (führt genehmigten Plan aus)...", flush=True)
+            res, planner, planner_flags = safe_agent_run(
+                agent=planner,
+                prompt=prompt_build,
+                cwd=project_path,
+                flags=planner_flags,
+                agents=agents,
+                session_dir=session_dir,
+                state=state,
+                auto_switch=auto_switch,
+                role="planner",
+                metrics_tracker=session_metrics
             )
+            print(f"\n📋 Zusammenfassung von {planner.name} (Iteration {iteration}):")
+            print(res)
 
             with open(session_log, "a", encoding="utf-8") as f_log:
                 f_log.write(log_header)
-                if process.stdout:
-                    for line in process.stdout:
-                        sys.stdout.write(line)
-                        sys.stdout.flush()
-                        f_log.write(line)
-                        f_log.flush()
+                f_log.write(res + "\n")
 
-            process.wait()
         except Exception as exc:
             print(f"[!] Fehler bei Iteration {iteration}: {exc}")
+
+        state["metrics"] = session_metrics.to_dict()
+        save_session_state(session_dir, state)
+
+        if check_and_clean_done_marker(session_dir, project_path):
+            done_file = session_dir / ".done"
+            print(f"\n🎉 Fertigmeldung ({done_file.relative_to(project_path)}) gefunden! Aufgabe erfolgreich abgeschlossen.")
+            append_metrics_to_done(session_dir, project_path, session_metrics)
+            print(format_metrics_report(session_metrics))
+            state["phase"] = "completed"
+            save_session_state(session_dir, state)
+            break
 
         if STOP_REQUESTED:
             break
@@ -866,9 +1372,11 @@ def main():
         if args.delay > 0:
             time.sleep(args.delay)
 
-    if iteration >= max_iters and not check_and_clean_done_marker(session_dir, project_path):
+    if not check_and_clean_done_marker(session_dir, project_path):
         print(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
         print(f"💡 Du kannst jederzeit mit 'claudegravity -c' weitere Runden anhängen.")
+        append_metrics_to_done(session_dir, project_path, session_metrics)
+        print(format_metrics_report(session_metrics))
 
     print("\n[*] ClaudeGravity Loop beendet.")
 
