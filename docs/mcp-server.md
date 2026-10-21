@@ -53,6 +53,7 @@ Analysiert die Aufgabe und liefert Rollenbelegung, Kosten-/Qualitäts-Einschätz
 | `ask_mode` | boolean | `false` | Fragen-Modus (`-i`) |
 | `yolo` | boolean | `false` | `--yolo` anhängen |
 | `max_iterations` | integer | `10` | `-m` |
+| `proof` | string | – | Prüfbefehl (`--proof`), den der Loop nach jeder Bau-Runde selbst ausführt |
 
 ### `claudegravity_run`
 
@@ -60,8 +61,8 @@ Berechnet denselben Befehl und startet ihn.
 
 | Parameter | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
-| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations` | | wie oben | |
-| `yolo` | boolean | **`true`** | Bei Agent-Ausführung standardmäßig volle Rechte |
+| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof` | | wie oben | |
+| `yolo` | boolean | `false` | Volle Rechte für den Bauleiter. Nur auf ausdrücklichen Wunsch setzen; ohne `yolo` kann ein Claude-Bauleiter im Hintergrund nichts schreiben. |
 | `background` | boolean | `false` | `true`: startet den Loop als Hintergrundprozess im Projektordner und meldet die PID. `false`: gibt nur den Befehl zum manuellen Start zurück. |
 
 > [!WARNING]

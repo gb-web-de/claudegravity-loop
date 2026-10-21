@@ -18,7 +18,8 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `-d`, `--delay` | | Pause zwischen Bau-Runden in Sekunden. | `3` |
 | `-c`, `--resume` | `--continue` | Letzte Sitzung im Projekt fortsetzen. | aus |
 | `-i`, `--ask` | `--interview`, `--clarify` | Fragen-Modus: Architekt und Prüfstatiker dürfen Rückfragen stellen. | aus |
-| `--yolo` | `--auto-approve` | Volle Schreib- und Tool-Rechte ohne Nachfrage. | aus |
+| `--yolo` | `--auto-approve` | Volle Schreib- und Tool-Rechte für den **Bauleiter** ohne Nachfrage. Architekt, Prüfstatiker und Abnahme bleiben lesend. | aus |
+| `--max-rounds` | | Maximale Review-Runden für den Plan. | `2` |
 | `--auto-switch` | `--fallback` | Bei Limit automatisch zur alternativen KI wechseln. | aus |
 | `--swap` | `--swap-roles`, `--reverse` | Standardrollen tauschen: Antigravity/Gemini plant, Claude prüft. | aus |
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`). Siehe [Strategien](strategien.md). | `balanced` |
@@ -34,6 +35,17 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--bauer <key>` | `--builder` | Backend für Phase 3 (Standard: wie Architekt). |
 
 Gültige Schlüssel: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `ollama-cli`, `lmstudio`, `endpoint`, `gb-web`, `architekt_ep`, `pruefstatiker_ep`, `bauer_ep` – sofern erkannt. Ein nicht erkannter Schlüssel fällt stillschweigend auf die Standardwahl zurück. Details: [Backends](backends.md).
+
+## Abnahme & Prüfbefehl
+
+| Flag | Aliase | Beschreibung | Standard |
+| :--- | :--- | :--- | :--- |
+| `--proof "<befehl>"` | `--pruefbefehl` | Befehl, den ClaudeGravity nach jeder Bau-Runde selbst ausführt (ohne Shell). Rot: `.done` wird zurückgewiesen und die Ausgabe geht an den Bauleiter. | – |
+| `--abnahme <key>` | `--inspector` | Backend für die Abnahme des fertigen Codes. Nie der Bauleiter selbst. | Prüfstatiker |
+| `--abnahme-model <name>` | `--inspector-model` | Modell für die Abnahme. | – |
+| `--abnahme-effort <stufe>` | `--inspector-effort` | Effort für die Abnahme. | – |
+| `--max-inspections <n>` | | Abnahme-Runden pro Lauf; danach bleibt die Aufgabe offen (`phase = inspection_open`). | `2` |
+| `--no-inspect` | `--ohne-abnahme` | Abnahme auslassen (wird in `LOG.md` vermerkt). | an |
 
 ## Modelle
 
@@ -56,7 +68,7 @@ Werte: `low`, `medium`, `high`, `xhigh`, `max`.
 | `--pruefstatiker-effort` | `--reviewer-effort` | Prüfstatiker |
 | `--bauer-effort` | `--builder-effort` | Bauleiter |
 
-Effort wird nur an `agy` weitergegeben.
+Effort wird an `agy` (`--effort`) und `codex` (`-c model_reasoning_effort`, `max` wird zu `xhigh`) weitergegeben.
 
 ## Endpunkte
 

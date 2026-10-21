@@ -13,6 +13,7 @@
 | 🏗️ **Architekt** | 1 – Planung | Entwirft einen detaillierten Plan (`PLAN_v1.md`). |
 | 🧐 **Prüfstatiker** | 2 – Review | Ein *anderes* Modell prüft den Plan schonungslos auf Fehler, Risiken und fehlende Tests. |
 | 🔨 **Bauleiter** | 3 – Bau-Loop | Setzt den freigegebenen Plan um und testet, bis die Fertigmeldung (`.done`) steht. |
+| 🔎 **Abnahme** | 4 – Abnahme | Ein *anderer* Anbieter als der Bauleiter prüft den fertigen Code; erst dann ist die Aufgabe fertig. |
 
 Dazwischen gibst du den Plan frei, änderst ihn oder tauschst die Rollen. Mehr dazu in [Ablauf & Rollen](docs/ablauf-und-rollen.md).
 
@@ -34,6 +35,8 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 * **Strategie-Presets:** `--strategy best-code | eco | local-free | balanced` – bis zu ~70 % Token-Ersparnis oder 0 € im Bau-Loop mit lokalem Modell. → [Strategien](docs/strategien.md)
 * **Beliebige Backends pro Rolle:** `claude`, `agy`, `gemini`, `codex`, `copilot`, Ollama, LM Studio oder eigene OpenAI-kompatible Server. → [Backends](docs/backends.md)
 * **Trockenlauf:** `--dry-run` zeigt Belegung und Befehl, ohne etwas zu ändern.
+* **Abnahme statt Selbstlob:** `--proof "<testbefehl>"` führt ClaudeGravity selbst aus; danach prüft ein anderes Modell den Diff. Prüfer lesen nur, Schreibrechte hat allein der Bauleiter. → [Bau-Loop](docs/bau-loop.md)
+* **Als Skill:** [`skills/claudegravity/`](skills/claudegravity/SKILL.md) für Claude Code und Codex.
 * **Limits im Griff:** Wechseln, Warten oder Sichern bei Ratenlimits; `--auto-switch` wechselt automatisch.
 * **Fortsetzen:** `claudegravity -c` macht nach Abbruch genau dort weiter. → [Sessions & Dateien](docs/sessions-und-dateien.md)
 * **Token- & Kosten-Audit** pro Rolle, Modell und Effort in der `.done`-Datei.
@@ -71,7 +74,7 @@ claudegravity "Create a Python weather CLI tool with full test coverage"
 claudegravity "Refactor auth" --strategy local-free --bauer ollama   # $0 build loop
 ```
 
-Key flags: `--strategy best-code|eco|local-free|balanced`, `--dry-run`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. The detailed documentation in [`docs/`](docs/README.md) is in German; flag names and examples are the same in any language.
+Key flags: `--strategy best-code|eco|local-free|balanced`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. The detailed documentation in [`docs/`](docs/README.md) is in German; flag names and examples are the same in any language.
 
 MCP server for Claude Code:
 

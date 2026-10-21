@@ -220,7 +220,7 @@ class AgentDescriptionTest(unittest.TestCase):
         self.assertEqual(loop.describe_agent(agent), "Antigravity (agy) (`gemini-2.5-pro`) [Effort: high]")
 
     def test_marks_effort_ignored_by_other_clis(self):
-        self.assertEqual(loop.effort_label("claude", "high"), "high (nur für agy wirksam)")
+        self.assertEqual(loop.effort_label("claude", "high"), "high (nur für agy/codex wirksam)")
         self.assertEqual(loop.effort_label("agy", "low"), "low")
         self.assertEqual(loop.effort_label("ollama", "0€ Lokal/Intranet"), "0€ Lokal/Intranet")
         self.assertIsNone(loop.effort_label("claude", None))

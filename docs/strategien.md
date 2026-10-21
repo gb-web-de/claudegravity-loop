@@ -38,8 +38,7 @@ Cloud-Modelle planen und prüfen; ein lokales oder Intranet-Modell baut. Lokale 
 
 ClaudeGravity sucht Bauleiter-Kandidaten in dieser Reihenfolge: `--bauer-endpoint` → Ollama-Server (`localhost:11434`) → LM Studio (`localhost:1234`) → `--endpoint`/`CLAUDEGRAVITY_ENDPOINT` → `ollama`-CLI.
 
-> [!IMPORTANT]
-> Gib den Bauleiter bei echten Läufen **explizit** an (`--bauer ollama`, `--bauer lmstudio` oder `--bauer endpoint`). Ohne `--bauer` übernimmt nach der Plan-Freigabe aktuell wieder die Architekt-CLI den Bau-Loop, auch wenn `--dry-run` ein lokales Backend anzeigt.
+Der gefundene Kandidat bleibt auch nach der Plan-Freigabe Bauleiter. Mit `--bauer` legst du ihn ausdrücklich fest. Die Abnahme übernimmt dann ein Cloud-Modell (standardmäßig der Prüfstatiker), weil das lokale Modell seinen eigenen Code nicht abnehmen soll.
 
 ```bash
 # Ollama lokal

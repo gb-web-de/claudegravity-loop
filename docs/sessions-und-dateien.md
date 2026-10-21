@@ -14,7 +14,9 @@
 │           ├── REVIEW_round1.md     # Urteil des Prüfstatikers
 │           ├── PLAN_v2.md           # überarbeitete Version
 │           ├── PLAN_v3_manual.md    # im Editor geänderte Version
-│           ├── LOG.md               # Verlauf von Plan & Review
+│           ├── INSPECTION_round1.md # Urteil der Abnahme über den fertigen Code
+│           ├── LOG.md               # Verlauf von Plan, Review, Abnahme, Limit-Wechseln
+│           ├── AUDIT.md             # Audit-Bericht, wenn der Lauf ohne Fertigmeldung endet
 │           └── .done                # Fertigmeldung + Audit-Bericht
 └── logs/
     └── loop_<session>.log           # Ausgabe des Bauleiters pro Runde
@@ -34,8 +36,11 @@ Hält alles, was zum Fortsetzen nötig ist, u. a.:
 | Feld | Inhalt |
 | :--- | :--- |
 | `task` | Ursprüngliche Aufgabe |
-| `phase` | `plan`, `review`, `build` oder `completed` |
+| `phase` | `plan`, `review`, `build`, `inspection_open` oder `completed` |
 | `user_approved`, `plan_approved` | Freigabe durch dich bzw. den Prüfstatiker |
+| `approved_plan_sha256`, `approved_plan_file` | Inhalt, für den die Freigabe gilt |
+| `build_base`, `build_plan_sha256` | Basis-Commit und Plan bei Baubeginn (für den Diff der Abnahme) |
+| `proof`, `inspector_binary`, `inspector_model`, `inspection_rounds`, `pending_feedback` | Prüfbefehl, Abnahme und offene Rückmeldung an den Bauleiter |
 | `last_iteration`, `max_iterations` | Fortschritt im Bau-Loop |
 | `planner_model`, `reviewer_model`, `builder_model`, `*_effort` | gewählte Modelle und Effort |
 | `swap_roles`, `yolo_enabled`, `auto_switch`, `ask_mode`, `strategy` | aktive Modi |
@@ -72,14 +77,14 @@ Der Bauleiter legt `.dual-loop/sessions/<session>/.done` an, wenn alles umgesetz
     ...
 ```
 
-Der Bericht wird auch geschrieben, wenn das Rundenlimit ohne Fertigmeldung erreicht wird. Rollen ohne API-Kosten (Abo, lokal) erscheinen als „Abo-Inklusivkontingent“. Bei CLIs ohne Verbrauchsangabe sind die Token-Zahlen grob geschätzt (Zeichen / 4).
+Endet der Lauf ohne Fertigmeldung (Rundenlimit), steht der Bericht in `AUDIT.md` statt in `.done`, damit die Aufgabe beim Fortsetzen nicht als fertig gilt. Rollen ohne API-Kosten (Abo, lokal) erscheinen als „Abo-Inklusivkontingent“. Bei CLIs ohne Verbrauchsangabe sind die Token-Zahlen grob geschätzt (Zeichen / 4).
 
 ## Projektkontext: `CLAUDE.md` & `knowledge/`
 
 Beim Planen liest ClaudeGravity aus dem Zielprojekt:
 
-1. Die **erste** gefundene Regeldatei aus `CLAUDE.md`, `AGENTS.md`, `.claude/rules.md` (vollständig).
-2. Alle Dateien in `knowledge/` (jeweils die ersten 500 Zeichen).
+1. **Alle** vorhandenen Regeldateien aus `CLAUDE.md`, `AGENTS.md`, `.claude/rules.md` (vollständig; identische Inhalte nur einmal).
+2. Aus `knowledge/` die Dateien, deren Name oder Anfang ein Wort der Aufgabe (ab 4 Buchstaben) enthält, mit den ersten 500 Zeichen. Die übrigen nur als Dateiname, damit der Architekt sie bei Bedarf selbst liest.
 
 Dieser Kontext geht nur an den Architekten. So bleibt der Prompt klein.
 

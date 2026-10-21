@@ -7,10 +7,12 @@ Er basiert auf dem Prinzip des [claudex-loop](https://github.com/chaseai-yt/clau
 ## Architektur
 - `loop.py`: Haupt-CLI-Runner (benötigt nur Python 3.10+ Standardbibliothek).
   - **3 Rollen:** 🏗️ Architekt (Phase 1: Plan), 🧐 Prüfstatiker (Phase 2: Review), 🔨 Bauleiter (Phase 3: Umsetzung). Jede Rolle hat eigene Flags für CLI, Modell, Effort und Endpunkt (`--planner/--architekt`, `--reviewer/--pruefstatiker`, `--builder/--bauer`, jeweils `-model`, `-effort`, `-endpoint`).
+  - **Abnahme (Phase 4):** Nach `.done` führt der Loop `--proof` selbst aus und lässt den Diff von einem anderen Anbieter als dem Bauleiter prüfen (`--abnahme`). Architekt, Prüfstatiker und Abnahme laufen immer lesend (`get_readonly_flags`); nur der Bauleiter bekommt Schreibrechte. Urteile werden nur über `parse_review()` gelesen (letzte `VERDICT:`-Zeile).
   - **Backends:** CLIs `claude`, `agy`, `gemini`, `codex`, `copilot`/`gh`, `ollama` sowie OpenAI-kompatible REST-Endpunkte (Ollama, LM Studio, vLLM, Intranet-Server via `--endpoint` oder `CLAUDEGRAVITY_ENDPOINT`).
   - **Strategien:** `--strategy best-code|eco|local-free|balanced`; `--dry-run` zeigt die Belegung ohne Ausführung.
 - `mcp_server.py`: Eigenständiger MCP-Server (JSON-RPC 2.0 stdio) & CLI-Optimizer für automatisierte Modell- & Rollenwahl (Tools: `claudegravity_optimize`, `claudegravity_run`, `claudegravity_info`).
 - `claudegravity.bat`, `claudegravity.ps1`, `claudegravity-mcp.bat`: Windows-Launcher.
+- `skills/claudegravity/SKILL.md`: Skill, mit dem Claude Code oder Codex den Loop mit getrennten Anbietern startet.
 - `tests/`: `unittest`-Suite; läuft in GitHub Actions auf Linux, macOS und Windows (`.github/workflows/tests.yml`).
 - `.dual-loop/`: Git-ignorierter Arbeitsordner. Enthält ausschließlich den Unterordner `sessions/` (alle Pläne, Reviews und Logs sind aufgabenspezifisch darin isoliert).
 - `projects/`: Ordner für gespiegelte Projekte (wie in der Claude UI).

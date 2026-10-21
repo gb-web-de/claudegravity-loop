@@ -27,9 +27,8 @@
 
 Diese Punkte entsprechen dem aktuellen Stand des Codes:
 
-* **Effort nur für Antigravity:** `--effort` und die rollenbezogenen Effort-Flags werden nur an `agy` übergeben. Bei anderen CLIs erscheinen sie nur im Audit-Bericht.
-* **`local-free` ohne `--bauer`:** Nach der Plan-Freigabe übernimmt die Architekt-CLI wieder den Bau-Loop, obwohl `--dry-run` ein lokales Backend anzeigt. Bauleiter deshalb explizit setzen (`--bauer ollama`, `--bauer lmstudio`, `--bauer endpoint`).
+* **Effort nur für Antigravity und Codex:** `--effort` und die rollenbezogenen Effort-Flags werden an `agy` und `codex` übergeben. Bei anderen CLIs erscheinen sie nur im Audit-Bericht.
+* **Prüfer-Sitzung fortsetzen nur bei Claude:** Ab Review-Runde 2 bekommt nur ein Claude-Prüfer den Plan-Diff statt des ganzen Plans. Andere Prüfer bekommen den vollständigen Plan.
 * **Strategie beim Fortsetzen:** Weil `--strategy` den Standardwert `balanced` hat, wird bei `-c` die gespeicherte Strategie nicht übernommen. Beim Fortsetzen die Strategie erneut angeben.
-* **Codex nur lesend:** `codex exec` läuft derzeit immer mit `-s read-only`, auch mit `--yolo`.
 * **Copilot:** Wird über `copilot suggest -t shell` angesprochen und eignet sich damit eher für Shell-Vorschläge als für Planung oder Bau.
 * **Kosten-Erkennung bei Endpunkten:** Als kostenlos gelten URLs, die `localhost`, `127.0.0.1`, `192.168.`, `10.` oder `ai.gb-web.de` enthalten.

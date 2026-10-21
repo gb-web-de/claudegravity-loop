@@ -119,7 +119,8 @@ def optimize_claudegravity_command(
     endpoint: str | None = None,
     ask_mode: bool = False,
     yolo: bool = False,
-    max_iterations: int = 10
+    max_iterations: int = 10,
+    proof: str | None = None
 ) -> dict:
     agents = detect_installed_agents()
     comp = analyze_task_complexity(task)
@@ -238,6 +239,8 @@ def optimize_claudegravity_command(
         cmd_args.append("--yolo")
     if max_iterations != 10:
         cmd_args += ["-m", str(max_iterations)]
+    if proof:
+        cmd_args += ["--proof", proof]
     if project_path not in [".", "./", ""]:
         cmd_args += ["-p", project_path]
 
@@ -364,6 +367,10 @@ MCP_TOOLS = [
                     "default": False,
                     "description": "Ob volle Schreib- und Toolrechte ohne manuelle Nachfrage erteilt werden sollen (--yolo)."
                 },
+                "proof": {
+                    "type": "string",
+                    "description": "Optionaler Prüfbefehl (--proof), den der Loop nach jeder Bau-Runde selbst ausführt."
+                },
                 "max_iterations": {
                     "type": "integer",
                     "default": 10,
@@ -398,8 +405,12 @@ MCP_TOOLS = [
                 },
                 "yolo": {
                     "type": "boolean",
-                    "default": True,
-                    "description": "Volle Schreib- und Toolrechte automatisch gewähren (Standard: true für Agent-Ausführung)."
+                    "default": False,
+                    "description": "Volle Schreib- und Toolrechte für den Bauleiter ohne Nachfrage (--yolo). Nur auf ausdrücklichen Wunsch setzen; Architekt und Prüfstatiker bleiben immer lesend."
+                },
+                "proof": {
+                    "type": "string",
+                    "description": "Prüfbefehl, den der Loop nach jeder Bau-Runde selbst ausführt, z.B. 'python -m unittest discover -s tests'."
                 },
                 "ask_mode": {
                     "type": "boolean",
@@ -446,7 +457,8 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             endpoint=endpoint,
             ask_mode=ask_mode,
             yolo=yolo,
-            max_iterations=max_iterations
+            max_iterations=max_iterations,
+            proof=arguments.get("proof")
         )
         md_text = format_optimization_markdown(opt)
         return {
@@ -462,7 +474,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         project_path = arguments.get("project_path", ".")
         endpoint = arguments.get("endpoint")
         ask_mode = arguments.get("ask_mode", False)
-        yolo = arguments.get("yolo", True)
+        yolo = arguments.get("yolo", False)
         max_iterations = arguments.get("max_iterations", 10)
         background = arguments.get("background", False)
 
@@ -473,7 +485,8 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             endpoint=endpoint,
             ask_mode=ask_mode,
             yolo=yolo,
-            max_iterations=max_iterations
+            max_iterations=max_iterations,
+            proof=arguments.get("proof")
         )
         cmd_str = opt["recommended_command"]
 

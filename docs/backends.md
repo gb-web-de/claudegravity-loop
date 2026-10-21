@@ -112,8 +112,18 @@ Mit `--yolo` (oder „J“ bei der Rechte-Abfrage vor Phase 3) werden diese Flag
 | :--- | :--- |
 | `claude`, `agy` | `--dangerously-skip-permissions` |
 | `gemini` | `-y` |
-| `codex` | gedacht: Sandbox `workspace-write`. Aktuell läuft `codex exec` jedoch immer mit `-s read-only`, siehe [Bekannte Einschränkungen](fehlerbehebung.md#bekannte-einschränkungen). |
+| `codex` | `-s workspace-write` |
 | Endpunkte, `ollama`, `copilot` | keine (Dateien schreibt ClaudeGravity selbst) |
 
+Diese Flags bekommt **nur der Bauleiter**. Architekt, Prüfstatiker und Abnahme laufen immer lesend, auch mit `--yolo`:
+
+| CLI | Flags für lesende Rollen |
+| :--- | :--- |
+| `claude` | `--permission-mode dontAsk --tools Read,Glob,Grep --allowedTools Read,Glob,Grep --strict-mcp-config` (keine Shell, kein Schreiben, keine MCP-Server) |
+| `codex` | `-s read-only` |
+| `agy`, `gemini` | keine Rechte-Flags (Werkzeuge mit Rückfrage werden ohne Terminal abgelehnt) |
+
+Prompts gehen bei `claude`, `codex`, `gemini` und `ollama` über stdin, nicht über die Kommandozeile. So tauchen Aufgabe und Plan nicht in der Prozessliste auf und werden unter Windows nicht an der Längengrenze (~32 KB) abgeschnitten.
+
 > [!WARNING]
-> Im YOLO-Modus darf der Agent ohne Rückfrage Dateien ändern und Befehle ausführen. Nutze ihn nur in Projekten unter Versionskontrolle.
+> Im YOLO-Modus darf der Bauleiter ohne Rückfrage Dateien ändern und Befehle ausführen. Nutze ihn nur in Projekten unter Versionskontrolle.
