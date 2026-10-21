@@ -84,9 +84,15 @@ Endet der Lauf ohne Fertigmeldung (Rundenlimit), steht der Bericht in `AUDIT.md`
 Beim Planen liest ClaudeGravity aus dem Zielprojekt:
 
 1. **Alle** vorhandenen Regeldateien aus `CLAUDE.md`, `AGENTS.md`, `.claude/rules.md` (vollständig; identische Inhalte nur einmal).
-2. Aus `knowledge/` die Dateien, deren Name oder Anfang ein Wort der Aufgabe (ab 4 Buchstaben) enthält, mit den ersten 500 Zeichen. Die übrigen nur als Dateiname, damit der Architekt sie bei Bedarf selbst liest.
+2. Aus `knowledge/` die Dateien, deren Name oder Anfang ein Wort der Aufgabe (ab 4 Buchstaben) enthält, mit den ersten 500 Zeichen. Die übrigen nur als Dateiname, damit der Architekt sie bei Bedarf selbst liest. Geheimnis-Dateien wie `.env` oder `*.key` werden übersprungen.
 
 Dieser Kontext geht nur an den Architekten. So bleibt der Prompt klein.
+
+## Datenschutzschild
+
+Bevor ein Prompt an ein Cloud-Modell geht (Claude, Antigravity, Gemini, Codex, Copilot oder ein Endpunkt außerhalb des Heimnetzes), ersetzt ClaudeGravity darin gefundene Zugangsdaten durch `[GESCHWÄRZT: …]` und meldet das mit 🛡️. Erkannt werden private Schlüssel, API-Keys und Tokens (Anthropic, OpenAI, GitHub, Google, AWS, Slack, Stripe, JWT), Zuweisungen wie `PASSWORD=…` oder `token: …`, Passwörter in URLs, gültige IBANs und Kreditkartennummern. Prompts an Ollama, LM Studio und Server im Heimnetz bleiben unverändert.
+
+Der Schild schützt nur den Prompt, den ClaudeGravity selbst verschickt. Liest eine CLI wie Claude Code im Bau-Loop selbst Dateien, gelten deren eigene Regeln. Ausschalten mit `--no-shield` oder `CLAUDEGRAVITY_SHIELD=off`.
 
 ## Gespiegelte Projekte (`projects/`)
 

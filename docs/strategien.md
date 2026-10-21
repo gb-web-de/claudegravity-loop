@@ -34,9 +34,9 @@ claudegravity "Füge strukturiertes Logging hinzu" --strategy eco
 
 ## `local-free`
 
-Cloud-Modelle planen und prüfen; ein lokales oder Intranet-Modell baut. Lokale Endpunkte (`localhost`, `127.0.0.1`, `192.168.*`, `10.*`, `ai.gb-web.de`) werden im Audit mit 0 € verbucht.
+Cloud-Modelle planen und prüfen; ein lokales oder Intranet-Modell baut. Endpunkte im eigenen Netz (`localhost`, private IPs wie `192.168.*`, `10.*`, `172.16–31.*` und Rechnernamen wie `nas`, `server.local` oder `pi.fritz.box`) werden im Audit mit 0 € verbucht.
 
-ClaudeGravity sucht Bauleiter-Kandidaten in dieser Reihenfolge: `--bauer-endpoint` → Ollama-Server (`localhost:11434`) → LM Studio (`localhost:1234`) → `--endpoint`/`CLAUDEGRAVITY_ENDPOINT` → `ollama`-CLI.
+ClaudeGravity sucht Bauleiter-Kandidaten in dieser Reihenfolge: `--bauer-endpoint` → Ollama-Server (`localhost:11434` oder `OLLAMA_HOST`) → LM Studio (`localhost:1234`) → `--endpoint`/`CLAUDEGRAVITY_ENDPOINT` → `ollama`-CLI.
 
 Der gefundene Kandidat bleibt auch nach der Plan-Freigabe Bauleiter. Mit `--bauer` legst du ihn ausdrücklich fest. Die Abnahme übernimmt dann ein Cloud-Modell (standardmäßig der Prüfstatiker), weil das lokale Modell seinen eigenen Code nicht abnehmen soll.
 
@@ -46,7 +46,7 @@ claudegravity "Baue ein REST-Interface" --strategy local-free --bauer ollama
 
 # Eigener Server im Netzwerk
 claudegravity "Refaktoriere das Modul" --strategy local-free \
-  --endpoint https://ai.gb-web.de/v1 --bauer endpoint --bauer-model qwen2.5-coder:32b
+  --endpoint http://192.168.1.50:11434/v1 --bauer endpoint --bauer-model qwen2.5-coder:7b
 ```
 
 ## Presets prüfen

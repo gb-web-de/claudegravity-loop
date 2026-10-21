@@ -29,7 +29,7 @@ Die meisten Clients nutzen dasselbe JSON-Format in ihrer MCP-Konfigurationsdatei
       "command": "python3",
       "args": ["/home/<user>/Projekte/claudegravity-loop/mcp_server.py"],
       "env": {
-        "CLAUDEGRAVITY_ENDPOINT": "https://ai.gb-web.de/v1"
+        "CLAUDEGRAVITY_ENDPOINT": "http://192.168.1.50:11434/v1"
       }
     }
   }
@@ -83,7 +83,7 @@ Zeigt Betriebssystem, Python-Version, erkannte CLIs und Endpunkte sowie Strategi
 ## Direkt im Terminal (ohne MCP-Client)
 
 ```bash
-claudegravity-mcp --optimize "Baue ein Microservice-Backend" --priority local-free --endpoint https://ai.gb-web.de/v1
+claudegravity-mcp --optimize "Baue ein Microservice-Backend" --priority local-free --endpoint http://192.168.1.50:11434/v1
 claudegravity-mcp "Fixe den Login-Bug" --priority lowest-cost   # Aufgabe auch als Positionsargument
 claudegravity-mcp --info
 claudegravity-mcp                                              # ohne Argumente: startet den stdio-Server

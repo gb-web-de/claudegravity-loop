@@ -31,4 +31,4 @@ Diese Punkte entsprechen dem aktuellen Stand des Codes:
 * **Prüfer-Sitzung fortsetzen nur bei Claude:** Ab Review-Runde 2 bekommt nur ein Claude-Prüfer den Plan-Diff statt des ganzen Plans. Andere Prüfer bekommen den vollständigen Plan.
 * **Strategie beim Fortsetzen:** Weil `--strategy` den Standardwert `balanced` hat, wird bei `-c` die gespeicherte Strategie nicht übernommen. Beim Fortsetzen die Strategie erneut angeben.
 * **Copilot:** Wird über `copilot suggest -t shell` angesprochen und eignet sich damit eher für Shell-Vorschläge als für Planung oder Bau.
-* **Kosten-Erkennung bei Endpunkten:** Als kostenlos gelten URLs, die `localhost`, `127.0.0.1`, `192.168.`, `10.` oder `ai.gb-web.de` enthalten.
+* **Kosten-Erkennung bei Endpunkten:** Als kostenlos gelten `localhost`, private IPs und Rechnernamen im Heimnetz (ohne Punkt oder mit `.local`, `.lan`, `.fritz.box`, `.home.arpa`, `.internal`). Ein Server im Intranet mit öffentlichem Domainnamen erscheint im Audit als „API“.

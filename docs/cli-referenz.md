@@ -34,7 +34,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--pruefstatiker <key>` | `--reviewer` | Backend für Phase 2. |
 | `--bauer <key>` | `--builder` | Backend für Phase 3 (Standard: wie Architekt). |
 
-Gültige Schlüssel: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `ollama-cli`, `lmstudio`, `endpoint`, `gb-web`, `architekt_ep`, `pruefstatiker_ep`, `bauer_ep` – sofern erkannt. Ein nicht erkannter Schlüssel fällt stillschweigend auf die Standardwahl zurück. Details: [Backends](backends.md).
+Gültige Schlüssel: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `ollama-cli`, `lmstudio`, `endpoint`, `architekt_ep`, `pruefstatiker_ep`, `bauer_ep` – sofern erkannt. Ein nicht erkannter Schlüssel fällt stillschweigend auf die Standardwahl zurück. Details: [Backends](backends.md).
 
 ## Abnahme & Prüfbefehl
 
@@ -79,6 +79,13 @@ Effort wird an `agy` (`--effort`) und `codex` (`-c model_reasoning_effort`, `max
 | `--architekt-endpoint <url>` | | Eigener Endpunkt, verfügbar als `architekt_ep`. |
 | `--pruefstatiker-endpoint <url>` | | Eigener Endpunkt, verfügbar als `pruefstatiker_ep`. |
 | `--bauer-endpoint <url>` | | Eigener Endpunkt, verfügbar als `bauer_ep`. |
+| `--timeout <sek>` | | Sekunden pro Runde für Endpunkte. Standard: 900 im Heimnetz, 180 sonst. Auch `CLAUDEGRAVITY_TIMEOUT`. |
+
+## Datenschutz
+
+| Flag | Beschreibung |
+| :--- | :--- |
+| `--no-shield` | Datenschutzschild ausschalten (auch `CLAUDEGRAVITY_SHIELD=off`). Siehe [Sessions & Dateien](sessions-und-dateien.md#datenschutzschild). |
 
 ## Vorrang der Einstellungen
 
@@ -94,7 +101,7 @@ Effort wird an `agy` (`--effort`) und `codex` (`-c model_reasoning_effort`, `max
 claudegravity "Sicherheits-Audit und Auth-Refactoring" \
   --architekt claude --architekt-model opus \
   --pruefstatiker agy --pruefstatiker-model gemini-2.5-pro --pruefstatiker-effort max \
-  --bauer-endpoint https://ai.gb-web.de/v1 --bauer bauer_ep --bauer-model qwen2.5-coder:32b
+  --bauer-endpoint http://192.168.1.50:11434/v1 --bauer bauer_ep --bauer-model qwen2.5-coder:7b
 
 # Lange Aufgabe: mehr Runden, ohne Pause, Fallback bei Limit
 claudegravity "Großes Refactoring" -m 25 -d 0 --auto-switch --yolo

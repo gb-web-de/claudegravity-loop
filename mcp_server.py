@@ -19,6 +19,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -45,6 +46,22 @@ def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
         return False
 
 
+def ollama_base_url() -> str:
+    """Adresse des Ollama-Servers aus OLLAMA_HOST (wie bei der Ollama-CLI), sonst localhost:11434."""
+    host = os.environ.get("OLLAMA_HOST", "").strip()
+    if not host:
+        return "http://localhost:11434"
+    if "://" not in host:
+        host = "http://" + host
+    parts = urllib.parse.urlsplit(host)
+    name = parts.hostname or "localhost"
+    if name in ("0.0.0.0", "::"):
+        name = "localhost"
+    if ":" in name:
+        name = f"[{name}]"
+    return f"{parts.scheme}://{name}:{parts.port or 11434}"
+
+
 def detect_installed_agents() -> dict[str, str]:
     agents = {}
     if shutil.which("claude"):
@@ -60,8 +77,9 @@ def detect_installed_agents() -> dict[str, str]:
     if shutil.which("ollama"):
         agents["ollama-cli"] = "Ollama CLI"
 
-    if is_endpoint_reachable("http://localhost:11434"):
-        agents["ollama"] = "Ollama (Lokal: http://localhost:11434)"
+    ollama_url = ollama_base_url()
+    if is_endpoint_reachable(ollama_url, timeout=0.3 if "localhost" in ollama_url else 1.5):
+        agents["ollama"] = f"Ollama ({'Lokal' if 'localhost' in ollama_url else 'Netzwerk'}: {ollama_url})"
     if is_endpoint_reachable("http://localhost:1234"):
         agents["lmstudio"] = "LM Studio (Lokal: http://localhost:1234)"
 
@@ -71,8 +89,7 @@ def detect_installed_agents() -> dict[str, str]:
         os.environ.get("AI_ENDPOINT")
     )
     if env_endpoint:
-        is_gb = "ai.gb-web.de" in env_endpoint
-        label = "ai.gb-web.de (Netzwerk-Server)" if is_gb else "Benutzerdefinierter KI-Server"
+        label = "Benutzerdefinierter KI-Server"
         agents["endpoint"] = f"{label} ({env_endpoint})"
 
     return agents
@@ -346,11 +363,11 @@ MCP_TOOLS = [
                     "type": "string",
                     "enum": ["best-code", "lowest-cost", "local-free", "balanced"],
                     "default": "balanced",
-                    "description": "best-code (Frontier-Modelle), lowest-cost (bis zu 70% Ersparnis), local-free (0€ Bauleiter via Ollama/ai.gb-web.de), balanced (ausgewogen)."
+                    "description": "best-code (Frontier-Modelle), lowest-cost (bis zu 70% Ersparnis), local-free (0€ Bauleiter via Ollama, LM Studio oder Server im Heimnetz), balanced (ausgewogen)."
                 },
                 "endpoint": {
                     "type": "string",
-                    "description": "Optionaler KI-Endpunkt (z.B. https://ai.gb-web.de/v1 oder http://localhost:11434/v1)."
+                    "description": "Optionaler KI-Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)."
                 },
                 "project_path": {
                     "type": "string",
@@ -431,7 +448,7 @@ MCP_TOOLS = [
     },
     {
         "name": "claudegravity_info",
-        "description": "Prüft die installierten AI-CLIs (Claude, Antigravity, Gemini, Codex, Copilot, Ollama, LM Studio, ai.gb-web.de) und gibt Empfehlungen.",
+        "description": "Prüft die installierten AI-CLIs (Claude, Antigravity, Gemini, Codex, Copilot, Ollama, LM Studio, eigene Endpunkte) und gibt Empfehlungen.",
         "inputSchema": {
             "type": "object",
             "properties": {}
@@ -541,7 +558,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         lines.append("💡 **Empfohlene Strategien:**")
         lines.append("1. **best-code:** Maximale Codequalität mit Claude Sonnet 3.7 & Gemini 2.5 Pro.")
         lines.append("2. **eco:** Bis zu 70% Ersparnis (Architekt=Sonnet, Bauleiter=Haiku oder Flash).")
-        lines.append("3. **local-free:** 0 € Kosten im Bau-Loop! Cloud-Architekt plant, lokaler Server (Ollama, LM Studio oder https://ai.gb-web.de/) baut autonom.")
+        lines.append("3. **local-free:** 0 € Kosten im Bau-Loop! Cloud-Architekt plant, lokaler Server (Ollama, LM Studio oder ein Rechner im Heimnetz) baut autonom.")
         return {
             "content": [{"type": "text", "text": "\n".join(lines)}],
             "isError": False
@@ -666,7 +683,7 @@ def main():
     parser.add_argument("task_pos", nargs="?", default=None, help="Aufgabe (für direkten CLI-Aufruf)")
     parser.add_argument("--optimize", "-o", dest="optimize_task", default=None, help="Aufgabe analysieren und optimalen Befehl ausgeben")
     parser.add_argument("--priority", default="balanced", choices=["best-code", "quality", "eco", "lowest-cost", "cost", "local-free", "free", "local", "balanced"], help="Priorität: best-code, lowest-cost, local-free, balanced")
-    parser.add_argument("--endpoint", default=None, help="KI-Endpunkt (z.B. https://ai.gb-web.de/v1 oder http://localhost:11434/v1)")
+    parser.add_argument("--endpoint", default=None, help="KI-Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
     parser.add_argument("-p", "--project", default=".", help="Zielprojekt-Pfad")
     parser.add_argument("-i", "--ask", action="store_true", help="Fragen-Modus (-i)")
     parser.add_argument("--yolo", action="store_true", help="YOLO-Modus (--yolo)")

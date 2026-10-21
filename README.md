@@ -1,6 +1,6 @@
 # ClaudeGravity Loop 🚀
 
-> **Universeller Cross-Model Dual-Loop für Claude Code, Google Antigravity, OpenAI Codex, GitHub Copilot & lokale Modelle (Ollama, LM Studio, Intranet-Server wie ai.gb-web.de).**
+> **Universeller Cross-Model Dual-Loop für Claude Code, Google Antigravity, OpenAI Codex, GitHub Copilot & lokale Modelle (Ollama, LM Studio, eigene Server im Heimnetz oder Intranet).**
 > Verhindert KI-Betriebsblindheit durch ein unabhängiges 4-Augen-Prinzip: *Wer den Plan entwirft oder Code baut, darf ihn niemals selbst benoten.*
 > **Plattformunabhängig:** Läuft auf **Windows, macOS und Linux** nur mit Python 3.10+ – kein `pip install` nötig.
 

@@ -2,7 +2,7 @@
 """
 ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop
 Auto-detects available CLIs (Claude Code, Google Antigravity agy, Gemini CLI, Codex, Copilot, Ollama)
-and OpenAI-compatible REST endpoints (Ollama, LM Studio, vLLM, custom intranet servers like ai.gb-web.de).
+and OpenAI-compatible REST endpoints (Ollama, LM Studio, vLLM, LiteLLM, own servers in the local network).
 Supports:
 - Cross-platform operation on Windows, macOS, and Linux
 - Read-only planning, review and acceptance; write permissions (YOLO) only for the builder
@@ -15,6 +15,7 @@ Supports:
 import argparse
 import datetime
 import hashlib
+import ipaddress
 import json
 import os
 import platform
@@ -40,6 +41,14 @@ if sys.platform == "win32":
         pass
 
 STOP_REQUESTED = False
+
+# Sekunden pro Runde für OpenAI-kompatible Endpunkte (None = automatisch, siehe endpoint_timeout)
+ENDPOINT_TIMEOUT: int | None = None
+CLOUD_TIMEOUT = 180
+LOCAL_TIMEOUT = 900
+
+# Datenschutzschild: Zugangsdaten werden vor dem Versand an Cloud-Modelle geschwärzt
+SHIELD_ENABLED = True
 
 PLANNING_DIRECTIVE = (
     "\n\nSTRIKTE VORGABE FÜR DIE PLANUNG:\n"
@@ -304,7 +313,8 @@ class AgentCLI:
         metrics_tracker: SessionMetrics | None = None,
         role: str = "Architekt",
         model: str | None = None,
-        effort: str | None = None
+        effort: str | None = None,
+        local: bool = False
     ):
         self.name = name
         self.binary = binary
@@ -313,6 +323,7 @@ class AgentCLI:
         self.role = role
         self.model = model
         self.effort = effort
+        self.local = local
         self.reported_model: str | None = None
         self.session_id: str | None = None
         self.requested_model: str | None = None
@@ -320,6 +331,10 @@ class AgentCLI:
     def run(self, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
         if self.requested_model is None:
             self.requested_model = extract_flag_value(extra_flags, "--model") or self.model or DEFAULT_MODEL_LABEL
+        if SHIELD_ENABLED and not self.local:
+            prompt, found = redact_secrets(prompt)
+            if found:
+                print(f"🛡️  Datenschutzschild: {', '.join(found)} vor dem Versand an {self.name} geschwärzt.")
         text, metrics = self.run_fn(self.binary, prompt, cwd, extra_flags)
         if metrics:
             if metrics.get("reported_model"):
@@ -364,7 +379,8 @@ def create_agent(
         metrics_tracker=metrics_tracker,
         role=role,
         model=model,
-        effort=effort
+        effort=effort,
+        local=base.local
     )
 
 
@@ -677,6 +693,143 @@ def normalize_endpoint_url(raw_url: str) -> str:
     return f"{url}/v1/chat/completions"
 
 
+LOCAL_SUFFIXES = (".local", ".lan", ".home", ".home.arpa", ".internal", ".intranet", ".fritz.box", ".localdomain")
+
+
+def is_private_endpoint(url: str) -> bool:
+    """True für localhost, private IPs (192.168.*, 10.*, 172.16-31.*) und Rechnernamen im Heimnetz."""
+    raw = url.strip()
+    if "://" not in raw:
+        raw = "http://" + raw
+    try:
+        host = (urllib.parse.urlsplit(raw).hostname or "").lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    if host == "localhost" or host.endswith(LOCAL_SUFFIXES):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        pass
+    # Name ohne Punkt (z. B. "nas") gibt es nur im eigenen Netz
+    return "." not in host
+
+
+def endpoint_timeout(url: str) -> int:
+    """Lokale Modelle laufen oft auf schwacher Hardware und bekommen deshalb mehr Zeit pro Runde."""
+    if ENDPOINT_TIMEOUT:
+        return ENDPOINT_TIMEOUT
+    return LOCAL_TIMEOUT if is_private_endpoint(url) else CLOUD_TIMEOUT
+
+
+def ollama_base_url() -> str:
+    """Adresse des Ollama-Servers aus OLLAMA_HOST (wie bei der Ollama-CLI), sonst localhost:11434."""
+    host = os.environ.get("OLLAMA_HOST", "").strip()
+    if not host:
+        return "http://localhost:11434"
+    if "://" not in host:
+        host = "http://" + host
+    parts = urllib.parse.urlsplit(host)
+    name = parts.hostname or "localhost"
+    if name in ("0.0.0.0", "::"):
+        name = "localhost"
+    if ":" in name:
+        name = f"[{name}]"
+    return f"{parts.scheme}://{name}:{parts.port or 11434}"
+
+
+SECRET_PATTERNS = [
+    ("privater Schlüssel", re.compile(r"-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----.*?-----END (?:[A-Z]+ )*PRIVATE KEY-----", re.DOTALL)),
+    ("Anthropic-Key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}")),
+    ("OpenAI-Key", re.compile(r"\bsk-(?!ant-)(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}")),
+    ("GitHub-Token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})")),
+    ("Google-API-Key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("AWS-Zugangsschlüssel", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("Slack-Token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
+    ("Stripe-Key", re.compile(r"\b[rs]k_live_[A-Za-z0-9]{20,}")),
+    ("JWT/Bearer-Token", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")),
+]
+# Nur der Wert hinter "passwort=", "token: " usw. wird ersetzt, der Name bleibt lesbar.
+SECRET_ASSIGNMENT = re.compile(
+    r"((?<![A-Za-z])(?:passwor[dt]|kennwort|passphrase|pwd|secret|client[_-]?secret|api[_-]?key|token)\s*[:=]\s*[\"']?)"
+    r"(?!\*+|x{3,}|<|\{|\$|TOKEN_HIER|BITTE)([^\s\"']{6,})",
+    re.IGNORECASE,
+)
+URL_CREDENTIALS = re.compile(r"(\b[a-z][a-z0-9+.-]*://[^\s:/@]+:)([^\s@/]{4,})(@)", re.IGNORECASE)
+IBAN_CANDIDATE = re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,4})?\b")
+CARD_CANDIDATE = re.compile(r"\b(?:\d[ -]?){12,18}\d\b")
+
+
+def _iban_valid(raw: str) -> bool:
+    s = re.sub(r"\s+", "", raw).upper()
+    if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", s):
+        return False
+    moved = s[4:] + s[:4]
+    digits = "".join(str(ord(c) - 55) if c.isalpha() else c for c in moved)
+    return int(digits) % 97 == 1
+
+
+def _luhn_valid(digits: str) -> bool:
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+def redact_secrets(text: str) -> tuple[str, list[str]]:
+    """Ersetzt Zugangsdaten, IBANs und Kartennummern durch Platzhalter. Gibt Text und Fundarten zurück."""
+    found: list[str] = []
+
+    def mark(label: str) -> str:
+        if label not in found:
+            found.append(label)
+        return f"[GESCHWÄRZT: {label}]"
+
+    for label, pattern in SECRET_PATTERNS:
+        text = pattern.sub(lambda m, lb=label: mark(lb), text)
+    def assignment(m: re.Match) -> str:
+        value = m.group(2)
+        # Code wie token = createToken() oder api_key = os.environ[...] bleibt stehen; Geheimnisse enthalten fast immer Ziffern.
+        if not re.search(r"\d", value) or re.search(r"[()\[\]]", value):
+            return m.group(0)
+        return m.group(1) + mark("Passwort/Token")
+
+    text = SECRET_ASSIGNMENT.sub(assignment, text)
+    text = URL_CREDENTIALS.sub(lambda m: m.group(1) + mark("Zugangsdaten in URL") + m.group(3), text)
+    text = IBAN_CANDIDATE.sub(lambda m: mark("IBAN") if _iban_valid(m.group(0)) else m.group(0), text)
+
+    def card(m: re.Match) -> str:
+        digits = re.sub(r"\D", "", m.group(0))
+        return mark("Kreditkartennummer") if digits[0] in "3456" and _luhn_valid(digits) else m.group(0)
+
+    text = CARD_CANDIDATE.sub(card, text)
+    return text, found
+
+
+SENSITIVE_PATHS = [
+    re.compile(r"(?:^|/)\.env(?:\.(?!example|dist|sample|template|defaults?)[\w-]+)*$"),
+    re.compile(r"(?:^|/)\.(?:ssh|gnupg|git)(?:/|$)"),
+    re.compile(r"(?:^|/)id_(?:rsa|dsa|ecdsa|ed25519)(?!\.pub)\b"),
+    re.compile(r"\.(?:pem|key|p12|pfx|jks|keystore|kdbx)$"),
+    re.compile(r"(?:^|/)\.(?:netrc|git-credentials|pgpass|npmrc|pypirc)$"),
+    re.compile(r"(?:^|/)(?:credentials|secrets?|service-account[\w-]*|client_secret[\w-]*)\.(?:json|ya?ml|toml)$"),
+    re.compile(r"(?:^|/)auth\.json$"),
+]
+
+
+def is_sensitive_path(rel_path: str) -> bool:
+    p = rel_path.replace("\\", "/")
+    return any(r.search(p) for r in SENSITIVE_PATHS)
+
+
 def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
     try:
         req = urllib.request.Request(url, method="GET", headers={"User-Agent": "ClaudeGravity/1.0"})
@@ -722,7 +875,7 @@ def _exec_openai_api(
     req = urllib.request.Request(full_url, data=data_bytes, headers=headers, method="POST")
 
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with urllib.request.urlopen(req, timeout=endpoint_timeout(endpoint_url)) as resp:
             resp_body = resp.read().decode("utf-8")
             data = json.loads(resp_body)
 
@@ -736,7 +889,7 @@ def _exec_openai_api(
             out = usage.get("completion_tokens") or len(text) // 4
             tot = usage.get("total_tokens") or (inp + out)
 
-            is_local_or_private = any(h in endpoint_url for h in ["localhost", "127.0.0.1", "ai.gb-web.de", "192.168.", "10."])
+            is_local_or_private = is_private_endpoint(endpoint_url)
             cost = 0.0 if is_local_or_private else float(data.get("cost_usd", 0.0))
 
             metrics = {
@@ -763,6 +916,11 @@ def _exec_openai_api(
         raise RuntimeError(f"API-Fehler an {endpoint_url}: {err_msg}")
     except urllib.error.URLError as url_err:
         raise RuntimeError(f"Verbindungsfehler zu {endpoint_url}: {url_err.reason}")
+    except TimeoutError:
+        raise RuntimeError(
+            f"Zeitüberschreitung nach {endpoint_timeout(endpoint_url)} s bei {endpoint_url}. "
+            f"Mehr Zeit pro Runde: --timeout <Sekunden> oder CLAUDEGRAVITY_TIMEOUT."
+        )
 
 
 def _exec_endpoint_runner(endpoint_url: str, default_model: str, api_key: str | None = None):
@@ -773,15 +931,15 @@ def _exec_endpoint_runner(endpoint_url: str, default_model: str, api_key: str | 
 
 
 def resolve_project_target(project_path: Path, rel_path: str) -> Path | None:
-    """Liefert den Zielpfad nur, wenn er innerhalb des Projektordners liegt (sonst None)."""
+    """Liefert den Zielpfad nur, wenn er innerhalb des Projektordners liegt und keine Geheimnis-Datei ist (sonst None)."""
     cleaned = rel_path.strip().strip('"\'').replace("\\", "/")
-    if not cleaned or Path(cleaned).is_absolute() or re.match(r"^[a-zA-Z]:", cleaned):
+    if not cleaned or cleaned.startswith("~") or Path(cleaned).is_absolute() or re.match(r"^[a-zA-Z]:", cleaned):
         return None
     root = project_path.resolve()
     target = (root / cleaned).resolve()
     if target == root or not target.is_relative_to(root):
         return None
-    if ".git" in target.relative_to(root).parts:
+    if is_sensitive_path(target.relative_to(root).as_posix()):
         return None
     return target
 
@@ -790,7 +948,7 @@ def apply_code_blocks(project_path: Path, text: str) -> list[str]:
     """Extrahiert Code-Blöcke mit Dateipfaden aus Modell-Antworten und schreibt sie auf die Festplatte.
 
     Es wird ausschließlich innerhalb des Projektordners geschrieben: absolute Pfade, `..`-Ausbrüche,
-    Symlinks nach außen und `.git/` werden abgelehnt.
+    Symlinks nach außen, `.git/` und Geheimnis-Dateien (.env, .ssh, Schlüssel) werden abgelehnt.
     """
     written_files = []
 
@@ -800,7 +958,7 @@ def apply_code_blocks(project_path: Path, text: str) -> list[str]:
             return
         target = resolve_project_target(project_path, rel_path)
         if target is None:
-            print(f"[!] Blockiert: {rel_path} liegt außerhalb des Projektordners und wird nicht geschrieben.")
+            print(f"[!] Blockiert: {rel_path} liegt außerhalb des Projektordners oder ist eine Geheimnis-Datei und wird nicht geschrieben.")
             return
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -843,20 +1001,23 @@ def detect_installed_agents(
     elif shutil.which("gh"):
         agents["copilot"] = AgentCLI("GitHub Copilot CLI (gh)", "gh", _exec_copilot)
     if shutil.which("ollama"):
-        agents["ollama-cli"] = AgentCLI("Ollama CLI", "ollama", _exec_ollama_cli)
+        agents["ollama-cli"] = AgentCLI("Ollama CLI", "ollama", _exec_ollama_cli, local=True)
 
-    # 2. Lokale Server prüfen (Ollama, LM Studio)
-    if is_endpoint_reachable("http://localhost:11434"):
+    # 2. Lokale Server prüfen (Ollama, auch über OLLAMA_HOST im Heimnetz, LM Studio)
+    ollama_url = ollama_base_url()
+    if is_endpoint_reachable(ollama_url, timeout=0.3 if "localhost" in ollama_url else 1.5):
         agents["ollama"] = AgentCLI(
-            "Ollama (Lokal: http://localhost:11434)",
+            f"Ollama ({'Lokal' if 'localhost' in ollama_url else 'Netzwerk'}: {ollama_url})",
             "ollama",
-            _exec_endpoint_runner("http://localhost:11434", default_model or "qwen2.5-coder:latest", api_key)
+            _exec_endpoint_runner(ollama_url, default_model or "qwen2.5-coder:latest", api_key),
+            local=True
         )
     if is_endpoint_reachable("http://localhost:1234"):
         agents["lmstudio"] = AgentCLI(
             "LM Studio (Lokal: http://localhost:1234)",
             "lmstudio",
-            _exec_endpoint_runner("http://localhost:1234", default_model or "default", api_key)
+            _exec_endpoint_runner("http://localhost:1234", default_model or "default", api_key),
+            local=True
         )
 
     # 3. Benutzerdefiniertes Netzwerk / Firmen-Server / Env-Var
@@ -867,15 +1028,14 @@ def detect_installed_agents(
         os.environ.get("AI_ENDPOINT")
     )
     if env_endpoint:
-        is_gb = "ai.gb-web.de" in env_endpoint
-        label = "ai.gb-web.de (Netzwerk-Server)" if is_gb else ("Lokaler/Custom Endpoint" if any(h in env_endpoint for h in ["localhost", "127.0.0.1"]) else "KI-Server")
+        is_local = is_private_endpoint(env_endpoint)
+        label = "Netzwerk-Server" if is_local else "KI-Server"
         agents["endpoint"] = AgentCLI(
             f"{label} ({env_endpoint})",
             "endpoint",
-            _exec_endpoint_runner(env_endpoint, default_model or "qwen2.5-coder:32b", api_key)
+            _exec_endpoint_runner(env_endpoint, default_model or "qwen2.5-coder:32b", api_key),
+            local=is_local
         )
-        if is_gb:
-            agents["gb-web"] = agents["endpoint"]
 
     return agents
 
@@ -905,7 +1065,7 @@ def load_project_context(project_path: Path, task: str = "") -> str:
 
     knowledge_dir = project_path / "knowledge"
     if knowledge_dir.exists() and knowledge_dir.is_dir():
-        k_files = sorted(f for f in knowledge_dir.glob("*") if f.is_file())
+        k_files = sorted(f for f in knowledge_dir.glob("*") if f.is_file() and not is_sensitive_path(f.name))
         if k_files:
             keywords = task_keywords(task)
             context.append("### Verfügbares Projekt-Wissen (knowledge/):")
@@ -2044,8 +2204,10 @@ def main():
     parser.add_argument("--reviewer-effort", "--pruefstatiker-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Prüfstatiker (für agy)")
     parser.add_argument("--planner-effort", "--architekt-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Architekten (falls agy)")
     parser.add_argument("--builder-effort", "--bauer-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität für den Bauleiter in Phase 3 (für agy)")
-    parser.add_argument("--endpoint", "--api-base", default=None, help="OpenAI-kompatibler Endpunkt (z.B. https://ai.gb-web.de/v1 oder http://localhost:11434/v1)")
+    parser.add_argument("--endpoint", "--api-base", default=None, help="OpenAI-kompatibler Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
     parser.add_argument("--api-key", default=None, help="Optionaler API-Key für geschützte KI-Endpunkte")
+    parser.add_argument("--timeout", type=int, default=None, help=f"Sekunden pro Runde für Endpunkte (Standard: {LOCAL_TIMEOUT} im Heimnetz, {CLOUD_TIMEOUT} sonst; auch CLAUDEGRAVITY_TIMEOUT)")
+    parser.add_argument("--no-shield", action="store_true", help="Datenschutzschild aus: Zugangsdaten in Prompts an Cloud-Modelle nicht schwärzen")
     parser.add_argument("--architekt-endpoint", default=None, help="Spezifischer Endpunkt für den Architekten")
     parser.add_argument("--pruefstatiker-endpoint", default=None, help="Spezifischer Endpunkt für den Prüfstatiker")
     parser.add_argument("--bauer-endpoint", default=None, help="Spezifischer Endpunkt für den Bauleiter (Phase 3)")
@@ -2067,6 +2229,11 @@ def main():
 
     args = parser.parse_args()
 
+    global ENDPOINT_TIMEOUT, SHIELD_ENABLED
+    env_timeout = os.environ.get("CLAUDEGRAVITY_TIMEOUT", "")
+    ENDPOINT_TIMEOUT = args.timeout or (int(env_timeout) if env_timeout.isdigit() else None)
+    SHIELD_ENABLED = not args.no_shield and os.environ.get("CLAUDEGRAVITY_SHIELD", "").lower() != "off"
+
     custom_ep = args.endpoint or args.bauer_endpoint or args.architekt_endpoint or args.pruefstatiker_endpoint
     agents = detect_installed_agents(custom_endpoint=custom_ep, api_key=args.api_key, default_model=args.builder_model or args.planner_model)
 
@@ -2074,19 +2241,22 @@ def main():
         agents["architekt_ep"] = AgentCLI(
             f"Architekt Endpoint ({args.architekt_endpoint})",
             "architekt_ep",
-            _exec_endpoint_runner(args.architekt_endpoint, args.planner_model or "default", args.api_key)
+            _exec_endpoint_runner(args.architekt_endpoint, args.planner_model or "default", args.api_key),
+            local=is_private_endpoint(args.architekt_endpoint)
         )
     if args.pruefstatiker_endpoint and "pruefstatiker_ep" not in agents:
         agents["pruefstatiker_ep"] = AgentCLI(
             f"Prüfstatiker Endpoint ({args.pruefstatiker_endpoint})",
             "pruefstatiker_ep",
-            _exec_endpoint_runner(args.pruefstatiker_endpoint, args.reviewer_model or "default", args.api_key)
+            _exec_endpoint_runner(args.pruefstatiker_endpoint, args.reviewer_model or "default", args.api_key),
+            local=is_private_endpoint(args.pruefstatiker_endpoint)
         )
     if args.bauer_endpoint and "bauer_ep" not in agents:
         agents["bauer_ep"] = AgentCLI(
             f"Bauleiter Endpoint ({args.bauer_endpoint})",
             "bauer_ep",
-            _exec_endpoint_runner(args.bauer_endpoint, args.builder_model or "qwen2.5-coder:32b", args.api_key)
+            _exec_endpoint_runner(args.bauer_endpoint, args.builder_model or "qwen2.5-coder:32b", args.api_key),
+            local=is_private_endpoint(args.bauer_endpoint)
         )
 
     if args.check:
@@ -2142,7 +2312,7 @@ def main():
         print("\n⚙️  Wichtigste Steuerungs-Flags:")
         print("  - Strategie-Presets      : --strategy <best-code|eco|local-free|balanced>")
         print("  - Trockenlauf            : --dry-run (zeigt Rollen, Modelle & Befehl ohne Ausführung)")
-        print("  - Eigener Endpunkt       : --endpoint <url> (z.B. https://ai.gb-web.de/v1 oder http://localhost:11434/v1)")
+        print("  - Eigener Endpunkt       : --endpoint <url> (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
         print("  - Bauleiter-Endpunkt     : --bauer-endpoint <url> (z.B. http://localhost:11434/v1)")
         print("  - Bauleiter festlegen    : --bauer / --builder <claude|agy|ollama|lmstudio|endpoint|codex|copilot>")
         print("  - Bauleiter-Modell       : --bauer-model <name> (z.B. qwen2.5-coder:32b, claude-3-5-haiku)")
@@ -2213,7 +2383,7 @@ def main():
         default_b_model = None
         local_cand = None
 
-        for k in ["bauer_ep", "ollama", "lmstudio", "endpoint", "gb-web", "ollama-cli"]:
+        for k in ["bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli"]:
             if k in agents:
                 local_cand = agents[k]
                 break
@@ -2241,7 +2411,7 @@ def main():
                 builder = local_cand
             else:
                 builder = planner
-            default_b_model = args.builder_model or ("qwen2.5-coder:32b" if "gb-web" in builder.name or "endpoint" in builder.binary else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model"))
+            default_b_model = args.builder_model or ("qwen2.5-coder:32b" if "endpoint" in builder.binary else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model"))
         else:  # balanced
             default_p_effort = "high" if planner.binary == "agy" else None
             default_r_effort = "high" if reviewer.binary == "agy" else None
@@ -2507,12 +2677,12 @@ def main():
         default_r_effort = "high"
         default_b_effort = "low"
         if not args.builder:
-            for k in ["bauer_ep", "ollama", "lmstudio", "endpoint", "gb-web", "ollama-cli"]:
+            for k in ["bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli"]:
                 if k in agents:
                     builder_base = agents[k]
                     builder = create_agent(builder_base.binary, agents, role="🔨 Bauleiter (Bau & Umsetzung)", metrics_tracker=session_metrics)
                     break
-        default_b_model = args.builder_model or ("qwen2.5-coder:32b" if "gb-web" in builder.name or "endpoint" in builder.binary else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model"))
+        default_b_model = args.builder_model or ("qwen2.5-coder:32b" if "endpoint" in builder.binary else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model"))
     else:  # balanced
         default_p_effort = "high" if planner.binary == "agy" else None
         default_r_effort = "high" if reviewer.binary == "agy" else None
@@ -2876,8 +3046,12 @@ def main():
             f"Danach prüft ein anderes Modell deine Änderungen."
         )
 
-        is_endpoint_builder = builder.binary in ["endpoint", "ollama", "lmstudio", "gb-web", "copilot", "architekt_ep", "pruefstatiker_ep", "bauer_ep"]
+        is_endpoint_builder = builder.binary in ["endpoint", "ollama", "lmstudio", "copilot", "architekt_ep", "pruefstatiker_ep", "bauer_ep"]
         if is_endpoint_builder:
+            # Endpunkte können die Plan-Datei nicht selbst öffnen, deshalb geht der Plan als Text mit.
+            plan_text = plan_file.read_text(encoding="utf-8", errors="ignore") if plan_file.exists() else ""
+            if plan_text:
+                prompt_build += f"\n\n--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---"
             prompt_build += (
                 f"\n\nFORMATIERUNGS-HINWEIS FÜR DATEI-ÄNDERUNGEN:\n"
                 f"Gib alle zu erstellenden oder zu ändernden Dateien im Format an:\n"

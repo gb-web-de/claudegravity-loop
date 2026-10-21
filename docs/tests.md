@@ -28,6 +28,12 @@ Ollama-, LM-Studio- und eigene Server-Bauleiter können **keine Befehle ausführ
 
 ## ClaudeGravity selbst prüfen
 
+Die Unit-Tests brauchen nur Python und keine KI:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
 Ohne KI-Aufrufe und ohne Dateien zu ändern:
 
 ```bash

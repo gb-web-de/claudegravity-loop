@@ -23,7 +23,7 @@ Er basiert auf dem Prinzip des [claudex-loop](https://github.com/chaseai-yt/clau
 - Cloud-Modelle werden über die offiziellen CLIs (`claude`, `agy`, `gemini`, …) mit bestehenden Abos angesprochen. API-Keys gibt es nur für eigene OpenAI-kompatible Endpunkte (`--api-key` oder `CLAUDEGRAVITY_API_KEY`) und werden nie ins Repository geschrieben.
 - Token-Schonung hat oberste Priorität: Übergib nur den Plan oder relevante Diffs, keine aufgeblähten Chat-Historien.
 - Sicherheit:
-  - Modell-Ausgaben sind nicht vertrauenswürdig. Dateien aus Antworten werden nur über `resolve_project_target()` innerhalb des Projektordners geschrieben (keine absoluten Pfade, kein `..`, kein `.git/`).
+  - Modell-Ausgaben sind nicht vertrauenswürdig. Dateien aus Antworten werden nur über `resolve_project_target()` innerhalb des Projektordners geschrieben (keine absoluten Pfade, kein `..`, kein `.git/`, keine Geheimnis-Dateien wie `.env`, `.ssh/` oder `*.key`).
   - Prozesse immer mit Argumentlisten und ohne `shell=True` starten. Unter Windows löst `build_cli_command()` npm-`.cmd`-Shims direkt auf; Aufgabentexte dürfen nie in einen Shell-String gelangen.
 - Tests vor jedem Commit: `python -m unittest discover -s tests`. Neue Funktionen bekommen einen Test in `tests/`.
 - Sobald eine autonome Aufgabe erfolgreich abgeschlossen ist, erstelle die Datei `.done` im jeweiligen Session-Ordner (`.dual-loop/sessions/<session>/.done`) und NICHT im Projekt-Hauptverzeichnis.
