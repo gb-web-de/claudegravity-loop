@@ -1,6 +1,6 @@
 # Fehlerbehebung & bekannte Einschränkungen
 
-[← Zurück zur Übersicht](../README.md) · [Dokumentations-Index](README.md)
+[← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/fehlerbehebung.md)
 
 ## Häufige Probleme
 

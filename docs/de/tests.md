@@ -1,6 +1,6 @@
 # Tests
 
-[← Zurück zur Übersicht](../README.md) · [Dokumentations-Index](README.md)
+[← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/tests.md)
 
 Tests ziehen sich durch alle drei Phasen. Diese Seite beschreibt, wie ClaudeGravity mit Tests in deinem Projekt umgeht und wie du ClaudeGravity selbst prüfst.
 

@@ -1,6 +1,6 @@
 # Bau-Loop (Phase 3)
 
-[← Zurück zur Übersicht](../README.md) · [Dokumentations-Index](README.md)
+[← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/bau-loop.md)
 
 Der Bau-Loop startet erst, wenn du den Plan im Freigabe-Menü bestätigt hast (siehe [Ablauf & Rollen](ablauf-und-rollen.md)). Hier verbraucht ClaudeGravity rund 80–90 % aller Tokens, deshalb lohnt sich hier ein günstigeres oder lokales Modell (siehe [Strategien](strategien.md)).
 

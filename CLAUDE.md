@@ -13,6 +13,7 @@ Er basiert auf dem Prinzip des [claudex-loop](https://github.com/chaseai-yt/clau
 - `mcp_server.py`: Eigenständiger MCP-Server (JSON-RPC 2.0 stdio) & CLI-Optimizer für automatisierte Modell- & Rollenwahl (Tools: `claudegravity_optimize`, `claudegravity_run`, `claudegravity_info`).
 - `claudegravity.bat`, `claudegravity.ps1`, `claudegravity-mcp.bat`: Windows-Launcher.
 - `skills/claudegravity/SKILL.md`: Skill, mit dem Claude Code oder Codex den Loop mit getrennten Anbietern startet.
+- `docs/de/` und `docs/en/`: Doku auf Deutsch und Englisch mit gleichen Dateinamen, gegenseitig verlinkt. Änderungen immer in beiden Sprachen nachziehen.
 - `tests/`: `unittest`-Suite; läuft in GitHub Actions auf Linux, macOS und Windows (`.github/workflows/tests.yml`).
 - `.dual-loop/`: Git-ignorierter Arbeitsordner. Enthält ausschließlich den Unterordner `sessions/` (alle Pläne, Reviews und Logs sind aufgabenspezifisch darin isoliert).
 - `projects/`: Ordner für gespiegelte Projekte (wie in der Claude UI).

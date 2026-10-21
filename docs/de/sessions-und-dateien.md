@@ -1,6 +1,6 @@
 # Sessions, Dateien & Projektkontext
 
-[← Zurück zur Übersicht](../README.md) · [Dokumentations-Index](README.md)
+[← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/sessions-und-dateien.md)
 
 ## Was ClaudeGravity im Zielprojekt anlegt
 
@@ -16,6 +16,7 @@
 │           ├── PLAN_v3_manual.md    # im Editor geänderte Version
 │           ├── INSPECTION_round1.md # Urteil der Abnahme über den fertigen Code
 │           ├── LOG.md               # Verlauf von Plan, Review, Abnahme, Limit-Wechseln
+│           ├── workspace/           # Git-Worktree der Session (Branch loop/<session>)
 │           ├── AUDIT.md             # Audit-Bericht, wenn der Lauf ohne Fertigmeldung endet
 │           └── .done                # Fertigmeldung + Audit-Bericht
 └── logs/
@@ -28,6 +29,15 @@
 * Ältere Dateien `PLAN.md`, `REVIEW.md` und `PLAN-REVIEW-LOG.md` direkt in `.dual-loop/` stammen aus früheren Versionen und werden beim Start gelöscht.
 
 Füge `.dual-loop/`, `logs/` und `.done` in die `.gitignore` deines Projekts ein, wenn sie nicht ins Repository sollen.
+
+## Git-Workspace pro Session
+
+Ist das Projekt ein Git-Repository, baut der Bauleiter nicht direkt im Projektordner, sondern in einem eigenen Worktree unter `<session>/workspace` auf dem Branch `loop/<session-id>`. Der Branch zweigt vom aktuellen `HEAD` ab. So bleibt dein Arbeitsverzeichnis unberührt.
+
+* Nach erfolgreichem Abschluss committet ClaudeGravity offene Änderungen auf den Session-Branch und entfernt den Worktree. Der Branch bleibt erhalten, du kannst ihn prüfen und selbst mergen.
+* Mit `--merge` wird der Branch nach `.done` und bestandener Abnahme automatisch in den Ausgangs-Branch gemergt, sofern das Projekt noch auf diesem Branch steht.
+* Verweigert die Abnahme die Fertigmeldung, bleibt der Worktree bestehen und `claudegravity -c` macht dort weiter.
+* Mit `--no-worktree` arbeitet der Bauleiter direkt im Projektordner. Ohne Git gibt es keinen Worktree.
 
 ## `state.json`
 

@@ -1,6 +1,6 @@
 # ClaudeGravity – Dokumentation
 
-[← Zurück zur Übersicht](../README.md)
+[← Zurück zur Übersicht](../../README.md) · 🇬🇧 [English](../en/README.md)
 
 | Seite | Inhalt |
 | :--- | :--- |

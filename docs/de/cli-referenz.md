@@ -1,6 +1,6 @@
 # CLI-Referenz (`claudegravity` / `loop.py`)
 
-[← Zurück zur Übersicht](../README.md) · [Dokumentations-Index](README.md)
+[← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/cli-referenz.md)
 
 ```text
 claudegravity [AUFGABE] [OPTIONEN]
@@ -80,6 +80,15 @@ Effort wird an `agy` (`--effort`) und `codex` (`-c model_reasoning_effort`, `max
 | `--pruefstatiker-endpoint <url>` | | Eigener Endpunkt, verfügbar als `pruefstatiker_ep`. |
 | `--bauer-endpoint <url>` | | Eigener Endpunkt, verfügbar als `bauer_ep`. |
 | `--timeout <sek>` | | Sekunden pro Runde für Endpunkte. Standard: 900 im Heimnetz, 180 sonst. Auch `CLAUDEGRAVITY_TIMEOUT`. |
+
+## Git-Workspace
+
+| Flag | Aliase | Beschreibung | Standard |
+| :--- | :--- | :--- | :--- |
+| `--no-worktree` | `--no-workspace` | Keinen eigenen Git-Worktree pro Session anlegen, sondern direkt im Projektordner bauen. | Worktree an (nur in Git-Repositories) |
+| `--merge` | `--worktree-merge` | Session-Branch nach erfolgreichem Abschluss (`.done`, Abnahme bestanden) in den Ausgangs-Branch mergen. | aus |
+
+Details: [Sessions & Dateien](sessions-und-dateien.md#git-workspace-pro-session).
 
 ## Datenschutz
 

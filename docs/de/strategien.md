@@ -1,6 +1,6 @@
 # Strategie-Presets
 
-[← Zurück zur Übersicht](../README.md) · [Dokumentations-Index](README.md)
+[← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/strategien.md)
 
 Statt jede Rolle einzeln einzustellen, wählst du mit `--strategy <name>` (Alias `--preset`) ein Preset. Es setzt **Standardwerte** für Effort und Bauleiter-Modell; alles, was du explizit angibst (`--bauer-model`, `--architekt-effort`, …), hat Vorrang.
 

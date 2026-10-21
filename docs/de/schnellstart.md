@@ -1,6 +1,6 @@
 # Schnellstart
 
-[← Zurück zur Übersicht](../README.md) · [Dokumentations-Index](README.md)
+[← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/schnellstart.md)
 
 Voraussetzung: ClaudeGravity ist [installiert](installation.md) und mindestens eine KI-CLI ist angemeldet.
 

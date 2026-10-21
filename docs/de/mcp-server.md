@@ -1,6 +1,6 @@
 # MCP-Server & Optimizer (`mcp_server.py`)
 
-[← Zurück zur Übersicht](../README.md) · [Dokumentations-Index](README.md)
+[← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/mcp-server.md)
 
 `mcp_server.py` ist ein eigenständiger **Model Context Protocol**-Server (JSON-RPC 2.0 über stdio, Protokollversion `2024-11-05`) ohne Abhängigkeiten. Damit kann ein KI-Assistent wie Claude Code, Antigravity oder Cursor für eine Aufgabe die passende ClaudeGravity-Konfiguration berechnen und starten. Dieselbe Logik ist auch direkt im Terminal nutzbar.
 

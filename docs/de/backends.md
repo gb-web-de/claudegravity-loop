@@ -1,6 +1,6 @@
 # Backends: CLIs, lokale Modelle & eigene Server
 
-[← Zurück zur Übersicht](../README.md) · [Dokumentations-Index](README.md)
+[← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/backends.md)
 
 Jede Rolle kann mit einem beliebigen erkannten Backend besetzt werden. Welche Backends auf deinem Rechner verfügbar sind, zeigt `claudegravity --info`.
 
