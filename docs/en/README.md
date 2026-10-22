@@ -11,6 +11,7 @@
 | [Tests](tests.md) | Tests in plan, review and build; testing ClaudeGravity itself |
 | [Strategies](strategien.md) | Presets `balanced`, `best-code`, `eco`, `local-free` |
 | [Backends](backends.md) | Supported CLIs, Ollama, LM Studio, your own servers, environment variables, YOLO |
+| [Ollama & Codex](ollama-und-codex.md) | Role splits played through, CLI and MCP calls, models for a Mac M4 with 48 GB |
 | [CLI reference](cli-referenz.md) | All flags of `claudegravity` |
 | [MCP server](mcp-server.md) | Registration, tools, optimizer in the terminal |
 | [Sessions & files](sessions-und-dateien.md) | `.dual-loop/`, `state.json`, resuming, `.done` audit, `CLAUDE.md` & `knowledge/` |

@@ -53,6 +53,7 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 | [Tests](docs/de/tests.md) | Tests in Plan, Review und Bau; ClaudeGravity prüfen |
 | [Strategien](docs/de/strategien.md) | Presets und ihre Standardwerte |
 | [Backends](docs/de/backends.md) | CLIs, lokale Modelle, Intranet-Server, Umgebungsvariablen, YOLO |
+| [Ollama & Codex](docs/de/ollama-und-codex.md) | Rollenbeispiele mit lokalem Ollama und Codex, Modelle für Mac M4 48 GB |
 | [CLI-Referenz](docs/de/cli-referenz.md) | Alle Flags |
 | [MCP-Server](docs/de/mcp-server.md) | Registrierung, Tools, Optimizer |
 | [Sessions & Dateien](docs/de/sessions-und-dateien.md) | `.dual-loop/`, `state.json`, `.done`, Projektkontext |
@@ -75,7 +76,7 @@ claudegravity "Create a Python weather CLI tool with full test coverage"
 claudegravity "Refactor auth" --strategy local-free --bauer ollama   # $0 build loop
 ```
 
-Key flags: `--strategy best-code|eco|local-free|balanced`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md).
+Key flags: `--strategy best-code|eco|local-free|balanced`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md).
 
 MCP server for Claude Code:
 
