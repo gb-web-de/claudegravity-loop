@@ -30,7 +30,7 @@ class OptimizerTest(unittest.TestCase):
         self.assertEqual(mcp_server.analyze_task_complexity("Neue Seite bauen")["complexity"], "mittel")
 
     def test_all_priorities_produce_a_command(self):
-        for prio in ["best-code", "eco", "lowest-cost", "local-free", "balanced"]:
+        for prio in ["auto", "best-code", "eco", "lowest-cost", "local-free", "balanced"]:
             with self.subTest(priority=prio):
                 opt = mcp_server.optimize_claudegravity_command("Neue Seite bauen", priority=prio)
                 self.assertTrue(opt["recommended_command"].startswith("claudegravity "))
@@ -210,6 +210,74 @@ class DesktopEnvironmentTest(unittest.TestCase):
             self.assertEqual(mcp_server.resolve_project_dir(tmp), (Path(tmp).resolve(), None))
         path, error = mcp_server.resolve_project_dir("~")
         self.assertEqual(path, Path.home().resolve())
+
+
+class HostClientTest(unittest.TestCase):
+    """Der aufrufende Client (Codex, Antigravity, Claude) führt den Loop; Ollama prüft und baut."""
+
+    AGENTS = {"codex": "Codex CLI", "claude": "Claude Code", "agy": "Antigravity", "ollama": "Ollama"}
+
+    def setUp(self):
+        patcher = mock.patch.object(mcp_server, "detect_installed_agents", return_value=dict(self.AGENTS))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        env = mock.patch.dict(os.environ, {mcp_server.HOST_ENV: ""})
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(mcp_server.HOST_CLIENT.clear)
+
+    def optimize(self, client, **kwargs):
+        mcp_server.HOST_CLIENT.clear()
+        mcp_server.HOST_CLIENT["name"] = client
+        return mcp_server.optimize_claudegravity_command("CSV-Export bauen", **kwargs)
+
+    def test_client_names_map_to_backends(self):
+        for name, key in (
+            ("codex-mcp-client", "codex"),
+            ("Codex Desktop", "codex"),
+            ("Antigravity", "agy"),
+            ("gemini-cli-mcp-client", "gemini"),
+            ("claude-ai", "claude"),
+            ("claude-code", "claude"),
+            ("cursor-vscode", None),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(mcp_server.host_backend(name), key)
+        with mock.patch.dict(os.environ, {mcp_server.HOST_ENV: "aus"}):
+            self.assertIsNone(mcp_server.host_backend("codex"))
+
+    def test_auto_with_ollama_is_hybrid_led_by_host(self):
+        for client, key in (("Antigravity", "agy"), ("claude-ai", "claude"), ("codex-mcp-client", "codex")):
+            with self.subTest(client=client):
+                opt = self.optimize(client)
+                self.assertEqual(opt["priority"], "hybrid")
+                self.assertEqual(opt["roles"]["architekt"]["cli"], key)
+                self.assertEqual(opt["roles"]["bauleiter"]["cli"], "ollama")
+                self.assertEqual(opt["roles"]["pruefstatiker"]["cli"], "ollama")
+                self.assertTrue(opt["host"]["leads"])
+                if key != "codex":
+                    self.assertIn(key, opt["loop_args"][opt["loop_args"].index("--architekt") + 1])
+
+    def test_host_never_reviews_itself(self):
+        opt = self.optimize("Antigravity", priority="balanced")
+        self.assertEqual(opt["roles"]["architekt"]["cli"], "agy")
+        self.assertNotEqual(opt["roles"]["pruefstatiker"]["cli"], "agy")
+
+    def test_explicit_role_wins_and_missing_cli_is_reported(self):
+        mcp_server.HOST_CLIENT["name"] = "codex-mcp-client"
+        opt = mcp_server.optimize_claudegravity_command("x", roles={"architekt": "claude"})
+        self.assertEqual(opt["roles"]["architekt"]["cli"], "claude")
+        with mock.patch.object(mcp_server, "detect_installed_agents", return_value={"claude": "Claude Code"}):
+            opt = self.optimize("Antigravity")
+        self.assertFalse(opt["host"]["leads"])
+        self.assertIn("nicht im PATH", mcp_server.format_optimization_markdown(opt))
+
+    def test_initialize_remembers_client(self):
+        mcp_server.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"clientInfo": {"name": "codex-mcp-client", "version": "1.0"}}}
+        )
+        self.assertEqual(mcp_server.HOST_CLIENT["name"], "codex-mcp-client")
+        self.assertEqual(mcp_server.host_backend(), "codex")
 
 
 class MessageHandlingTest(unittest.TestCase):

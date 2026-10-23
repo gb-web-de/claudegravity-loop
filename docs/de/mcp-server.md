@@ -51,17 +51,25 @@ Kontrolle: `claude mcp list` bzw. `codex mcp list`. Für JSON-Clients (Claude De
 | Claude Desktop | macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows `%APPDATA%\Claude\claude_desktop_config.json` |
 | Cursor | `~/.cursor/mcp.json` |
 | Gemini CLI | `~/.gemini/settings.json` |
-| Antigravity | `~/.gemini/antigravity/mcp_config.json` |
+| Antigravity (App) | `~/.gemini/antigravity/mcp_config.json` |
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` |
-| Codex CLI | `~/.codex/config.toml`, Abschnitt `[mcp_servers.claudegravity]` mit `command`, `args`, `env` |
+| Codex CLI und Codex-App | `~/.codex/config.toml` (gemeinsam für beide), Abschnitt `[mcp_servers.claudegravity]` mit `command`, `args`, `env` |
 
-Unter Windows Backslashes in JSON verdoppeln (`"C:\\claudegravity\\mcp_server.py"`) oder `claudegravity-mcp.bat` als `command` nutzen. `CLAUDEGRAVITY_PROJECT` und weitere Variablen wie `CLAUDEGRAVITY_ENDPOINT` sind optional.
+Unter Windows Backslashes in JSON verdoppeln (`"C:\\claudegravity\\mcp_server.py"`) oder `claudegravity-mcp.bat` als `command` nutzen. `CLAUDEGRAVITY_PROJECT`, `CLAUDEGRAVITY_HOST` und weitere Variablen wie `CLAUDEGRAVITY_ENDPOINT` sind optional.
+
+### Der aufrufende Client führt den Loop
+
+Der Server merkt sich bei `initialize`, welcher Client ihn gestartet hat (`clientInfo.name`), und setzt dessen CLI als **Architekt** ein: aus Codex (CLI oder App) plant `codex`, aus der Antigravity-App `agy`, aus Claude Code oder Claude Desktop `claude`, aus der Gemini CLI `gemini`. Der Prüfstatiker ist nie derselbe Anbieter; bei Bedarf weicht er auf Ollama oder eine andere Cloud-CLI aus. Mit `priority: "auto"` (Standard) wird daraus die Strategie `hybrid`, sobald Ollama, LM Studio oder ein Endpunkt erreichbar ist: der Client plant und nimmt ab, **Ollama prüft und baut** in Etappen für 0 €. Ohne lokales Modell gilt `balanced`.
+
+Voraussetzung ist, dass die CLI des Clients installiert ist (`codex`, `agy`, `claude`); sonst nennt die Empfehlung das und wählt wie bisher. Der Installer schreibt den Client zusätzlich als `CLAUDEGRAVITY_HOST` in die Konfiguration, falls eine App einen unbekannten Namen meldet. `CLAUDEGRAVITY_HOST=aus` schaltet das ab; ausdrückliche Rollen (`architekt` usw.) gehen immer vor.
+
+Ollama selbst ist kein MCP-Client: Die Ollama-App ruft keine MCP-Server auf, sie ist im Loop Prüfstatiker und Bauleiter. Die Modelle wählt der Loop aus den installierten Modellen (`/api/tags`), oder man gibt sie mit `pruefstatiker_model` und `bauer_model` vor.
 
 ### Desktop-Apps (Claude Desktop, Cursor, …)
 
 Desktop-Apps starten den Server anders als ein Terminal. Der Server fängt das so ab:
 
-* **Kein Shell-PATH:** Unter macOS sieht eine Desktop-App meist nur `/usr/bin:/bin`. Der Server ergänzt beim Start vorhandene Ordner wie `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.volta/bin`, `~/.cargo/bin` und die `bin`-Ordner von nvm (unter Windows `%APPDATA%\npm` und `%LOCALAPPDATA%\Programs\Ollama`), damit `claude`, `codex`, `gemini` oder `ollama` gefunden werden. Liegt eine CLI woanders, den Ordner in `env` → `PATH` eintragen. `claudegravity_info` zeigt, welche Ordner ergänzt wurden.
+* **Kein Shell-PATH:** Unter macOS sieht eine Desktop-App meist nur `/usr/bin:/bin`. Der Server ergänzt beim Start vorhandene Ordner wie die CLI-Ordner der Codex-, Antigravity- und Ollama-App unter `/Applications`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.volta/bin`, `~/.cargo/bin` und die `bin`-Ordner von nvm (unter Windows `%APPDATA%\npm` und `%LOCALAPPDATA%\Programs\Ollama`), damit `claude`, `codex`, `gemini` oder `ollama` gefunden werden. Liegt eine CLI woanders, den Ordner in `env` → `PATH` eintragen. `claudegravity_info` zeigt, welche Ordner ergänzt wurden.
 * **Falsches Arbeitsverzeichnis:** Der Server läuft dort meist in `/` oder im Home-Ordner. Ein relativer `project_path` wird dann abgelehnt; entweder einen absoluten Pfad übergeben oder `CLAUDEGRAVITY_PROJECT` setzen, das gilt, wenn `project_path` fehlt oder `.` ist. `~` wird aufgelöst.
 * **Zu altes Python:** `command` muss auf Python 3.10+ zeigen (unter macOS ist `/usr/bin/python3` oft 3.9). Sonst bricht der Server mit einer klaren Meldung im Client-Log ab.
 * **Kein Terminal:** Läufe aus Desktop-Apps mit `claudegravity_run` und `background: true` starten, mit `claudegravity_status` verfolgen und bei Bedarf mit `claudegravity_stop` abbrechen.
@@ -75,7 +83,7 @@ Analysiert die Aufgabe und liefert Rollenbelegung, Kosten-/Qualitäts-Einschätz
 | Parameter | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
 | `task` | string | *(Pflicht)* | Aufgabenbeschreibung |
-| `priority` | `best-code` \| `lowest-cost` \| `local-free` \| `hybrid` \| `balanced` | `balanced` | Ziel; `lowest-cost` entspricht `--strategy eco`, `hybrid` der Strategie `hybrid` (Cloud plant und nimmt ab, Ollama prüft und baut in Etappen) |
+| `priority` | `auto` \| `best-code` \| `lowest-cost` \| `local-free` \| `hybrid` \| `balanced` | `auto` | Ziel; `auto` wird `hybrid`, wenn ein lokales Modell erreichbar ist, sonst `balanced`; `lowest-cost` entspricht `--strategy eco`, `hybrid` der Strategie `hybrid` (Cloud plant und nimmt ab, Ollama prüft und baut in Etappen) |
 | `endpoint` | string | – | OpenAI-kompatibler Endpunkt für den Bauleiter |
 | `project_path` | string | `.` | Zielprojekt |
 | `ask_mode` | boolean | `false` | Fragen-Modus (`-i`) |
@@ -125,7 +133,7 @@ Zeigt Betriebssystem, Python des Servers, Arbeitsverzeichnis, `CLAUDEGRAVITY_PRO
 ## Wie der Optimizer entscheidet
 
 1. **Backends erkennen** wie `loop.py` (CLIs im `PATH`, Ollama/LM Studio auf localhost, `CLAUDEGRAVITY_ENDPOINT`/`OPENAI_BASE_URL`/`AI_ENDPOINT`).
-2. **Paarung:** Architekt `claude`, Prüfstatiker `agy` (sonst `gemini`, sonst ebenfalls `claude`).
+2. **Paarung:** Architekt ist der aufrufende Client (siehe oben), sonst `claude`; Prüfstatiker `agy` (sonst `gemini`, sonst ein anderer Anbieter als der Architekt).
 3. **Komplexität** per Stichwortsuche in der Aufgabe: Refactoring, Sicherheit/Auth und Architektur/Migration/Schema → `hoch`; kleine Fixes/Typos → `niedrig`; sonst `mittel`.
 4. **Priorität → Preset** (siehe [Strategien](strategien.md)); bei `lowest-cost` (nur für Claude/Gemini) und bei `local-free` mit Endpunkt wird `--bauer-model` gesetzt. Für Ollama wählt der Loop das Modell selbst aus den installierten Modellen. Bei `hybrid` plant die erste Cloud-CLI (`codex`, `claude`, `agy`, `gemini`), das lokale Modell prüft und baut.
 5. **Ausdrückliche Rollen** (`architekt`, `bauer_model`, …) überschreiben die Wahl und landen als Flags im Befehl. Modellnamen zeigt der Optimizer nur für Claude und Gemini an; andere CLIs nutzen ihren CLI-Default.
@@ -143,7 +151,7 @@ claudegravity-mcp                                              # ohne Argumente:
 | Flag | Beschreibung | Standard |
 | :--- | :--- | :--- |
 | `--optimize`, `-o <aufgabe>` | Aufgabe analysieren und Empfehlung ausgeben | – |
-| `--priority` | `best-code`, `quality`, `eco`, `lowest-cost`, `cost`, `local-free`, `free`, `local`, `hybrid`, `mixed`, `balanced` | `balanced` |
+| `--priority` | `auto`, `best-code`, `quality`, `eco`, `lowest-cost`, `cost`, `local-free`, `free`, `local`, `hybrid`, `mixed`, `balanced` | `auto` |
 | `--endpoint <url>` | Endpunkt für den Bauleiter | – |
 | `-p`, `--project` | Zielprojekt | `.` |
 | `-i`, `--ask` | Fragen-Modus im Befehl | aus |

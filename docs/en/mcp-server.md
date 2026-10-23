@@ -51,17 +51,25 @@ Check with `claude mcp list` or `codex mcp list`. For JSON clients (Claude Deskt
 | Claude Desktop | macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows `%APPDATA%\Claude\claude_desktop_config.json` |
 | Cursor | `~/.cursor/mcp.json` |
 | Gemini CLI | `~/.gemini/settings.json` |
-| Antigravity | `~/.gemini/antigravity/mcp_config.json` |
+| Antigravity (app) | `~/.gemini/antigravity/mcp_config.json` |
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` |
-| Codex CLI | `~/.codex/config.toml`, section `[mcp_servers.claudegravity]` with `command`, `args`, `env` |
+| Codex CLI and Codex app | `~/.codex/config.toml` (shared by both), section `[mcp_servers.claudegravity]` with `command`, `args`, `env` |
 
-On Windows, double the backslashes in JSON (`"C:\\claudegravity\\mcp_server.py"`) or use `claudegravity-mcp.bat` as `command`. `CLAUDEGRAVITY_PROJECT` and other variables such as `CLAUDEGRAVITY_ENDPOINT` are optional.
+On Windows, double the backslashes in JSON (`"C:\\claudegravity\\mcp_server.py"`) or use `claudegravity-mcp.bat` as `command`. `CLAUDEGRAVITY_PROJECT`, `CLAUDEGRAVITY_HOST` and other variables such as `CLAUDEGRAVITY_ENDPOINT` are optional.
+
+### The calling client leads the loop
+
+On `initialize` the server remembers which client started it (`clientInfo.name`) and uses that client's CLI as the **Architect**: from Codex (CLI or app) `codex` plans, from the Antigravity app `agy`, from Claude Code or Claude Desktop `claude`, from the Gemini CLI `gemini`. The Reviewer is never the same provider; if needed it falls back to Ollama or another cloud CLI. With `priority: "auto"` (the default) this becomes the `hybrid` strategy as soon as Ollama, LM Studio or an endpoint is reachable: the client plans and accepts, **Ollama reviews and builds** in stages for free. Without a local model, `balanced` applies.
+
+This needs the client's CLI to be installed (`codex`, `agy`, `claude`); otherwise the recommendation says so and chooses as before. The installer also writes the client as `CLAUDEGRAVITY_HOST` into the configuration, in case an app reports an unknown name. `CLAUDEGRAVITY_HOST=aus` turns this off; explicit roles (`architekt` etc.) always win.
+
+Ollama itself is not an MCP client: the Ollama app does not call MCP servers; in the loop it is the Reviewer and Builder. The loop picks the models from the installed ones (`/api/tags`), or you set them with `pruefstatiker_model` and `bauer_model`.
 
 ### Desktop apps (Claude Desktop, Cursor, …)
 
 Desktop apps start the server differently from a terminal. The server handles that as follows:
 
-* **No shell PATH:** On macOS a desktop app usually only sees `/usr/bin:/bin`. At startup the server adds existing folders such as `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.volta/bin`, `~/.cargo/bin` and nvm's `bin` folders (on Windows `%APPDATA%\npm` and `%LOCALAPPDATA%\Programs\Ollama`), so `claude`, `codex`, `gemini` or `ollama` are found. If a CLI lives somewhere else, add its folder under `env` → `PATH`. `claudegravity_info` shows which folders were added.
+* **No shell PATH:** On macOS a desktop app usually only sees `/usr/bin:/bin`. At startup the server adds existing folders such as the CLI folders of the Codex, Antigravity and Ollama apps under `/Applications`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.volta/bin`, `~/.cargo/bin` and nvm's `bin` folders (on Windows `%APPDATA%\npm` and `%LOCALAPPDATA%\Programs\Ollama`), so `claude`, `codex`, `gemini` or `ollama` are found. If a CLI lives somewhere else, add its folder under `env` → `PATH`. `claudegravity_info` shows which folders were added.
 * **Wrong working directory:** There the server usually runs in `/` or the home folder. A relative `project_path` is then rejected; pass an absolute path or set `CLAUDEGRAVITY_PROJECT`, which applies when `project_path` is missing or `.`. `~` is expanded.
 * **Python too old:** `command` must point to Python 3.10+ (on macOS `/usr/bin/python3` is often 3.9). Otherwise the server stops with a clear message in the client log.
 * **No terminal:** Start runs from desktop apps with `claudegravity_run` and `background: true`, follow them with `claudegravity_status` and stop them with `claudegravity_stop` if needed.
@@ -75,7 +83,7 @@ Analyzes the task and returns the role assignment, a cost/quality assessment and
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `task` | string | *(required)* | Task description |
-| `priority` | `best-code` \| `lowest-cost` \| `local-free` \| `hybrid` \| `balanced` | `balanced` | Goal; `lowest-cost` corresponds to `--strategy eco`, `hybrid` to the `hybrid` strategy (cloud plans and accepts, Ollama reviews and builds in stages) |
+| `priority` | `auto` \| `best-code` \| `lowest-cost` \| `local-free` \| `hybrid` \| `balanced` | `auto` | Goal; `auto` becomes `hybrid` when a local model is reachable, otherwise `balanced`; `lowest-cost` corresponds to `--strategy eco`, `hybrid` to the `hybrid` strategy (cloud plans and accepts, Ollama reviews and builds in stages) |
 | `endpoint` | string | – | OpenAI-compatible endpoint for the Builder |
 | `project_path` | string | `.` | Target project |
 | `ask_mode` | boolean | `false` | Question mode (`-i`) |
@@ -125,7 +133,7 @@ Shows the operating system, the server's Python, working directory, `CLAUDEGRAVI
 ## How the optimizer decides
 
 1. **Detect backends** the same way as `loop.py` (CLIs on the `PATH`, Ollama/LM Studio on localhost, `CLAUDEGRAVITY_ENDPOINT`/`OPENAI_BASE_URL`/`AI_ENDPOINT`).
-2. **Pairing:** Architect `claude`, Reviewer `agy` (otherwise `gemini`, otherwise `claude` as well).
+2. **Pairing:** The Architect is the calling client (see above), otherwise `claude`; Reviewer `agy` (otherwise `gemini`, otherwise a provider other than the Architect).
 3. **Complexity** via keyword search in the task: refactoring, security/auth and architecture/migration/schema → `hoch` (high); small fixes/typos → `niedrig` (low); otherwise `mittel` (medium).
 4. **Priority → preset** (see [Strategies](strategien.md)); `--bauer-model` is set for `lowest-cost` (Claude/Gemini only) and for `local-free` with an endpoint. For Ollama the loop picks the model itself from the installed models. With `hybrid`, the first cloud CLI (`codex`, `claude`, `agy`, `gemini`) plans and the local model reviews and builds.
 5. **Explicit roles** (`architekt`, `bauer_model`, …) override the choice and end up as flags in the command. The optimizer shows model names only for Claude and Gemini; other CLIs use their CLI default.
@@ -143,7 +151,7 @@ claudegravity-mcp                                              # no arguments: s
 | Flag | Description | Default |
 | :--- | :--- | :--- |
 | `--optimize`, `-o <task>` | Analyze the task and print a recommendation | – |
-| `--priority` | `best-code`, `quality`, `eco`, `lowest-cost`, `cost`, `local-free`, `free`, `local`, `hybrid`, `mixed`, `balanced` | `balanced` |
+| `--priority` | `auto`, `best-code`, `quality`, `eco`, `lowest-cost`, `cost`, `local-free`, `free`, `local`, `hybrid`, `mixed`, `balanced` | `auto` |
 | `--endpoint <url>` | Endpoint for the Builder | – |
 | `-p`, `--project` | Target project | `.` |
 | `-i`, `--ask` | Question mode in the command | off |

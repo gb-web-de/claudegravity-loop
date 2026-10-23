@@ -20,6 +20,10 @@ class ServerEntryTest(unittest.TestCase):
         with mock.patch.object(install, "PROJECT_DIR", ROOT):
             self.assertEqual(install.server_entry()["env"]["CLAUDEGRAVITY_PROJECT"], str(ROOT))
 
+    def test_host_is_set_per_client(self):
+        self.assertEqual(install.server_entry(host="agy")["env"]["CLAUDEGRAVITY_HOST"], "agy")
+        self.assertNotIn("CLAUDEGRAVITY_HOST", install.server_entry()["env"])
+
 
 if __name__ == "__main__":
     unittest.main()

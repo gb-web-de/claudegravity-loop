@@ -64,19 +64,21 @@ def python_command() -> str:
     return str(Path(sys.executable).absolute())
 
 
-def server_env() -> dict:
-    """Umgebung für den MCP-Server: UTF-8 und optional das Standardprojekt."""
+def server_env(host: str | None = None) -> dict:
+    """Umgebung für den MCP-Server: UTF-8, der Client als Architekt (CLAUDEGRAVITY_HOST) und optional das Standardprojekt."""
     env = {"PYTHONIOENCODING": "utf-8"}
+    if host:
+        env["CLAUDEGRAVITY_HOST"] = host
     if PROJECT_DIR is not None:
         env["CLAUDEGRAVITY_PROJECT"] = str(PROJECT_DIR)
     return env
 
 
-def server_entry(extra: dict | None = None) -> dict:
+def server_entry(extra: dict | None = None, host: str | None = None) -> dict:
     entry = {
         "command": python_command(),
         "args": [str(MCP_SCRIPT)],
-        "env": server_env(),
+        "env": server_env(host),
     }
     if extra:
         entry.update(extra)
@@ -118,13 +120,13 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def json_client(path: Path, key: str = "mcpServers", extra: dict | None = None):
+def json_client(path: Path, key: str = "mcpServers", extra: dict | None = None, host: str | None = None):
     def install() -> bool:
         data = read_json(path)
         if data is None:
             return False
         servers = data.setdefault(key, {})
-        new = server_entry(extra)
+        new = server_entry(extra, host)
         if servers.get(SERVER_NAME) == new:
             say("=", f"bereits aktuell: {path}")
             return True
@@ -174,7 +176,7 @@ def codex_client():
                 f"[mcp_servers.{SERVER_NAME}]",
                 f"command = {json.dumps(python_command())}",
                 f"args = [{json.dumps(str(MCP_SCRIPT))}]",
-                "env = { " + ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in server_env().items()) + " }",
+                "env = { " + ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in server_env("codex").items()) + " }",
                 MARK_END,
                 "",
             ]
@@ -245,7 +247,7 @@ def claude_code_client():
             return True
         if status():
             run_cli([exe, "mcp", "remove", SERVER_NAME, "--scope", "user"])
-        env_args = [arg for k, v in server_env().items() for arg in ("-e", f"{k}={v}")]
+        env_args = [arg for k, v in server_env("claude").items() for arg in ("-e", f"{k}={v}")]
         res = run_cli([exe, "mcp", "add", "--scope", "user", SERVER_NAME, *env_args, "--", python_command(), str(MCP_SCRIPT)])
         if res.returncode != 0:
             say("!", f"claude mcp add fehlgeschlagen: {(res.stderr or res.stdout).strip()}")
@@ -268,9 +270,21 @@ def clients() -> dict[str, tuple[str, bool, tuple]]:
     vscode_user = app_data_dir() / "Code" / "User"
     return {
         "claude": ("Claude Code", bool(shutil.which("claude")), claude_code_client()),
-        "claude-desktop": ("Claude Desktop", claude_desktop.is_dir(), json_client(claude_desktop / "claude_desktop_config.json")),
-        "gemini": ("Gemini CLI", bool(shutil.which("gemini")) or gemini_dir.is_dir(), json_client(gemini_dir / "settings.json")),
-        "antigravity": ("Google Antigravity", bool(shutil.which("agy")) or agy_dir.is_dir(), json_client(agy_dir / "mcp_config.json")),
+        "claude-desktop": (
+            "Claude Desktop",
+            claude_desktop.is_dir(),
+            json_client(claude_desktop / "claude_desktop_config.json", host="claude"),
+        ),
+        "gemini": (
+            "Gemini CLI",
+            bool(shutil.which("gemini")) or gemini_dir.is_dir(),
+            json_client(gemini_dir / "settings.json", host="gemini"),
+        ),
+        "antigravity": (
+            "Google Antigravity",
+            bool(shutil.which("agy")) or agy_dir.is_dir(),
+            json_client(agy_dir / "mcp_config.json", host="agy"),
+        ),
         "codex": ("OpenAI Codex CLI", bool(shutil.which("codex")) or (HOME / ".codex").is_dir(), codex_client()),
         "copilot": (
             "GitHub Copilot CLI",

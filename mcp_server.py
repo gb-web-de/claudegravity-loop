@@ -42,9 +42,24 @@ SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", MCP_PROTOCOL_VERSION)
 SERVER_NAME = "claudegravity-mcp"
 SERVER_VERSION = "1.4.0"
 PROJECT_ENV = "CLAUDEGRAVITY_PROJECT"
+HOST_ENV = "CLAUDEGRAVITY_HOST"
+# clientInfo.name aus initialize → Backend-Schlüssel des Loops (Teilstring, klein geschrieben, erster Treffer gilt)
+HOST_CLIENT_BACKENDS = (
+    ("codex", "codex"),
+    ("antigravity", "agy"),
+    ("agy", "agy"),
+    ("gemini", "gemini"),
+    ("claude", "claude"),
+    ("copilot", "copilot"),
+)
+HOST_LABELS = {"codex": "Codex", "agy": "Antigravity", "gemini": "Gemini CLI", "claude": "Claude", "copilot": "GitHub Copilot"}
+# Lokale Server, bei denen priority "auto" zur Strategie hybrid wird
+LOCAL_SERVER_KEYS = ("ollama", "lmstudio", "endpoint")
+# Client, der den Server gestartet hat (aus initialize)
+HOST_CLIENT: dict = {}
 SERVER_INSTRUCTIONS = (
     "ClaudeGravity lässt Plan, Review und Bau von getrennten Anbietern erledigen. Ablauf: claudegravity_optimize zeigt die "
-    "Rollenbelegung, claudegravity_run mit background=true startet den Lauf, claudegravity_status zeigt den Fortschritt, "
+    "Rollenbelegung (der aufrufende Client wird Architekt, ein lokales Ollama prüft und baut), claudegravity_run mit background=true startet den Lauf, claudegravity_status zeigt den Fortschritt, "
     "claudegravity_stop bricht ab. project_path immer als absoluten Pfad angeben, weil Desktop-Apps den Server nicht im "
     "Projektordner starten. yolo nur auf ausdrücklichen Wunsch setzen."
 )
@@ -75,6 +90,11 @@ def extra_path_dirs(home: Path | None = None) -> list[Path]:
             home / ".volta" / "bin",
             home / ".cargo" / "bin",
             home / "bin",
+            # CLIs, die Desktop-Apps mitbringen (nur, wenn vorhanden)
+            Path("/Applications/Codex.app/Contents/Resources"),
+            Path("/Applications/Antigravity.app/Contents/Resources/app/bin"),
+            home / ".antigravity" / "antigravity" / "bin",
+            Path("/Applications/Ollama.app/Contents/Resources"),
         ]
         # nvm: alle installierten Node-Versionen, neueste zuerst
         nvm = home / ".nvm" / "versions" / "node"
@@ -120,6 +140,15 @@ def resolve_project_dir(raw: str | None) -> tuple[Path | None, str | None]:
     if not path.is_dir():
         return None, f"Fehler: Projektpfad '{path}' existiert nicht."
     return path, None
+
+
+def host_backend(client_name: str | None = None) -> str | None:
+    """Backend-Schlüssel des aufrufenden Clients: CLAUDEGRAVITY_HOST, sonst clientInfo.name aus initialize."""
+    forced = os.environ.get(HOST_ENV, "").strip().lower()
+    if forced:
+        return None if forced in ("aus", "off", "none") else forced
+    name = (client_name if client_name is not None else HOST_CLIENT.get("name", "")).lower()
+    return next((key for part, key in HOST_CLIENT_BACKENDS if part in name), None)
 
 
 def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
@@ -364,7 +393,7 @@ def format_session_status(project_dir: Path, log_lines: int = 15) -> str:
 
 def optimize_claudegravity_command(
     task: str,
-    priority: str = "balanced",
+    priority: str = "auto",
     project_path: str = ".",
     endpoint: str | None = None,
     ask_mode: bool = False,
@@ -389,6 +418,10 @@ def optimize_claudegravity_command(
         p_norm = "local-free"
     elif p_norm in ["hybrid", "mixed"]:
         p_norm = "hybrid"
+    elif p_norm in ["auto", ""]:
+        # Cloud plant, lokales Modell prüft und baut, sobald Ollama, LM Studio oder ein Endpunkt erreichbar ist
+        p_norm = "hybrid" if endpoint or any(k in agents for k in LOCAL_SERVER_KEYS) else "balanced"
+        priority = "auto"
     else:
         p_norm = "balanced"
 
@@ -508,6 +541,20 @@ def optimize_claudegravity_command(
     if p_norm in ("best-code", "lowest-cost", "balanced") and builder_cli not in MODEL_AWARE_CLIS:
         builder_model = DEFAULT_MODEL
 
+    # Der Client, aus dem der Server aufgerufen wird, führt den Loop als Architekt, wenn seine CLI installiert ist.
+    # Ausdrückliche Rollen gehen vor; der Prüfstatiker bleibt ein anderer Anbieter.
+    host = host_backend()
+    host_leads = bool(host and host in agents and "architekt" not in roles)
+    if host_leads:
+        if host != planner_cli:
+            if builder_cli == planner_cli and "bauer" not in roles:
+                roles["bauer"] = host
+            roles["architekt"] = host
+        if reviewer_cli == host and "pruefstatiker" not in roles:
+            alternative = next((k for k in LOCAL_BACKEND_ORDER + CLOUD_PLANNER_ORDER if k in agents and k != host), None)
+            if alternative:
+                roles["pruefstatiker"] = alternative
+
     # Ausdrückliche Rollen aus dem Aufruf haben Vorrang
     planner_cli = roles.get("architekt", planner_cli)
     reviewer_cli = roles.get("pruefstatiker", reviewer_cli)
@@ -568,6 +615,8 @@ def optimize_claudegravity_command(
     return {
         "task": task,
         "priority": p_norm,
+        "priority_auto": priority == "auto",
+        "host": {"backend": host, "client": HOST_CLIENT.get("name"), "leads": host_leads},
         "complexity_analysis": comp,
         "strategy": strategy_flag,
         "roles": {
@@ -609,6 +658,17 @@ def optimize_claudegravity_command(
     }
 
 
+def host_lines(host: dict) -> list[str]:
+    """Zeile zum aufrufenden Client für die Empfehlung (leer, wenn keiner erkannt wurde)."""
+    backend = host.get("backend")
+    if not backend:
+        return []
+    label = HOST_LABELS.get(backend, backend)
+    if host.get("leads"):
+        return [f"* **Aufgerufen aus:** {label} – führt den Loop als Architekt (`{backend}`)"]
+    return [f"* **Aufgerufen aus:** {label} – CLI `{backend}` nicht im PATH, daher nicht als Rolle eingesetzt"]
+
+
 def format_optimization_markdown(opt: dict) -> str:
     """Empfehlung von claudegravity_optimize als Markdown mit Rollen und Startbefehlen für Bash, CMD und PowerShell."""
     r = opt["roles"]
@@ -619,7 +679,10 @@ def format_optimization_markdown(opt: dict) -> str:
     lines = [
         "### 🎯 ClaudeGravity Optimierungs-Empfehlung",
         f"* **Aufgabe:** {opt['task']}",
-        f"* **Gewählte Priorität:** `{opt['priority']}` (Erkannte Komplexität: {opt['complexity_analysis']['complexity']})",
+        f"* **Gewählte Priorität:** `{opt['priority']}`"
+        + (" (automatisch)" if opt.get("priority_auto") else "")
+        + f" (Erkannte Komplexität: {opt['complexity_analysis']['complexity']})",
+        *host_lines(opt.get("host") or {}),
         "",
         "#### 👥 Rollen- und Modellbelegung:",
         f"1. **{r['architekt']['role']}**",
@@ -714,9 +777,9 @@ MCP_TOOLS = [
                 "task": {"type": "string", "description": "Beschreibung der Programmieraufgabe, des Refactorings oder des neuen Features."},
                 "priority": {
                     "type": "string",
-                    "enum": ["best-code", "lowest-cost", "local-free", "hybrid", "balanced"],
-                    "default": "balanced",
-                    "description": "best-code (Frontier-Modelle), lowest-cost (bis zu 70% Ersparnis), local-free (0€ Bauleiter via Ollama, LM Studio oder Server im Heimnetz), hybrid (Cloud-CLI wie Codex plant und nimmt ab, Ollama prüft und baut in Etappen), balanced (ausgewogen).",
+                    "enum": ["auto", "best-code", "lowest-cost", "local-free", "hybrid", "balanced"],
+                    "default": "auto",
+                    "description": "auto (hybrid, sobald Ollama, LM Studio oder ein Endpunkt erreichbar ist, sonst balanced), best-code (Frontier-Modelle), lowest-cost (bis zu 70% Ersparnis), local-free (0€ Bauleiter via Ollama, LM Studio oder Server im Heimnetz), hybrid (der aufrufende Client bzw. eine Cloud-CLI plant und nimmt ab, Ollama prüft und baut in Etappen), balanced (ausgewogen).",
                 },
                 "endpoint": {
                     "type": "string",
@@ -762,8 +825,9 @@ MCP_TOOLS = [
                 "task": {"type": "string", "description": "Die auszuführende Aufgabe."},
                 "priority": {
                     "type": "string",
-                    "enum": ["best-code", "lowest-cost", "local-free", "hybrid", "balanced"],
-                    "default": "balanced",
+                    "enum": ["auto", "best-code", "lowest-cost", "local-free", "hybrid", "balanced"],
+                    "default": "auto",
+                    "description": "Wie bei claudegravity_optimize; auto nimmt hybrid, wenn ein lokales Modell erreichbar ist.",
                 },
                 "endpoint": {"type": "string", "description": "Optionaler KI-Endpunkt."},
                 "project_path": {
@@ -889,7 +953,7 @@ def optimize_from_arguments(arguments: dict, project_path: str) -> dict:
         max_iterations = 10
     return optimize_claudegravity_command(
         task=arguments.get("task", ""),
-        priority=arguments.get("priority", "balanced"),
+        priority=arguments.get("priority") or "auto",
         project_path=project_path,
         endpoint=arguments.get("endpoint"),
         ask_mode=bool(arguments.get("ask_mode", False)),
@@ -977,6 +1041,7 @@ def format_info() -> str:
         f"* **Skript:** `{Path(__file__).resolve()}`",
         f"* **Arbeitsverzeichnis:** `{Path.cwd()}`",
         f"* **{PROJECT_ENV}:** `{os.environ.get(PROJECT_ENV) or '–'}`",
+        f"* **Aufrufender Client:** {HOST_CLIENT.get('name') or '–'}" + (f" → Architekt `{host_backend()}`" if host_backend() else ""),
         f"* **PATH ergänzt um:** {', '.join(f'`{d}`' for d in ADDED_PATH_DIRS) or '–'}",
         "",
         "### 🔍 Erkannte KI-Systeme & Endpoints auf diesem System:",
@@ -1019,6 +1084,9 @@ def handle_message(req) -> dict | None:
         return None
     try:
         if method == "initialize":
+            client = params.get("clientInfo") or {}
+            HOST_CLIENT.clear()
+            HOST_CLIENT.update({k: str(client.get(k, "")) for k in ("name", "version") if client.get(k)})
             result = {
                 "protocolVersion": negotiate_protocol_version(params.get("protocolVersion")),
                 "capabilities": {"tools": {"listChanged": False}},
@@ -1093,9 +1161,22 @@ def main():
     parser.add_argument("--optimize", "-o", dest="optimize_task", default=None, help="Aufgabe analysieren und optimalen Befehl ausgeben")
     parser.add_argument(
         "--priority",
-        default="balanced",
-        choices=["best-code", "quality", "eco", "lowest-cost", "cost", "local-free", "free", "local", "hybrid", "mixed", "balanced"],
-        help="Priorität: best-code, lowest-cost, local-free, hybrid, balanced",
+        default="auto",
+        choices=[
+            "auto",
+            "best-code",
+            "quality",
+            "eco",
+            "lowest-cost",
+            "cost",
+            "local-free",
+            "free",
+            "local",
+            "hybrid",
+            "mixed",
+            "balanced",
+        ],
+        help="Priorität: auto (hybrid, wenn ein lokales Modell erreichbar ist), best-code, lowest-cost, local-free, hybrid, balanced",
     )
     parser.add_argument("--endpoint", default=None, help="KI-Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
     parser.add_argument("-p", "--project", default=".", help="Zielprojekt-Pfad")
