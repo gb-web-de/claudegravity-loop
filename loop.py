@@ -58,6 +58,19 @@ PLANNING_DIRECTIVE = (
     "- Beginne sofort mit dem Markdown-Inhalt des Plans (ohne Tool-Aufrufe zum Dateischreiben).\n"
 )
 
+# Etappen: Der Architekt schneidet den Plan in kleine Stücke, die der Bauleiter einzeln umsetzt
+STAGE_PLANNING = False
+STAGE_DIRECTIVE = (
+    "- Schließe den Plan mit dem Abschnitt `## Etappen` ab: eine nummerierte Liste (`1.`, `2.`, …) mit 2 bis 8 Etappen,\n"
+    "  die nacheinander umsetzbar sind. Jede Etappe ändert höchstens zwei Dateien, nennt deren relative Pfade\n"
+    "  und ist danach mit dem Prüfbefehl testbar. Eine Etappe pro Listenpunkt, ohne Unterpunkte.\n"
+)
+STAGE_MAX_TRIES = 3
+
+
+def planning_directive() -> str:
+    return PLANNING_DIRECTIVE + (STAGE_DIRECTIVE if STAGE_PLANNING else "")
+
 
 def sigint_handler(signum, frame):
     global STOP_REQUESTED
@@ -739,6 +752,52 @@ def ollama_base_url() -> str:
     if ":" in name:
         name = f"[{name}]"
     return f"{parts.scheme}://{name}:{parts.port or 11434}"
+
+
+# Bevorzugte Ollama-Modelle je Rolle (Familien in Reihenfolge, Name beginnt mit dem Eintrag)
+OLLAMA_ROLE_PREFERENCES = {
+    "builder": ("qwen3-coder", "qwen2.5-coder", "devstral", "deepseek-coder", "codestral", "codellama", "starcoder"),
+    "reviewer": ("gpt-oss", "qwen3:", "deepseek-r1", "qwen3", "gemma3", "llama3", "mistral"),
+    "planner": ("qwen3:", "gpt-oss", "qwen3", "deepseek-r1", "qwen2.5-coder", "gemma3", "llama3"),
+}
+# Größere Modelle passen auf typischen Rechnern (bis ~48 GB) nicht mehr neben ein zweites
+OLLAMA_MAX_AUTO_BYTES = 25 * 1024 ** 3
+
+
+def list_ollama_models(base_url: str, timeout: float = 2.0) -> list[dict]:
+    """Installierte Modelle laut /api/tags: [{"name": ..., "size": Bytes}], leer bei Fehlern."""
+    try:
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return []
+    models = []
+    for m in data.get("models") or []:
+        name = m.get("name") or m.get("model")
+        if name:
+            models.append({"name": name, "size": int(m.get("size") or 0)})
+    return models
+
+
+def pick_ollama_model(models: list[dict], role: str, exclude: set[str] | tuple = ()) -> str | None:
+    """Wählt ein installiertes Modell für die Rolle: bevorzugte Familie, darin das größte, das noch passt."""
+    candidates = [m for m in models if m["name"] not in exclude and "embed" not in m["name"].lower()]
+    if not candidates:
+        return None
+
+    def best(group: list[dict]) -> str:
+        fitting = [m for m in group if m["size"] <= OLLAMA_MAX_AUTO_BYTES]
+        if fitting:
+            return max(fitting, key=lambda m: m["size"])["name"]
+        return min(group, key=lambda m: m["size"])["name"]
+
+    for prefix in OLLAMA_ROLE_PREFERENCES.get(role, ()):
+        group = [m for m in candidates if m["name"].lower().startswith(prefix)]
+        if prefix == "qwen3" or prefix == "qwen3:":
+            group = [m for m in group if not m["name"].lower().startswith("qwen3-coder")]
+        if group:
+            return best(group)
+    return best(candidates)
 
 
 SECRET_PATTERNS = [
@@ -1591,7 +1650,7 @@ def run_adversarial_plan(
             f"Aufgabe: {task}\n\n"
             f"{project_ctx}\n\n"
             f"Enthalte: Betroffene Dateien, Architektur, Randfälle und Testkriterien."
-            f"{PLANNING_DIRECTIVE}"
+            f"{planning_directive()}"
         )
         if ask_mode:
             prompt_plan += (
@@ -1648,7 +1707,7 @@ def run_adversarial_plan(
                         f"Der Nutzer hat wie folgt geantwortet:\n{user_ans}\n\n"
                         f"Bisheriger Entwurf:\n{plan}\n\n"
                         f"Finalisiere nun den Plan v1 vollständig unter Berücksichtigung dieser Nutzer-Entscheidungen."
-                        f"{PLANNING_DIRECTIVE}"
+                        f"{planning_directive()}"
                     )
                     plan, planner, planner_flags = safe_agent_run(
                         agent=planner,
@@ -1845,7 +1904,7 @@ def run_adversarial_plan(
                 f"ein Verhalten ersetzt, ändere jede Stelle im Plan, die noch das alte Verhalten beschreibt. "
                 f"Lehne unbegründete Befunde mit Begründung ab, statt blind nachzugeben. Hänge am Ende einen Abschnitt "
                 f"'## Stellungnahme zu den Befunden' an (je Befund: übernommen oder abgelehnt, mit Grund)."
-                f"{PLANNING_DIRECTIVE}"
+                f"{planning_directive()}"
             )
             plan, planner, planner_flags = safe_agent_run(
                 agent=planner,
@@ -1935,6 +1994,54 @@ def collect_build_changes(work_path: Path, base: str | None, limit: int = 60000)
     return text
 
 
+STAGE_HEADING = re.compile(r"^#{1,6}\s*(?:\d+[.)]?\s*)?(?:Etappen|Stages|Arbeitspakete)\b.*$", re.IGNORECASE | re.MULTILINE)
+STAGE_ITEM = re.compile(r"^\s{0,3}(?:\d+[.)]|[-*]\s+(?:Etappe|Stage)\s*\d+[:.)]?)\s+(.+)$")
+FILE_MENTION = re.compile(r"`?((?:[\w.-]+/)*[\w-]+\.[A-Za-z0-9]{1,8})`?")
+
+
+def parse_stages(plan_text: str) -> list[str]:
+    """Etappen aus dem Abschnitt `## Etappen` des Plans (letzter solcher Abschnitt zählt)."""
+    headings = list(STAGE_HEADING.finditer(plan_text))
+    if not headings:
+        return []
+    section = plan_text[headings[-1].end():]
+    stages: list[str] = []
+    for line in section.splitlines():
+        if re.match(r"^#{1,6}\s", line):
+            break
+        m = STAGE_ITEM.match(line)
+        if m:
+            stages.append(m.group(1).strip())
+        elif stages and line.startswith(("   ", "\t")) and line.strip():
+            stages[-1] += " " + line.strip()
+    return stages
+
+
+def stage_file_context(work_path: Path, text: str, extra: list[str] | None = None, limit: int = 40000) -> str:
+    """Aktueller Inhalt der in `text` genannten und der schon geschriebenen Dateien, für Bauleiter ohne Dateizugriff."""
+    names: list[str] = []
+    for name in list(extra or []) + FILE_MENTION.findall(text):
+        name = name.strip("`")
+        if name not in names:
+            names.append(name)
+    parts, used = [], 0
+    for name in names:
+        target = resolve_project_target(work_path, name)
+        if target is None or not target.is_file():
+            continue
+        try:
+            body = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        block = f"```filepath: {name}\n{body}\n```"
+        if used + len(block) > limit:
+            parts.append(f"(weitere Dateien ausgelassen, Grenze {limit} Zeichen: {name} …)")
+            break
+        parts.append(block)
+        used += len(block)
+    return "\n".join(parts)
+
+
 def run_proof(command: str, cwd: Path, timeout: int = 900) -> tuple[bool, str]:
     """Führt den vereinbarten Prüfbefehl selbst aus, ohne Shell. Liefert (grün, Ausgabe-Ende)."""
     argv = shlex.split(command, posix=os.name != "nt")
@@ -1954,6 +2061,137 @@ def run_proof(command: str, cwd: Path, timeout: int = 900) -> tuple[bool, str]:
         return False, f"Prüfbefehl nach {timeout} s abgebrochen."
     output = (res.stdout + "\n" + res.stderr).strip()
     return res.returncode == 0, f"Exit-Code {res.returncode}\n{output[-4000:]}"
+
+
+# Backends ohne eigenen Dateizugriff: Der Loop schreibt ihre filepath-Blöcke und gibt ihnen Plan und Dateistand mit
+ENDPOINT_BINARIES = ("endpoint", "ollama", "lmstudio", "copilot", "architekt_ep", "pruefstatiker_ep", "bauer_ep")
+CLOUD_PLANNER_ORDER = ("codex", "claude", "agy", "gemini")
+LOCAL_BACKEND_ORDER = ("bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli")
+OLLAMA_KEYS = ("ollama", "ollama-cli")
+HYBRID_STRATEGIES = ("hybrid", "mixed")
+
+
+def stages_wanted(mode: str | None, builder_binary: str) -> bool:
+    """Etappen-Modus an? `auto` schaltet ihn für Bauleiter ohne eigenen Dateizugriff ein."""
+    mode = (mode or "auto").lower()
+    if mode in ("an", "on"):
+        return True
+    if mode in ("aus", "off"):
+        return False
+    return builder_binary in ENDPOINT_BINARIES
+
+
+def apply_auto_roles(args, agents: dict[str, AgentCLI], models: list[dict] | None = None) -> list[str]:
+    """Füllt fehlende Rollen (Strategie hybrid) und Ollama-Modelle aus den installierten Modellen.
+
+    Ausdrückliche Angaben des Nutzers bleiben immer unverändert. Liefert Hinweise für die Ausgabe.
+    """
+    notes: list[str] = []
+    if getattr(args, "resume", False):
+        return notes
+    strat = (args.strategy or "").lower()
+    if strat in HYBRID_STRATEGIES:
+        cloud = next((k for k in CLOUD_PLANNER_ORDER if k in agents), None)
+        local = next((k for k in LOCAL_BACKEND_ORDER if k in agents), None)
+        if not cloud or not local:
+            notes.append(
+                "⚠️ Strategie hybrid braucht eine Cloud-CLI (codex, claude, agy oder gemini) und ein lokales Modell "
+                "(Ollama, LM Studio oder --endpoint). Es fehlt: " + ("Cloud-CLI" if not cloud else "lokales Modell") + "."
+            )
+        else:
+            args.planner = args.planner or cloud
+            args.reviewer = args.reviewer or local
+            args.builder = args.builder or local
+            if not args.inspector:
+                args.inspector = args.planner if args.planner != args.builder else cloud
+            notes.append(
+                f"🧭 Strategie hybrid: Architekt {args.planner}, Prüfstatiker {args.reviewer}, "
+                f"Bauleiter {args.builder}, Abnahme {args.inspector}."
+            )
+
+    builder_key = args.builder
+    if not builder_key and strat in ("local-free", "free", "local"):
+        builder_key = next((k for k in LOCAL_BACKEND_ORDER if k in agents), None)
+    roles = [
+        ("Bauleiter", builder_key, "builder_model", "builder"),
+        ("Architekt", args.planner, "planner_model", "planner"),
+        ("Prüfstatiker", args.reviewer, "reviewer_model", "reviewer"),
+        ("Abnahme", args.inspector, "inspector_model", "reviewer"),
+    ]
+    if not any(key in OLLAMA_KEYS and not getattr(args, attr) for _, key, attr, _ in roles):
+        return notes
+    if models is None:
+        models = list_ollama_models(ollama_base_url())
+    if not models:
+        notes.append("⚠️ Keine Ollama-Modelle gefunden (/api/tags). Es gelten die Standardmodelle; installiere eins mit `ollama pull`.")
+        return notes
+
+    for label, key, attr, pref in roles:
+        if key not in OLLAMA_KEYS or getattr(args, attr):
+            continue
+        exclude: set[str] = set()
+        if attr in ("reviewer_model", "inspector_model") and builder_key in OLLAMA_KEYS and args.builder_model:
+            exclude.add(args.builder_model)
+        if attr == "reviewer_model" and args.planner in OLLAMA_KEYS and args.planner_model:
+            exclude.add(args.planner_model)
+        if attr == "planner_model" and args.reviewer in OLLAMA_KEYS and args.reviewer_model:
+            exclude.add(args.reviewer_model)
+        chosen = pick_ollama_model(models, pref, exclude)
+        if chosen is None:
+            chosen = pick_ollama_model(models, pref)
+            notes.append(f"⚠️ Nur ein passendes Ollama-Modell installiert: {label} nutzt {chosen} wie eine andere Rolle und ist damit nicht unabhängig.")
+        setattr(args, attr, chosen)
+        notes.append(f"🤖 {label}: Ollama-Modell {chosen} automatisch gewählt (ändern mit --{ROLE_MODEL_FLAGS[attr]}).")
+    return notes
+
+
+ROLE_MODEL_FLAGS = {
+    "builder_model": "bauer-model",
+    "planner_model": "architekt-model",
+    "reviewer_model": "pruefstatiker-model",
+    "inspector_model": "abnahme-model",
+}
+
+
+def dry_run_command(args, task: str, strat: str, default_b_model: str | None = None) -> list[str]:
+    """Befehl, der genau die Belegung des Trockenlaufs startet (alle Rollen-, Modell- und Effort-Flags)."""
+    cmd = ["claudegravity", task]
+    if strat != "balanced":
+        cmd += ["--strategy", strat]
+    pairs = [
+        ("--endpoint", args.endpoint),
+        ("--architekt-endpoint", args.architekt_endpoint),
+        ("--pruefstatiker-endpoint", args.pruefstatiker_endpoint),
+        ("--bauer-endpoint", args.bauer_endpoint),
+        ("--architekt", args.planner),
+        ("--architekt-model", args.planner_model),
+        ("--architekt-effort", args.planner_effort),
+        ("--pruefstatiker", args.reviewer),
+        ("--pruefstatiker-model", args.reviewer_model),
+        ("--pruefstatiker-effort", args.reviewer_effort),
+        ("--bauer", args.builder),
+        ("--bauer-model", args.builder_model or default_b_model),
+        ("--bauer-effort", args.builder_effort),
+        ("--abnahme", args.inspector),
+        ("--abnahme-model", args.inspector_model),
+        ("--abnahme-effort", args.inspector_effort),
+        ("--effort", args.effort),
+        ("--proof", args.proof),
+    ]
+    for flag, value in pairs:
+        if value:
+            cmd += [flag, str(value)]
+    if args.etappen not in (None, "auto"):
+        cmd += ["--etappen", args.etappen]
+    for flag, on in (("--swap", args.swap), ("-i", args.ask), ("--yolo", args.yolo), ("--plan-auto", args.approve_plan),
+                     ("--auto-switch", args.auto_switch), ("--merge", args.merge), ("--no-inspect", not args.inspect)):
+        if on:
+            cmd.append(flag)
+    if args.max_iterations:
+        cmd += ["-m", str(args.max_iterations)]
+    if args.project != ".":
+        cmd += ["-p", args.project]
+    return cmd
 
 
 def same_identity(a: AgentCLI, b: AgentCLI) -> bool:
@@ -2151,7 +2389,7 @@ def handle_plan_approval_and_changes(
                         f"Feedback: {feedback}\n\n"
                         f"Aktueller Plan:\n{old_plan}\n\n"
                         f"Bitte überarbeite den Plan und gib den vollständigen neuen Markdown-Plan aus."
-                        f"{PLANNING_DIRECTIVE}"
+                        f"{planning_directive()}"
                     )
                     new_plan, planner, planner_flags = safe_agent_run(
                         agent=planner,
@@ -2190,7 +2428,7 @@ def main():
     parser = argparse.ArgumentParser(description="ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop")
     parser.add_argument("task", nargs="?", default="", help="Die Aufgabe für den Loop")
     parser.add_argument("-p", "--project", default=".", help="Pfad zum Ziel-Projekt (absolut oder relativ, Standard: .)")
-    parser.add_argument("-m", "--max-iterations", type=int, default=10, help="Maximale autonome Iterationen (Standard: 10)")
+    parser.add_argument("-m", "--max-iterations", type=int, default=None, help="Maximale autonome Iterationen (Standard: 10, im Etappen-Modus 2 pro Etappe + 2)")
     parser.add_argument("-c", "--resume", "--continue", dest="resume", action="store_true", help="Unterbrochene Sitzung fortsetzen")
     parser.add_argument("-i", "--ask", "--interview", "--clarify", action="store_true", help="Fragen-Modus: Beide Agenten stellen bei Unklarheiten gezielte Fragen an dich, bevor der Plan finalisiert wird")
     parser.add_argument("--planner", "--architekt", default=None, help="Explizite CLI für Architekt / Planung (z.B. claude oder agy)")
@@ -2211,7 +2449,7 @@ def main():
     parser.add_argument("--architekt-endpoint", default=None, help="Spezifischer Endpunkt für den Architekten")
     parser.add_argument("--pruefstatiker-endpoint", default=None, help="Spezifischer Endpunkt für den Prüfstatiker")
     parser.add_argument("--bauer-endpoint", default=None, help="Spezifischer Endpunkt für den Bauleiter (Phase 3)")
-    parser.add_argument("--strategy", "--preset", default="balanced", choices=["best-code", "quality", "eco", "economy", "cost", "local-free", "free", "local", "balanced"], help="Optimierungs-Strategie: best-code (beste Qualität), eco (bis zu 70%% Ersparnis), local-free (0€ Kosten in Phase 3 via Lokal/Intranet-Modell), balanced (Standard)")
+    parser.add_argument("--strategy", "--preset", default="balanced", choices=["best-code", "quality", "eco", "economy", "cost", "local-free", "free", "local", "hybrid", "mixed", "balanced"], help="Optimierungs-Strategie: best-code (beste Qualität), eco (bis zu 70%% Ersparnis), local-free (0€ Kosten in Phase 3 via Lokal/Intranet-Modell), hybrid (Cloud-CLI plant und nimmt ab, lokales Modell prüft und baut in Etappen), balanced (Standard)")
     parser.add_argument("--dry-run", action="store_true", help="Trockenlauf: Zeigt Rollen, Modelle, Kosten-Analyse und generierten Befehl ohne Ausführung")
     parser.add_argument("--auto-switch", "--fallback", action="store_true", help="Bei Erreichen eines AI-Limits automatisch zum alternativen Modell wechseln")
     parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
@@ -2226,10 +2464,12 @@ def main():
     parser.add_argument("--inspector-effort", "--abnahme-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität für die Abnahme")
     parser.add_argument("--max-inspections", type=int, default=2, help="Maximale Abnahme-Runden pro Lauf (Standard: 2)")
     parser.add_argument("--no-inspect", "--ohne-abnahme", dest="inspect", action="store_false", help="Abnahme durch einen anderen Anbieter auslassen (wird im LOG.md vermerkt)")
+    parser.add_argument("--plan-auto", "--approve-plan", dest="approve_plan", action="store_true", help="Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (sonst kein Bau); für Läufe ohne Terminal")
+    parser.add_argument("--etappen", "--stages", default="auto", choices=["auto", "an", "aus", "on", "off"], help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)")
 
     args = parser.parse_args()
 
-    global ENDPOINT_TIMEOUT, SHIELD_ENABLED
+    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING
     env_timeout = os.environ.get("CLAUDEGRAVITY_TIMEOUT", "")
     ENDPOINT_TIMEOUT = args.timeout or (int(env_timeout) if env_timeout.isdigit() else None)
     SHIELD_ENABLED = not args.no_shield and os.environ.get("CLAUDEGRAVITY_SHIELD", "").lower() != "off"
@@ -2308,6 +2548,9 @@ def main():
             print("  • '--strategy local-free' : 0 € Kosten im Bau-Loop – aktuell kein lokaler Server erkannt")
             print("                             (Ollama, LM Studio oder --bauer-endpoint <url> angeben)")
         print("  • '--strategy best-code'  : Effort high in allen 3 Phasen (wirkt nur bei agy)")
+        hybrid_cloud = next((agents[k].name for k in CLOUD_PLANNER_ORDER if k in agents), None)
+        if hybrid_cloud and local_cand:
+            print(f"  • '--strategy hybrid'     : {hybrid_cloud} plant und nimmt ab, {local_cand.name} prüft und baut in Etappen")
         print("=" * 68)
         print("\n⚙️  Wichtigste Steuerungs-Flags:")
         print("  - Strategie-Presets      : --strategy <best-code|eco|local-free|balanced>")
@@ -2320,8 +2563,13 @@ def main():
         print("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
         print("  - Prüfbefehl             : --proof \"python -m unittest\" (Loop führt ihn nach jeder Bau-Runde selbst aus)")
         print("  - Abnahme                : --abnahme <cli> (prüft den fertigen Code, nie der Bauleiter; --no-inspect schaltet ab)")
+        print("  - Etappen                : --etappen auto|an|aus (Plan in kleinen Stücken; auto: an bei lokalen Bauleitern)")
+        print("  - Ohne Freigabe-Menü     : --plan-auto (baut nur, wenn der Prüfstatiker APPROVED meldet)")
         print("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert inkl. Rolle, Modell & Effort)")
         return
+
+    for note in apply_auto_roles(args, agents):
+        print(note)
 
     project_path = Path(args.project).resolve()
     if not project_path.exists():
@@ -2400,7 +2648,7 @@ def main():
             default_b_effort = "low"
             builder_choice = args.builder or planner.binary
             builder = agents.get(builder_choice, planner)
-            default_b_model = "claude-3-5-haiku" if builder.binary == "claude" else "gemini-2.5-flash"
+            default_b_model = {"claude": "claude-3-5-haiku", "agy": "gemini-2.5-flash", "gemini": "gemini-2.5-flash"}.get(builder.binary)
         elif strat == "local-free":
             default_p_effort = "high"
             default_r_effort = "high"
@@ -2452,13 +2700,24 @@ def main():
         if not args.inspect:
             print("   • Abgeschaltet (--no-inspect)")
         else:
-            dry_candidates = [agents[args.inspector]] if args.inspector in agents else []
-            dry_inspector = pick_inspector(builder, dry_candidates + [reviewer, planner], agents)
+            def with_model(agent: AgentCLI, model: str | None) -> AgentCLI:
+                return AgentCLI(agent.name, agent.binary, agent.run_fn, model=model if model and model != DEFAULT_MODEL_LABEL else None, local=agent.local)
+            dry_candidates = [with_model(agents[args.inspector], args.inspector_model)] if args.inspector in agents else []
+            dry_inspector = pick_inspector(
+                with_model(builder, b_model),
+                dry_candidates + [with_model(reviewer, r_model), with_model(planner, p_model)],
+                agents
+            )
             if dry_inspector is None:
                 print("   • Kein zweiter Anbieter verfügbar: keine unabhängige Abnahme möglich!")
             else:
                 print(f"   • CLI/Endpoint  : {dry_inspector.name} (`{dry_inspector.binary}`), nie der Bauleiter")
+                if dry_inspector.model or args.inspector_model:
+                    print(f"   • Modell        : {args.inspector_model or dry_inspector.model}")
         print(f"   • Prüfbefehl    : {args.proof or 'keiner (--proof <befehl>)'}")
+        dry_builder_final = builder if (args.builder or strat == "local-free") else planner
+        if stages_wanted(args.etappen, dry_builder_final.binary):
+            print("\n🧩 Etappen-Modus: Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede (--etappen aus schaltet ab).")
         print("\n💡 Wirtschaftlichkeits- & Qualitäts-Analyse:")
         if strat == "local-free":
             print(f"   • Spareffekt: 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3)!")
@@ -2468,6 +2727,9 @@ def main():
             print(f"   • Spareffekt: Bis zu ~70% Kosten- und Tokenersparnis!")
             print(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name} (Effort medium). Das ressourcenintensive")
             print(f"     Bauen in Phase 3 übernimmt {builder.name} mit dem Spar-Modell `{b_model}`.")
+        elif strat in HYBRID_STRATEGIES:
+            print(f"   • Spareffekt: Cloud nur für Plan und Abnahme ({planner.name}); Prüfung und Bau laufen lokal für 0 €.")
+            print(f"   • Grund: Kleine Etappen passen in den Kontext lokaler Modelle; jede Etappe prüft der Loop mit --proof.")
         elif strat == "best-code":
             print(f"   • Fokus: Höchste Code-Qualität, tiefes Reasoning und maximale Fehlertoleranz.")
             print(f"   • Alle Phasen laufen mit Effort high: {planner.name}, {reviewer.name}, {builder.name}.")
@@ -2476,40 +2738,8 @@ def main():
         else:
             print(f"   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
 
-        cmd_parts = ["claudegravity", f'"{dry_task}"']
-        if strat != "balanced":
-            cmd_parts.append(f"--strategy {strat}")
-        if args.endpoint:
-            cmd_parts.append(f"--endpoint {args.endpoint}")
-        if args.planner_model:
-            cmd_parts.append(f"--architekt-model {args.planner_model}")
-        if args.reviewer_model:
-            cmd_parts.append(f"--pruefstatiker-model {args.reviewer_model}")
-        if args.builder_model:
-            cmd_parts.append(f"--bauer-model {args.builder_model}")
-        elif default_b_model:
-            cmd_parts.append(f"--bauer-model {default_b_model}")
-        if args.effort:
-            cmd_parts.append(f"--effort {args.effort}")
-        if args.swap:
-            cmd_parts.append("--swap")
-        if args.ask:
-            cmd_parts.append("-i")
-        if args.yolo:
-            cmd_parts.append("--yolo")
-        if args.auto_switch:
-            cmd_parts.append("--auto-switch")
-        if args.proof:
-            cmd_parts.append(f'--proof "{args.proof}"')
-        if args.inspector:
-            cmd_parts.append(f"--abnahme {args.inspector}")
-        if not args.inspect:
-            cmd_parts.append("--no-inspect")
-        if args.project != ".":
-            cmd_parts.append(f"-p {args.project}")
-
         print("\n🚀 Generierter Shell-Befehl (zum Starten):")
-        print(f"   {' '.join(cmd_parts)}")
+        print(f"   {shlex.join(dry_run_command(args, dry_task, strat, default_b_model))}")
         print("=" * 68)
         return
 
@@ -2575,7 +2805,7 @@ def main():
             "rounds_completed": 0,
             "plan_approved": False,
             "last_iteration": 0,
-            "max_iterations": args.max_iterations
+            "max_iterations": args.max_iterations or 10
         }
         save_session_state(session_dir, state)
 
@@ -2671,7 +2901,7 @@ def main():
         default_p_effort = "medium"
         default_r_effort = "medium"
         default_b_effort = "low"
-        default_b_model = "claude-3-5-haiku" if builder.binary == "claude" else "gemini-2.5-flash"
+        default_b_model = {"claude": "claude-3-5-haiku", "agy": "gemini-2.5-flash", "gemini": "gemini-2.5-flash"}.get(builder.binary)
     elif strat == "local-free":
         default_p_effort = "high"
         default_r_effort = "high"
@@ -2793,6 +3023,13 @@ def main():
         print(f"[*] Rollen-Status     : 🔄 Rollen getauscht (--swap)")
     if use_worktree:
         print(f"[*] Git-Workspace     : 🌿 eigener Worktree pro Session" + (" (Merge nach .done)" if merge_worktree else ""))
+    # Etappen-Modus: hängt vom Bauleiter ab, der in Phase 3 tatsächlich baut
+    expected_builder = builder.binary if (args.builder or strat == "local-free") else planner.binary
+    stage_pref = (state.get("stage_mode") if args.resume else None) or args.etappen
+    state["stage_mode"] = stage_pref
+    STAGE_PLANNING = stages_wanted(stage_pref, expected_builder)
+    if STAGE_PLANNING:
+        print(f"[*] Etappen-Modus     : 🧩 Plan in Etappen, Bauleiter setzt sie einzeln um (--etappen aus schaltet ab)")
     print(f"[*] Session-ID        : {session_dir.name}")
     print(f"=======================================================\n")
 
@@ -2828,11 +3065,23 @@ def main():
         if STOP_REQUESTED:
             return
 
-        # Interaktive Freigabe & Change-Routing (Approve / Changes / Swap)
-        user_confirmed, plan_file, planner, reviewer, planner_flags, reviewer_flags = handle_plan_approval_and_changes(
-            plan_file, planner, reviewer, task, project_path, session_dir, state,
-            agents=agents, auto_switch=auto_switch, planner_flags=planner_flags, reviewer_flags=reviewer_flags
-        )
+        if args.approve_plan or state.get("approve_plan"):
+            # Freigabe ohne Terminal: nur ein vom Prüfstatiker genehmigter Plan wird gebaut
+            state["approve_plan"] = True
+            if not review_ok:
+                print(f"🛑 Der Prüfstatiker hat {plan_file.name} nicht freigegeben. Ohne Rückfrage (--plan-auto) wird nicht gebaut.")
+                append_log(session_dir, "Plan nicht freigegeben, Bau mit --plan-auto nicht gestartet")
+                save_session_state(session_dir, state)
+                return
+            print(f"✅ {plan_file.name} vom Prüfstatiker genehmigt, Freigabe ohne Rückfrage (--plan-auto).")
+            append_log(session_dir, f"{plan_file.name} automatisch freigegeben (--plan-auto)")
+            user_confirmed = True
+        else:
+            # Interaktive Freigabe & Change-Routing (Approve / Changes / Swap)
+            user_confirmed, plan_file, planner, reviewer, planner_flags, reviewer_flags = handle_plan_approval_and_changes(
+                plan_file, planner, reviewer, task, project_path, session_dir, state,
+                agents=agents, auto_switch=auto_switch, planner_flags=planner_flags, reviewer_flags=reviewer_flags
+            )
 
         if not user_confirmed or STOP_REQUESTED:
             print("Implementierung nicht gestartet.")
@@ -3006,12 +3255,160 @@ def main():
     b_build_desc = f"{builder.name}" + (f" (`{builder.model}`)" if builder.model else "") + (f" [{builder.effort}]" if builder.effort else "")
     print(f"🔨 Ausführender Bauleiter: {b_build_desc}")
     start_iter = state.get("last_iteration", 0) + 1
-    max_iters = args.max_iterations
     outcome = None
+
+    # Etappen-Modus: Etappen aus dem genehmigten Plan, jede einzeln gebaut und mit --proof geprüft
+    is_endpoint_builder = builder.binary in ENDPOINT_BINARIES
+    plan_text_now = plan_file.read_text(encoding="utf-8", errors="ignore") if plan_file.exists() else ""
+    stages: list[str] = []
+    stage_mode = False
+    if state.get("phase") == "stage_open":
+        state["phase"] = "build"
+    if stages_wanted(state.get("stage_mode") or args.etappen, builder.binary):
+        if state.get("stages") and state.get("stages_plan_sha256") == state.get("build_plan_sha256"):
+            stages = list(state["stages"])
+        else:
+            stages = parse_stages(plan_text_now)
+            state["stages"] = stages
+            state["stage_index"] = 0
+            state["stages_plan_sha256"] = state.get("build_plan_sha256")
+        stage_mode = len(stages) >= 2 or (len(stages) == 1 and (state.get("stage_mode") or args.etappen) in ("an", "on"))
+        if not stage_mode:
+            print("ℹ️  Der Plan enthält keinen Abschnitt `## Etappen` mit mindestens zwei Etappen. Der Bauleiter baut den ganzen Plan auf einmal.")
+            append_log(session_dir, "Etappen-Modus: keine Etappen im Plan, normaler Bau")
+    stage_index = state.get("stage_index", 0) if stage_mode else 0
+    stage_tries = 0
+    if stage_mode:
+        print(f"🧩 Etappen-Modus: {len(stages)} Etappen, weiter mit Etappe {min(stage_index + 1, len(stages))}.")
+        for i, s in enumerate(stages, 1):
+            print(f"   {'✓' if i <= stage_index else '•'} {i}. {s}")
+        if not proof_cmd:
+            print("⚠️  Ohne --proof gilt jede Etappe nach einer Bau-Runde als erledigt. Mit --proof prüft der Loop jede Etappe selbst.")
+    if args.max_iterations:
+        max_iters = args.max_iterations
+    elif stage_mode:
+        max_iters = start_iter - 1 + (len(stages) - stage_index) * 2 + 2
+    else:
+        max_iters = 10
+    written_so_far: list[str] = list(state.get("written_files", []))
 
     for iteration in range(start_iter, max_iters + 1):
         if STOP_REQUESTED:
             break
+
+        if stage_mode:
+            state["last_iteration"] = iteration
+            stage_text = stages[stage_index]
+            stage_label = f"Etappe {stage_index + 1}/{len(stages)}"
+            print(f"\n{'='*20} Iteration {iteration}/{max_iters} · {stage_label} {'='*20}\n{stage_text}\n", flush=True)
+            done_list = "\n".join(f"- [x] {s}" for s in stages[:stage_index]) or "- (noch keine)"
+            plan_ref = plan_file if in_worktree else plan_file.relative_to(project_path)
+            prompt_build = (
+                f"Gesamtaufgabe: {task}\n\n"
+                f"Du setzt den genehmigten Plan ({plan_ref}) Etappe für Etappe um. Bereits erledigt:\n{done_list}\n\n"
+                f"JETZT NUR {stage_label.upper()}: {stage_text}\n\n"
+                f"Ändere nur, was diese Etappe braucht, und lass erledigte Etappen funktionsfähig. "
+                f"Lege KEINE Fertigmeldung (.done) an: Der Loop prüft jede Etappe selbst und schließt nach der letzten ab.\n\n"
+            )
+            if proof_cmd:
+                prompt_build += f"Nach dieser Etappe führt der Loop `{proof_cmd}` aus; er muss grün sein.\n\n"
+            if pending_feedback:
+                prompt_build += f"RÜCKMELDUNG AUS DER LETZTEN RUNDE (zuerst beheben):\n{pending_feedback}\n\n"
+            if is_endpoint_builder:
+                if plan_text_now:
+                    prompt_build += f"--- GENEHMIGTER PLAN ---\n{plan_text_now}\n--- ENDE PLAN ---\n\n"
+                file_ctx = stage_file_context(work_path, stage_text + "\n" + pending_feedback, written_so_far)
+                if file_ctx:
+                    prompt_build += f"--- AKTUELLER STAND DER BETROFFENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---\n\n"
+                prompt_build += (
+                    "FORMAT FÜR DATEI-ÄNDERUNGEN: Gib jede geänderte oder neue Datei vollständig aus als\n"
+                    "```filepath: relativer/pfad/zur/datei.ext\n<vollständiger neuer Dateiinhalt>\n```\n"
+                )
+            ok = False
+            output = ""
+            try:
+                print(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) ({stage_label})...", flush=True)
+                res, builder, builder_flags = safe_agent_run(
+                    agent=builder,
+                    prompt=prompt_build,
+                    cwd=work_path,
+                    flags=builder_flags,
+                    agents=agents,
+                    session_dir=session_dir,
+                    state=state,
+                    auto_switch=auto_switch,
+                    role="builder",
+                    metrics_tracker=session_metrics,
+                    exclude={inspector.binary} if inspector is not None else None
+                )
+                print(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [{stage_label}]:")
+                print(res)
+                if is_endpoint_builder:
+                    written = apply_code_blocks(work_path, res)
+                    for w in written:
+                        if w not in written_so_far:
+                            written_so_far.append(w)
+                    if written:
+                        print(f"\n📝 {len(written)} Datei(en) geschrieben: {', '.join(written)}")
+                    state["written_files"] = written_so_far
+                with open(session_log, "a", encoding="utf-8") as f_log:
+                    f_log.write(f"\n{'='*20} Iteration {iteration} · {stage_label} {'='*20}\n{res}\n")
+                if proof_cmd:
+                    ok, output = run_proof(proof_cmd, work_path)
+                else:
+                    ok = True
+            except Exception as exc:
+                print(f"[!] Fehler bei Iteration {iteration}: {exc}")
+                output = str(exc)
+
+            # Eine vorzeitige Fertigmeldung zählt im Etappen-Modus nicht
+            if check_and_clean_done_marker(session_dir, work_path):
+                try:
+                    (session_dir / ".done").unlink()
+                except OSError:
+                    pass
+
+            if ok:
+                print(f"✅ {stage_label} erledigt" + (f" (`{proof_cmd}` grün)." if proof_cmd else "."))
+                append_log(session_dir, f"{stage_label} erledigt: {stage_text}")
+                stage_index += 1
+                stage_tries = 0
+                pending_feedback = ""
+                state["pending_feedback"] = ""
+                if stage_index >= len(stages):
+                    outcome = accept_done()
+                    if outcome == "finished":
+                        state["stage_index"] = stage_index
+                        finish_session()
+                        break
+                    if outcome == "stop":
+                        state["stage_index"] = stage_index
+                        save_session_state(session_dir, state)
+                        break
+                    stages.append("Befunde aus der Rückmeldung beheben (Prüfbefehl oder Abnahme), ohne Erledigtes zu beschädigen")
+                    state["stages"] = stages
+                    print(f"🔁 Nacharbeit als Etappe {len(stages)} angehängt.")
+            else:
+                stage_tries += 1
+                pending_feedback = f"Der Prüfbefehl `{proof_cmd}` schlägt nach {stage_label} fehl:\n```\n{output}\n```" if proof_cmd else f"Fehler: {output}"
+                state["pending_feedback"] = pending_feedback
+                print(f"❌ {stage_label} noch nicht fertig (Versuch {stage_tries}/{STAGE_MAX_TRIES}).")
+                if stage_tries >= STAGE_MAX_TRIES:
+                    print(f"🛑 {stage_label} ist nach {STAGE_MAX_TRIES} Versuchen nicht grün. Stand gesichert; weiter mit 'claudegravity -c'.")
+                    append_log(session_dir, f"{stage_label} nach {STAGE_MAX_TRIES} Versuchen offen")
+                    state["phase"] = "stage_open"
+                    state["stage_index"] = stage_index
+                    state["metrics"] = session_metrics.to_dict()
+                    save_session_state(session_dir, state)
+                    break
+            state["stage_index"] = stage_index
+            state["metrics"] = session_metrics.to_dict()
+            save_session_state(session_dir, state)
+            if STOP_REQUESTED:
+                break
+            if args.delay > 0:
+                time.sleep(args.delay)
+            continue
 
         if check_and_clean_done_marker(session_dir, work_path):
             outcome = accept_done()
@@ -3046,12 +3443,15 @@ def main():
             f"Danach prüft ein anderes Modell deine Änderungen."
         )
 
-        is_endpoint_builder = builder.binary in ["endpoint", "ollama", "lmstudio", "copilot", "architekt_ep", "pruefstatiker_ep", "bauer_ep"]
+        is_endpoint_builder = builder.binary in ENDPOINT_BINARIES
         if is_endpoint_builder:
             # Endpunkte können die Plan-Datei nicht selbst öffnen, deshalb geht der Plan als Text mit.
             plan_text = plan_file.read_text(encoding="utf-8", errors="ignore") if plan_file.exists() else ""
             if plan_text:
                 prompt_build += f"\n\n--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---"
+            file_ctx = stage_file_context(work_path, pending_feedback, written_so_far)
+            if file_ctx:
+                prompt_build += f"\n\n--- AKTUELLER STAND DER BISHER GESCHRIEBENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---"
             prompt_build += (
                 f"\n\nFORMATIERUNGS-HINWEIS FÜR DATEI-ÄNDERUNGEN:\n"
                 f"Gib alle zu erstellenden oder zu ändernden Dateien im Format an:\n"
@@ -3086,6 +3486,10 @@ def main():
 
             if is_endpoint_builder:
                 written = apply_code_blocks(work_path, res)
+                for w in written:
+                    if w not in written_so_far:
+                        written_so_far.append(w)
+                state["written_files"] = written_so_far
                 if written:
                     print(f"\n📝 {len(written)} Datei(en) durch 🔨 Bauleiter ({builder.name}) aktualisiert:")
                     for w in written:
@@ -3123,7 +3527,11 @@ def main():
 
     if state.get("phase") == "completed" and in_worktree and not state["worktree"].get("released"):
         release_worktree(project_path, session_dir, state, task, merge=merge_worktree)
-    if state.get("phase") == "inspection_open":
+    if state.get("phase") == "stage_open":
+        if in_worktree:
+            print(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
+        print(format_metrics_report(session_metrics))
+    elif state.get("phase") == "inspection_open":
         if in_worktree:
             print(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
         print("💡 Mit 'claudegravity -c' geht es mit den offenen Befunden weiter.")

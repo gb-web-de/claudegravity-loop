@@ -34,7 +34,16 @@ if sys.platform == "win32":
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "claudegravity-mcp"
-SERVER_VERSION = "1.1.0"
+SERVER_VERSION = "1.2.0"
+
+DEFAULT_MODEL = "CLI-Default"
+AUTO_OLLAMA_MODEL = "automatisch (installierte Ollama-Modelle)"
+MODEL_AWARE_CLIS = ("claude", "agy", "gemini")
+CLOUD_PLANNER_ORDER = ("codex", "claude", "agy", "gemini")
+LOCAL_BACKEND_ORDER = ("ollama", "lmstudio", "endpoint", "ollama-cli")
+OLLAMA_KEYS = ("ollama", "ollama-cli")
+ROLE_PARAMS = ("architekt", "architekt_model", "pruefstatiker", "pruefstatiker_model",
+               "bauer", "bauer_model", "abnahme", "abnahme_model")
 
 
 def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
@@ -137,9 +146,15 @@ def optimize_claudegravity_command(
     ask_mode: bool = False,
     yolo: bool = False,
     max_iterations: int = 10,
-    proof: str | None = None
+    proof: str | None = None,
+    roles: dict | None = None,
+    stages: str = "auto",
+    approve_plan: bool = False,
+    merge: bool = False
 ) -> dict:
+    """Berechnet Rollen und Befehl. `roles` überschreibt einzelne Rollen, z. B. {"architekt": "codex", "bauer_model": "qwen3-coder:30b"}."""
     agents = detect_installed_agents()
+    roles = {k: v for k, v in (roles or {}).items() if v}
     comp = analyze_task_complexity(task)
     p_norm = priority.lower().strip()
     if p_norm in ["best-code", "quality", "best", "code"]:
@@ -148,6 +163,8 @@ def optimize_claudegravity_command(
         p_norm = "lowest-cost"
     elif p_norm in ["local-free", "free", "local"]:
         p_norm = "local-free"
+    elif p_norm in ["hybrid", "mixed"]:
+        p_norm = "hybrid"
     else:
         p_norm = "balanced"
 
@@ -200,6 +217,23 @@ def optimize_claudegravity_command(
             "   • Phase 1 (Planung) & Phase 2 (Review) verbrauchen nur ~10-15% aller Tokens -> Spitzenmodell sichert fehlerfreie Architektur.\n"
             f"   • Phase 3 (Bau-Loop) verbraucht ~85-90% aller Tokens -> Schnelles Spar-Modell ({builder_model}) setzt den genehmigten Plan kostengünstig um."
         )
+    elif p_norm == "hybrid":
+        strategy_flag = "hybrid"
+        planner_cli = next((k for k in CLOUD_PLANNER_ORDER if k in agents), planner_cli)
+        local = next((k for k in LOCAL_BACKEND_ORDER if k in agents), None)
+        reviewer_cli = local or reviewer_cli
+        builder_cli = local or planner_cli
+        planner_model = DEFAULT_MODEL
+        planner_effort = "high"
+        reviewer_model = AUTO_OLLAMA_MODEL if local in OLLAMA_KEYS else DEFAULT_MODEL
+        reviewer_effort = None
+        builder_model = AUTO_OLLAMA_MODEL if local in OLLAMA_KEYS else DEFAULT_MODEL
+        builder_effort = None
+        cost_benefit = (
+            "🧩 Hybrid: Die Cloud-CLI plant und nimmt ab (wenige Tokens), ein lokales Modell prüft den Plan und baut "
+            "ihn in kleinen Etappen für 0 €. Der Loop prüft jede Etappe mit dem Prüfbefehl."
+            + ("" if local else "\n   ⚠️ Kein lokales Modell erkannt (Ollama, LM Studio, Endpunkt): Hybrid fällt auf die Cloud-CLI zurück.")
+        )
     elif p_norm == "local-free":
         strategy_flag = "local-free"
         planner_model = "claude-3-7-sonnet" if planner_cli == "claude" else "gemini-2.5-pro"
@@ -214,8 +248,8 @@ def optimize_claudegravity_command(
             builder_cli = agents["endpoint"]
             builder_model = "qwen2.5-coder:32b"
         elif "ollama" in agents:
-            builder_cli = "Ollama (Lokal)"
-            builder_model = "qwen2.5-coder:latest"
+            builder_cli = "ollama"
+            builder_model = AUTO_OLLAMA_MODEL
         elif "lmstudio" in agents:
             builder_cli = "LM Studio (Lokal)"
             builder_model = "default"
@@ -243,12 +277,45 @@ def optimize_claudegravity_command(
             "verlässlicher Ausführungsgeschwindigkeit."
         )
 
+    # Modellnamen gelten nur für Claude und Gemini; andere CLIs nutzen ihr eigenes Standardmodell
+    if planner_cli not in MODEL_AWARE_CLIS and planner_model != AUTO_OLLAMA_MODEL:
+        planner_model = DEFAULT_MODEL
+    if reviewer_cli not in MODEL_AWARE_CLIS and reviewer_model != AUTO_OLLAMA_MODEL:
+        reviewer_model = DEFAULT_MODEL
+    if p_norm in ("best-code", "lowest-cost", "balanced") and builder_cli not in MODEL_AWARE_CLIS:
+        builder_model = DEFAULT_MODEL
+
+    # Ausdrückliche Rollen aus dem Aufruf haben Vorrang
+    planner_cli = roles.get("architekt", planner_cli)
+    reviewer_cli = roles.get("pruefstatiker", reviewer_cli)
+    if "bauer" in roles:
+        builder_cli = roles["bauer"]
+    for key in ("architekt", "pruefstatiker", "bauer"):
+        if key in roles and f"{key}_model" not in roles:
+            roles_model = AUTO_OLLAMA_MODEL if roles[key] in OLLAMA_KEYS else DEFAULT_MODEL
+            if key == "architekt":
+                planner_model = roles_model
+            elif key == "pruefstatiker":
+                reviewer_model = roles_model
+            else:
+                builder_model = roles_model
+    planner_model = roles.get("architekt_model", planner_model)
+    reviewer_model = roles.get("pruefstatiker_model", reviewer_model)
+    builder_model = roles.get("bauer_model", builder_model)
+    inspector_cli = roles.get("abnahme")
+
     cmd_args = [task]
     if strategy_flag != "balanced":
         cmd_args += ["--strategy", strategy_flag]
     if endpoint:
         cmd_args += ["--endpoint", endpoint]
-    if p_norm in ("lowest-cost", "local-free"):
+    for flag, key in (("--architekt", "architekt"), ("--architekt-model", "architekt_model"),
+                      ("--pruefstatiker", "pruefstatiker"), ("--pruefstatiker-model", "pruefstatiker_model"),
+                      ("--bauer", "bauer"), ("--bauer-model", "bauer_model"),
+                      ("--abnahme", "abnahme"), ("--abnahme-model", "abnahme_model")):
+        if key in roles:
+            cmd_args += [flag, str(roles[key])]
+    if p_norm in ("lowest-cost", "local-free") and "bauer_model" not in roles and builder_model not in (AUTO_OLLAMA_MODEL, DEFAULT_MODEL):
         cmd_args += ["--bauer-model", builder_model]
     if ask_mode or comp["is_architectural"]:
         cmd_args.append("-i")
@@ -258,6 +325,12 @@ def optimize_claudegravity_command(
         cmd_args += ["-m", str(max_iterations)]
     if proof:
         cmd_args += ["--proof", proof]
+    if stages and stages != "auto":
+        cmd_args += ["--etappen", stages]
+    if approve_plan:
+        cmd_args.append("--plan-auto")
+    if merge:
+        cmd_args.append("--merge")
     if project_path not in [".", "./", ""]:
         cmd_args += ["-p", project_path]
 
@@ -289,8 +362,16 @@ def optimize_claudegravity_command(
                 "model": builder_model,
                 "effort": builder_effort or "Standard",
                 "token_share": "~80-90% der Gesamt-Tokens (Hauptverbrauch!)"
+            },
+            "abnahme": {
+                "role": "🔎 Abnahme (Phase 4: Prüfung des fertigen Codes)",
+                "cli": inspector_cli or (planner_cli if p_norm == "hybrid" else "automatisch (Prüfstatiker oder Architekt, nie der Bauleiter)"),
+                "model": roles.get("abnahme_model", DEFAULT_MODEL),
+                "effort": "Standard",
+                "token_share": "gering (nur der Diff)"
             }
         },
+        "stages": stages or "auto",
         "cost_benefit_analysis": cost_benefit,
         "recommended_command": command_str,
         "loop_args": cmd_args,
@@ -319,6 +400,9 @@ def format_optimization_markdown(opt: dict) -> str:
         f"3. **{r['bauleiter']['role']}**",
         f"   • CLI/Endpoint: `{r['bauleiter']['cli']}` | Modell: `{r['bauleiter']['model']}` | Effort: `{r['bauleiter']['effort']}`",
         f"   • Token-Anteil: {r['bauleiter']['token_share']}",
+        f"4. **{r['abnahme']['role']}**",
+        f"   • CLI/Endpoint: `{r['abnahme']['cli']}` | Modell: `{r['abnahme']['model']}`",
+        f"* **Etappen-Modus:** `{opt.get('stages', 'auto')}` (auto: an, wenn der Bauleiter ein lokales Modell oder ein Endpunkt ist)",
         "",
         "#### 💡 Wirtschaftlichkeits- & Qualitäts-Analyse:",
         opt["cost_benefit_analysis"],
@@ -344,6 +428,25 @@ def format_optimization_markdown(opt: dict) -> str:
 # MCP Protocol Handlers (JSON-RPC 2.0 stdio)
 # ==========================================
 
+ROLE_SCHEMA = {
+    "architekt": {"type": "string", "description": "CLI für den Architekten (claude, agy, gemini, codex, ollama, lmstudio, endpoint)."},
+    "architekt_model": {"type": "string", "description": "Modell für den Architekten (z. B. qwen3:30b bei Ollama)."},
+    "pruefstatiker": {"type": "string", "description": "CLI für den Prüfstatiker, nie derselbe Anbieter mit demselben Modell wie der Architekt."},
+    "pruefstatiker_model": {"type": "string", "description": "Modell für den Prüfstatiker (z. B. gpt-oss:20b bei Ollama)."},
+    "bauer": {"type": "string", "description": "CLI für den Bauleiter (z. B. ollama)."},
+    "bauer_model": {"type": "string", "description": "Modell für den Bauleiter (z. B. qwen3-coder:30b). Ohne Angabe wählt der Loop bei Ollama aus den installierten Modellen."},
+    "abnahme": {"type": "string", "description": "CLI für die Abnahme des fertigen Codes, nie der Bauleiter (z. B. codex)."},
+    "abnahme_model": {"type": "string", "description": "Modell für die Abnahme."},
+    "stages": {"type": "string", "enum": ["auto", "an", "aus"], "default": "auto", "description": "Etappen-Modus: Plan in Etappen, Bauleiter setzt sie einzeln um (auto: an bei lokalen Bauleitern)."},
+    "approve_plan": {"type": "boolean", "default": False, "description": "Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (--plan-auto). Im Hintergrund immer an."},
+    "merge": {"type": "boolean", "default": False, "description": "Session-Branch nach erfolgreicher Abnahme in den Ausgangs-Branch mergen (--merge)."},
+}
+
+
+def role_arguments(arguments: dict) -> dict:
+    return {k: arguments.get(k) for k in ROLE_PARAMS if arguments.get(k)}
+
+
 MCP_TOOLS = [
     {
         "name": "claudegravity_optimize",
@@ -361,9 +464,9 @@ MCP_TOOLS = [
                 },
                 "priority": {
                     "type": "string",
-                    "enum": ["best-code", "lowest-cost", "local-free", "balanced"],
+                    "enum": ["best-code", "lowest-cost", "local-free", "hybrid", "balanced"],
                     "default": "balanced",
-                    "description": "best-code (Frontier-Modelle), lowest-cost (bis zu 70% Ersparnis), local-free (0€ Bauleiter via Ollama, LM Studio oder Server im Heimnetz), balanced (ausgewogen)."
+                    "description": "best-code (Frontier-Modelle), lowest-cost (bis zu 70% Ersparnis), local-free (0€ Bauleiter via Ollama, LM Studio oder Server im Heimnetz), hybrid (Cloud-CLI wie Codex plant und nimmt ab, Ollama prüft und baut in Etappen), balanced (ausgewogen)."
                 },
                 "endpoint": {
                     "type": "string",
@@ -392,7 +495,8 @@ MCP_TOOLS = [
                     "type": "integer",
                     "default": 10,
                     "description": "Maximale Anzahl autonomer Runden in Phase 3 (Standard: 10)."
-                }
+                },
+                **ROLE_SCHEMA
             },
             "required": ["task"]
         }
@@ -409,7 +513,7 @@ MCP_TOOLS = [
                 },
                 "priority": {
                     "type": "string",
-                    "enum": ["best-code", "lowest-cost", "local-free", "balanced"],
+                    "enum": ["best-code", "lowest-cost", "local-free", "hybrid", "balanced"],
                     "default": "balanced"
                 },
                 "endpoint": {
@@ -440,8 +544,9 @@ MCP_TOOLS = [
                 "background": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Ob der Prozess im Hintergrund gestartet werden soll."
-                }
+                    "description": "Im Hintergrund starten. Setzt --plan-auto: gebaut wird nur ein vom Prüfstatiker genehmigter Plan."
+                },
+                **ROLE_SCHEMA
             },
             "required": ["task"]
         }
@@ -475,7 +580,11 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             ask_mode=ask_mode,
             yolo=yolo,
             max_iterations=max_iterations,
-            proof=arguments.get("proof")
+            proof=arguments.get("proof"),
+            roles=role_arguments(arguments),
+            stages=arguments.get("stages", "auto"),
+            approve_plan=arguments.get("approve_plan", False) or arguments.get("background", False),
+            merge=arguments.get("merge", False)
         )
         md_text = format_optimization_markdown(opt)
         return {
@@ -503,7 +612,11 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             ask_mode=ask_mode,
             yolo=yolo,
             max_iterations=max_iterations,
-            proof=arguments.get("proof")
+            proof=arguments.get("proof"),
+            roles=role_arguments(arguments),
+            stages=arguments.get("stages", "auto"),
+            approve_plan=arguments.get("approve_plan", False) or arguments.get("background", False),
+            merge=arguments.get("merge", False)
         )
         cmd_str = opt["recommended_command"]
 
@@ -518,6 +631,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             proc = subprocess.Popen(
                 loop_launch_argv(opt["loop_args"]),
                 cwd=str(p_dir),
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True
@@ -682,7 +796,7 @@ def main():
     parser = argparse.ArgumentParser(description="ClaudeGravity MCP Server & Command Optimizer")
     parser.add_argument("task_pos", nargs="?", default=None, help="Aufgabe (für direkten CLI-Aufruf)")
     parser.add_argument("--optimize", "-o", dest="optimize_task", default=None, help="Aufgabe analysieren und optimalen Befehl ausgeben")
-    parser.add_argument("--priority", default="balanced", choices=["best-code", "quality", "eco", "lowest-cost", "cost", "local-free", "free", "local", "balanced"], help="Priorität: best-code, lowest-cost, local-free, balanced")
+    parser.add_argument("--priority", default="balanced", choices=["best-code", "quality", "eco", "lowest-cost", "cost", "local-free", "free", "local", "hybrid", "mixed", "balanced"], help="Priorität: best-code, lowest-cost, local-free, hybrid, balanced")
     parser.add_argument("--endpoint", default=None, help="KI-Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
     parser.add_argument("-p", "--project", default=".", help="Zielprojekt-Pfad")
     parser.add_argument("-i", "--ask", action="store_true", help="Fragen-Modus (-i)")

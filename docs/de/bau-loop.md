@@ -32,6 +32,20 @@ Soll 🔨 Bauleiter (Claude Code) volle Schreib-/Tool-Rechte erhalten (--dangero
 
 Ein Fehler in einer Runde (z. B. Absturz der CLI) beendet den Loop nicht: Er wird gemeldet, und die nächste Runde startet.
 
+## Etappen-Modus
+
+Kleine lokale Modelle arbeiten schneller und sicherer mit kleinen Stücken. Im Etappen-Modus (`--etappen an`, oder `auto` bei Bauleitern ohne eigenen Dateizugriff wie Ollama, LM Studio und Endpunkten) läuft Phase 3 so:
+
+1. Der Architekt bekommt die Vorgabe, den Plan mit dem Abschnitt `## Etappen` abzuschließen: 2 bis 8 nummerierte Etappen, jede ändert höchstens zwei Dateien und ist danach testbar. Der Prüfstatiker prüft die Etappen mit dem Plan.
+2. Nach der Freigabe liest ClaudeGravity die Etappen aus dem Plan und zeigt sie an.
+3. Pro Runde bekommt der Bauleiter **nur die aktuelle Etappe**, die Liste der erledigten Etappen, den Plan und den **aktuellen Inhalt** der Dateien, die die Etappe nennt oder die er vorher geschrieben hat (bis 40 000 Zeichen). So sieht auch ein Ollama-Modell, was in den Runden davor entstanden ist.
+4. Danach führt ClaudeGravity `--proof` aus. Grün: Die Etappe ist erledigt und steht in `LOG.md`. Rot: Die Ausgabe geht in die nächste Runde derselben Etappe. Nach 3 roten Versuchen hält der Loop an (`phase = stage_open`); `claudegravity -c` macht dort weiter.
+5. Nach der letzten Etappe folgen Prüfbefehl und Abnahme wie unten. Verweigert die Abnahme, hängt ClaudeGravity eine Nacharbeits-Etappe mit den Befunden an. Eine `.done` des Bauleiters zählt in diesem Modus nicht; abgeschlossen wird nach der letzten Etappe.
+
+Fehlt der Abschnitt `## Etappen` oder hat er weniger als zwei Etappen, baut der Bauleiter den ganzen Plan wie bisher. Ohne `--proof` gilt jede Etappe nach einer Runde als erledigt; deshalb im Etappen-Modus immer einen Prüfbefehl angeben. Ein Prüfbefehl, der ohne Tests rot ist (z. B. `unittest` in einem Projekt ohne Tests), hält schon die erste Etappe auf: dann zuerst einen Test anlegen oder die erste Etappe einen schreiben lassen.
+
+Auch ohne Etappen-Modus bekommen Endpunkt-Bauleiter ab der zweiten Runde den aktuellen Inhalt der Dateien mit, die sie schon geschrieben haben.
+
 ## Ende des Loops
 
 | Auslöser | Ergebnis |
@@ -39,7 +53,8 @@ Ein Fehler in einer Runde (z. B. Absturz der CLI) beendet den Loop nicht: Er wir
 | `.done` gefunden, Prüfbefehl grün, Abnahme erteilt | `phase = completed`, Audit-Bericht wird in `.done` geschrieben und angezeigt. |
 | Abnahme nach `--max-inspections` Runden weiter verweigert | `phase = inspection_open`, Befunde in `INSPECTION_round*.md`. Worktree wird nicht gemerged. Weiter mit `claudegravity -c -m <neues Maximum>`. |
 | `.done` im Projekt-Hauptordner | Wird in den Session-Ordner verschoben und wie oben behandelt. |
-| `--max-iterations` erreicht (Standard 10) | Stand gesichert, Audit-Bericht in `AUDIT.md` (kein `.done`, sonst gälte die Aufgabe beim Fortsetzen als fertig). Weiter mit `claudegravity -c -m <neues Maximum>`. |
+| Etappe nach 3 Versuchen nicht grün | `phase = stage_open`, Stand und erledigte Etappen bleiben in `state.json`. Weiter mit `claudegravity -c`. |
+| `--max-iterations` erreicht (Standard 10, im Etappen-Modus 2 pro Etappe + 2) | Stand gesichert, Audit-Bericht in `AUDIT.md` (kein `.done`, sonst gälte die Aufgabe beim Fortsetzen als fertig). Weiter mit `claudegravity -c -m <neues Maximum>`. |
 | `Strg+C` | Aktuelle Runde wird sauber beendet, Stand bleibt erhalten. |
 | Ratenlimit | Menü Wechseln / Warten / Beenden oder automatischer Wechsel mit `--auto-switch` (siehe [Ablauf & Rollen](ablauf-und-rollen.md#limits--auto-switch)). |
 
@@ -57,6 +72,7 @@ Weist eines davon die Meldung zurück, löscht ClaudeGravity `.done` und gibt di
 | Flag | Wirkung |
 | :--- | :--- |
 | `-m`, `--max-iterations <n>` | Maximale Runden |
+| `--etappen auto\|an\|aus` | Etappen-Modus (siehe oben) |
 | `-d`, `--delay <s>` | Pause zwischen Runden, `0` für keine Pause |
 | `--yolo` | Rechte-Abfrage überspringen (nur Bauleiter) |
 | `--proof "<befehl>"` | Prüfbefehl, den ClaudeGravity selbst ausführt |

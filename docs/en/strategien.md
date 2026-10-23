@@ -10,11 +10,12 @@ Instead of configuring each role individually, you pick a preset with `--strateg
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `balanced` *(default)* | – | `high` only with `agy` | `high` only with `agy` | CLI default | same as Architect | Everyday work |
 | `best-code` | `quality` | `high` | `high` | `high` | same as Architect | Core systems, security, large refactorings |
-| `eco` | `economy`, `cost` | `medium` | `medium` | `low` | `claude-3-5-haiku` (with `claude`), otherwise `gemini-2.5-flash` | Up to ~70% token savings |
-| `local-free` | `free`, `local` | `high` | `high` | `low` | `qwen2.5-coder:32b` (endpoint), `qwen2.5-coder:latest` (Ollama), otherwise `local-model` | €0 API cost in the build loop |
+| `eco` | `economy`, `cost` | `medium` | `medium` | `low` | `claude-3-5-haiku` (with `claude`), `gemini-2.5-flash` (with `agy`/`gemini`), otherwise CLI default | Up to ~70% token savings |
+| `local-free` | `free`, `local` | `high` | `high` | `low` | Ollama: picked automatically from the installed models; endpoint: `qwen2.5-coder:32b`; otherwise `local-model` | €0 API cost in the build loop |
+| `hybrid` | `mixed` | CLI default | – | – | Ollama: automatic | Cloud plans and accepts, local model reviews and builds in stages |
 
 > [!NOTE]
-> `--effort` values are currently only passed on to `agy` (Antigravity) as `--effort`. For `claude` and other CLIs they only show up in the audit report.
+> `--effort` values are passed on to `agy` (`--effort`) and `codex` (`model_reasoning_effort`). For `claude` and other CLIs they only show up in the audit report.
 
 ## `best-code`
 
@@ -49,6 +50,25 @@ claudegravity "Refactor the module" --strategy local-free \
   --endpoint http://192.168.1.50:11434/v1 --bauer endpoint --bauer-model qwen2.5-coder:7b
 ```
 
+## `hybrid`
+
+The split for a cloud CLI plus a local model, without setting each role by hand:
+
+| Role | Filled with |
+| :--- | :--- |
+| 🏗️ Architect | first detected cloud CLI in the order `codex`, `claude`, `agy`, `gemini` |
+| 🧐 Reviewer | local model (Ollama server, LM Studio, endpoint), reasoning model picked automatically |
+| 🔨 Builder | the same local backend, code model picked automatically and never the same as the Reviewer's |
+| 🔎 Acceptance | the Architect (cloud), so never the Builder |
+
+[Stage mode](bau-loop.md#stage-mode) is on as well: the Architect cuts the plan into stages, the local model builds them one by one and gets the current state of the affected files each time. Every role you set yourself (`--architekt claude`, `--bauer-model …`) stays as you set it. If a cloud CLI or a local model is missing, ClaudeGravity says so and uses the normal assignment.
+
+```bash
+claudegravity "CSV export for invoices" --strategy hybrid --proof "python3 -m unittest discover -s tests"
+```
+
+Examples and model recommendations: [Ollama & Codex](ollama-und-codex.md).
+
 ## Checking presets
 
 Combine any preset with `--dry-run` to see the concrete assignment on your machine:
@@ -59,4 +79,4 @@ claudegravity --dry-run "New feature" --strategy eco
 
 ## Letting MCP choose the strategy
 
-The [MCP server](mcp-server.md) maps the goals `best-code`, `lowest-cost` (→ `eco`), `local-free` and `balanced` to these presets and generates the matching command.
+The [MCP server](mcp-server.md) maps the goals `best-code`, `lowest-cost` (→ `eco`), `local-free`, `hybrid` and `balanced` to these presets and generates the matching command.

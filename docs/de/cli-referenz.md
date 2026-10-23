@@ -14,7 +14,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | :--- | :--- | :--- | :--- |
 | `AUFGABE` | *(Positionsargument)* | Die Programmieraufgabe in Anführungszeichen. Ohne Aufgabe wird eine unterbrochene Sitzung angeboten, sonst die Hilfe gezeigt. | – |
 | `-p`, `--project` | | Zielprojekt (absolut oder relativ). | `.` |
-| `-m`, `--max-iterations` | | Maximale Runden im Bau-Loop (Phase 3). | `10` |
+| `-m`, `--max-iterations` | | Maximale Runden im Bau-Loop (Phase 3). | `10`, im Etappen-Modus 2 pro Etappe + 2 |
 | `-d`, `--delay` | | Pause zwischen Bau-Runden in Sekunden. | `3` |
 | `-c`, `--resume` | `--continue` | Letzte Sitzung im Projekt fortsetzen. | aus |
 | `-i`, `--ask` | `--interview`, `--clarify` | Fragen-Modus: Architekt und Prüfstatiker dürfen Rückfragen stellen. | aus |
@@ -22,9 +22,11 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--max-rounds` | | Maximale Review-Runden für den Plan. | `2` |
 | `--auto-switch` | `--fallback` | Bei Limit automatisch zur alternativen KI wechseln. | aus |
 | `--swap` | `--swap-roles`, `--reverse` | Standardrollen tauschen: Antigravity/Gemini plant, Claude prüft. | aus |
-| `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`). Siehe [Strategien](strategien.md). | `balanced` |
+| `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). Siehe [Strategien](strategien.md). | `balanced` |
 | `--dry-run` | | Belegung, Kostenanalyse und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |
 | `--info` | `--check` | Erkannte CLIs/Endpunkte und Standard-Belegung anzeigen. | aus |
+| `--etappen <modus>` | `--stages` | `auto`, `an`, `aus`. Der Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede mit `--proof`. `auto` schaltet den Modus für Bauleiter ohne eigenen Dateizugriff ein (Ollama, LM Studio, Endpunkte). Siehe [Bau-Loop](bau-loop.md#etappen-modus). | `auto` |
+| `--plan-auto` | `--approve-plan` | Plan ohne Freigabe-Menü übernehmen, sobald der Prüfstatiker `APPROVED` meldet. Meldet er das nicht, wird nicht gebaut. Für Läufe ohne Terminal. | aus |
 
 ## Rollen
 
@@ -56,6 +58,8 @@ Gültige Schlüssel: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `o
 | `--bauer-model <name>` | `--builder-model` | z. B. `claude-3-5-haiku`, `gemini-2.5-flash`, `qwen2.5-coder:32b` |
 
 Der Modellname wird als `--model <name>` an die CLI bzw. als `model` an den Endpunkt übergeben.
+
+Ist eine Rolle mit `ollama` oder `ollama-cli` besetzt und fehlt ihr Modell, wählt ClaudeGravity eins aus den installierten Modellen (`/api/tags`): für den Bauleiter ein Code-Modell (`qwen3-coder`, `qwen2.5-coder`, `devstral`, …), für Prüfstatiker und Abnahme ein Denk-Modell (`gpt-oss`, `qwen3`, `deepseek-r1`, …), jeweils das größte bis 25 GB. Prüfstatiker und Abnahme bekommen nie dasselbe Modell wie der Bauleiter, Architekt und Prüfstatiker nie dasselbe untereinander. Die Wahl steht im Terminal; ein ausdrückliches `--…-model` hat immer Vorrang.
 
 ## Reasoning-Effort
 

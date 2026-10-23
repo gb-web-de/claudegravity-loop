@@ -32,6 +32,20 @@ Soll 🔨 Bauleiter (Claude Code) volle Schreib-/Tool-Rechte erhalten (--dangero
 
 An error in a round (e.g. a CLI crash) doesn't end the loop: it is reported and the next round starts.
 
+## Stage mode
+
+Small local models work faster and more reliably with small pieces. In stage mode (`--etappen an`, or `auto` for Builders without their own file access such as Ollama, LM Studio and endpoints), phase 3 runs like this:
+
+1. The Architect is told to end the plan with a `## Etappen` section: 2 to 8 numbered stages, each changing at most two files and testable afterwards. The Reviewer checks the stages along with the plan.
+2. After approval, ClaudeGravity reads the stages from the plan and lists them.
+3. In each round the Builder gets **only the current stage**, the list of completed stages, the plan and the **current content** of the files the stage names or that it wrote earlier (up to 40,000 characters). This way an Ollama model also sees what was created in the earlier rounds.
+4. Then ClaudeGravity runs `--proof`. Green: the stage is done and noted in `LOG.md`. Red: the output goes into the next round of the same stage. After 3 red attempts the loop stops (`phase = stage_open`); `claudegravity -c` continues from there.
+5. After the last stage, the proof command and the acceptance check follow as described below. If the acceptance check refuses, ClaudeGravity appends a rework stage with the findings. A `.done` from the Builder does not count in this mode; the task is closed after the last stage.
+
+If the `## Etappen` section is missing or has fewer than two stages, the Builder builds the whole plan as before. Without `--proof` every stage counts as done after one round, so always pass a proof command in stage mode. A proof command that is red without tests (e.g. `unittest` in a project without tests) already blocks the first stage: add a test first, or let the first stage write one.
+
+Even outside stage mode, endpoint Builders get the current content of the files they already wrote from the second round on.
+
 ## End of the loop
 
 | Trigger | Result |
@@ -39,7 +53,8 @@ An error in a round (e.g. a CLI crash) doesn't end the loop: it is reported and 
 | `.done` found, proof command green, acceptance check passed | `phase = completed`, the audit report is written to `.done` and displayed. |
 | Acceptance check still rejected after `--max-inspections` rounds | `phase = inspection_open`, findings in `INSPECTION_round*.md`. The worktree is not merged. Continue with `claudegravity -c -m <new maximum>`. |
 | `.done` in the project root folder | Moved into the session folder and handled as above. |
-| `--max-iterations` reached (default 10) | State saved, audit report in `AUDIT.md` (no `.done`, otherwise the task would count as finished when resuming). Continue with `claudegravity -c -m <new maximum>`. |
+| Stage not green after 3 attempts | `phase = stage_open`, state and completed stages stay in `state.json`. Continue with `claudegravity -c`. |
+| `--max-iterations` reached (default 10, in stage mode 2 per stage + 2) | State saved, audit report in `AUDIT.md` (no `.done`, otherwise the task would count as finished when resuming). Continue with `claudegravity -c -m <new maximum>`. |
 | `Ctrl+C` | The current round is ended cleanly, the state is kept. |
 | Rate limit | Menu Switch / Wait / Quit, or automatic switch with `--auto-switch` (see [Workflow & roles](ablauf-und-rollen.md#limits--auto-switch)). |
 
@@ -57,6 +72,7 @@ If either of them rejects the signal, ClaudeGravity deletes `.done` and passes t
 | Flag | Effect |
 | :--- | :--- |
 | `-m`, `--max-iterations <n>` | Maximum rounds |
+| `--etappen auto\|an\|aus` | Stage mode (see above) |
 | `-d`, `--delay <s>` | Pause between rounds, `0` for no pause |
 | `--yolo` | Skip the permission prompt (Builder only) |
 | `--proof "<command>"` | Proof command that ClaudeGravity runs itself |

@@ -14,7 +14,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | :--- | :--- | :--- | :--- |
 | `AUFGABE` | *(positional argument)* | The coding task in quotes. Without a task, an interrupted session is offered; otherwise the help is shown. | – |
 | `-p`, `--project` | | Target project (absolute or relative). | `.` |
-| `-m`, `--max-iterations` | | Maximum rounds in the build loop (phase 3). | `10` |
+| `-m`, `--max-iterations` | | Maximum rounds in the build loop (phase 3). | `10`, in stage mode 2 per stage + 2 |
 | `-d`, `--delay` | | Pause between build rounds in seconds. | `3` |
 | `-c`, `--resume` | `--continue` | Resume the last session in the project. | off |
 | `-i`, `--ask` | `--interview`, `--clarify` | Question mode: Architect and Reviewer may ask follow-up questions. | off |
@@ -22,9 +22,11 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--max-rounds` | | Maximum review rounds for the plan. | `2` |
 | `--auto-switch` | `--fallback` | Automatically switch to the alternative AI when a limit is hit. | off |
 | `--swap` | `--swap-roles`, `--reverse` | Swap the default roles: Antigravity/Gemini plans, Claude reviews. | off |
-| `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`). See [Strategies](strategien.md). | `balanced` |
+| `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). See [Strategies](strategien.md). | `balanced` |
 | `--dry-run` | | Show the assignment, cost analysis and start command without running or creating anything. | off |
 | `--info` | `--check` | Show detected CLIs/endpoints and the default assignment. | off |
+| `--etappen <mode>` | `--stages` | `auto`, `an` (on), `aus` (off); `on`/`off` work too. The Architect cuts the plan into stages, the Builder implements them one by one, the loop checks each with `--proof`. `auto` turns the mode on for Builders without their own file access (Ollama, LM Studio, endpoints). See [Build loop](bau-loop.md#stage-mode). | `auto` |
+| `--plan-auto` | `--approve-plan` | Accept the plan without the approval menu as soon as the Reviewer reports `APPROVED`. If it does not, nothing is built. For runs without a terminal. | off |
 
 ## Roles
 
@@ -56,6 +58,8 @@ Valid keys: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `ollama-cli
 | `--bauer-model <name>` | `--builder-model` | e.g. `claude-3-5-haiku`, `gemini-2.5-flash`, `qwen2.5-coder:32b` |
 
 The model name is passed as `--model <name>` to the CLI, or as `model` to the endpoint.
+
+If a role is set to `ollama` or `ollama-cli` and has no model, ClaudeGravity picks one from the installed models (`/api/tags`): a code model for the Builder (`qwen3-coder`, `qwen2.5-coder`, `devstral`, …), a reasoning model for Reviewer and acceptance (`gpt-oss`, `qwen3`, `deepseek-r1`, …), each time the largest one up to 25 GB. Reviewer and acceptance never get the same model as the Builder, and Architect and Reviewer never share one. The choice is printed in the terminal; an explicit `--…-model` always wins.
 
 ## Reasoning effort
 

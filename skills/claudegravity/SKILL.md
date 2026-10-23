@@ -19,9 +19,10 @@ Backends: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `lmstudio`, `
 ## Choose the roles
 
 1. Find out what the user has: `claudegravity --info`. Prefer the user's explicit choices; do not swap providers or models silently.
-2. Put the most capable available model on Architekt and Prüfstatiker (cheap in tokens), the cheapest adequate one on Bauleiter (80–90 % of tokens): `--strategy eco` or `--strategy local-free --bauer ollama|endpoint`.
+2. Put the most capable available model on Architekt and Prüfstatiker (cheap in tokens), the cheapest adequate one on Bauleiter (80–90 % of tokens): `--strategy eco` or `--strategy local-free --bauer ollama|endpoint`. With a cloud CLI plus Ollama, `--strategy hybrid` sets this up by itself: the cloud CLI plans and accepts, Ollama reviews and builds, models are picked from the installed Ollama models.
 3. The Abnahme defaults to the Prüfstatiker. With only one provider there is no independent acceptance; say so instead of claiming one.
 4. Show the plan with `--dry-run` before a real run when the user has not fixed the roles.
+5. Local Builders (Ollama, LM Studio, endpoints) build in stages by default (`--etappen auto`): the plan ends with `## Etappen`, one stage per round, each checked with `--proof`. Use `--etappen an` to force it for CLI Builders and `--etappen aus` to turn it off.
 
 ## Run
 
@@ -34,7 +35,7 @@ claudegravity "<task>" -p <project> \
 - Always pass `--proof` with the repository's own test command. The loop runs it itself after every build round and does not trust the builder's "done".
 - Add `--yolo` only when the user asked for unattended builds; it gives write access to the Bauleiter only.
 - `--max-rounds` (plan review, default 2) and `--max-inspections` (acceptance, default 2) bound the cost. `-c` resumes.
-- From an MCP client use the `claudegravity_optimize` tool to get the command, `claudegravity_run` to start it (`yolo` defaults to false).
+- From an MCP client use the `claudegravity_optimize` tool to get the command, `claudegravity_run` to start it (`yolo` defaults to false). Both take the roles as parameters (`architekt`, `pruefstatiker`, `bauer`, `abnahme` and their `*_model`), plus `stages`, `approve_plan` and `merge`; `priority: "hybrid"` gives the cloud-plus-Ollama split. A background run always uses `--plan-auto` and only builds a plan the Prüfstatiker approved.
 
 ## Read the result
 

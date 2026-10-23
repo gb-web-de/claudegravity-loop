@@ -6,19 +6,22 @@ This page plays through how to split the four roles between **Codex** (cloud, th
 
 **Rule of thumb:** Ollama is fast and free as long as the pieces are small. Codex pays off where few tokens decide a lot: the plan, the plan review and the acceptance check.
 
+**Automatic:** `--strategy hybrid` sets up the split of Variant A by itself (cloud CLI plans and accepts, Ollama reviews and builds), picks the Ollama models from the installed ones and builds the plan in stages. The variants below show what happens and how to deviate from it.
+
 ## Contents
 
 1. [Setting up Ollama and Codex](#1-setting-up-ollama-and-codex)
 2. [What to know first](#2-what-to-know-first)
-3. [Variant A: Codex plans, Ollama reviews, another Ollama model builds, Codex accepts](#variant-a-codex-plans-ollama-reviews-another-ollama-model-builds-codex-accepts)
-4. [Variant B: Ollama plans, Codex reviews, Ollama builds, Codex accepts](#variant-b-ollama-plans-codex-reviews-ollama-builds-codex-accepts)
-5. [Variant C: Everything local, only the acceptance check uses Codex](#variant-c-everything-local-only-the-acceptance-check-uses-codex)
-6. [Variant D: Hard task, Codex builds, Ollama accepts](#variant-d-hard-task-codex-builds-ollama-accepts)
-7. [Variant E: Stages, the task in small pieces](#variant-e-stages-the-task-in-small-pieces)
-8. [Which variant when?](#which-variant-when)
-9. [Via MCP: setup and calls](#via-mcp-setup-and-calls)
-10. [Ollama models for a Mac M4 with 48 GB](#ollama-models-for-a-mac-m4-with-48-gb)
-11. [Troubleshooting checklist](#troubleshooting-checklist)
+3. [The quickest way: `--strategy hybrid`](#the-quickest-way---strategy-hybrid)
+4. [Variant A: Codex plans, Ollama reviews, another Ollama model builds, Codex accepts](#variant-a-codex-plans-ollama-reviews-another-ollama-model-builds-codex-accepts)
+5. [Variant B: Ollama plans, Codex reviews, Ollama builds, Codex accepts](#variant-b-ollama-plans-codex-reviews-ollama-builds-codex-accepts)
+6. [Variant C: Everything local, only the acceptance check uses Codex](#variant-c-everything-local-only-the-acceptance-check-uses-codex)
+7. [Variant D: Hard task, Codex builds, Ollama accepts](#variant-d-hard-task-codex-builds-ollama-accepts)
+8. [Variant E: Stages, the task in small pieces](#variant-e-stages-the-task-in-small-pieces)
+9. [Which variant when?](#which-variant-when)
+10. [Via MCP: setup and calls](#via-mcp-setup-and-calls)
+11. [Ollama models for a Mac M4 with 48 GB](#ollama-models-for-a-mac-m4-with-48-gb)
+12. [Troubleshooting checklist](#troubleshooting-checklist)
 
 ## 1. Setting up Ollama and Codex
 
@@ -79,16 +82,38 @@ These points decide whether a split with Ollama works:
 | :--- | :--- | :--- |
 | `--bauer ollama` etc. | The key `ollama` is the Ollama **server** (OpenAI API). If it is missing from `--info`, the loop silently picks another backend. | `--dry-run` before every run. |
 | Ollama sees no files | An Ollama Reviewer only gets the task and the plan, an Ollama acceptance check only the diff (up to 60,000 characters). Codex, by contrast, reads the project itself. | Use Ollama where the text is enough, Codex where the project has to be known. |
-| An Ollama Builder has no memory | Every build round gets the whole plan and the feedback from the proof command, but neither its earlier answers nor the current state of the files. It rewrites each file in full. | Cut tasks small enough for one round. For more: [Variant E](#variant-e-stages-the-task-in-small-pieces). |
+| An Ollama Builder sees no files | Endpoint Builders get the plan and, from the second round on, the current content of the files they wrote; in stage mode also the files the stage names. They rewrite each file in full. | Use [stage mode](#variant-e-stages-the-task-in-small-pieces) (on automatically for Ollama Builders). |
 | Ollama runs no tests | The Builder only writes files. | Always pass `--proof "<test command>"`; the loop runs it itself. |
 | Verdict only from `VERDICT:` | If the last line `VERDICT: APPROVED` is missing, the review does not count as approval. | For Reviewer and acceptance, choose models that follow format instructions (see [models](#ollama-models-for-a-mac-m4-with-48-gb)). |
-| Two Ollama roles | The same backend with **different models** counts as a different identity. The same model reviews itself. | Always pick different models for Architect/Reviewer and for Builder/acceptance. |
+| Two Ollama roles | The same backend with **different models** counts as a different identity. The same model reviews itself. If the model is missing, the loop picks one from the installed models and never gives Reviewer or acceptance the Builder's model. | Different models for Architect/Reviewer and for Builder/acceptance; without flags the loop takes care of it. |
 | Acceptance | Defaults to the Reviewer, never the Builder. If the Reviewer is another Ollama model, **Ollama** accepts, not Codex. | Set Codex as acceptance explicitly with `--abnahme codex`. |
-| Approval menu | After the review the loop asks for approval in the terminal, and before phase 3 for write permissions. | Start in a terminal. `--yolo` only skips the permission question. |
+| Approval menu | After the review the loop asks for approval in the terminal, and before phase 3 for write permissions. | Start in a terminal. `--yolo` skips the permission question, `--plan-auto` the approval (then only a plan with `APPROVED` is built). |
 
 The task itself is your strongest lever: write into the task text what the plan should look like, for example "Split the plan into numbered steps; each step changes at most one file and names its test". The Architect receives the text verbatim.
 
 In all examples `~/Projekte/rechnung` is the project and `python3 -m unittest discover -s tests` the proof command. Replace both with your project and its own test command (e.g. `npm test`, `vendor/bin/phpunit`).
+
+## The quickest way: `--strategy hybrid`
+
+```bash
+claudegravity "Add a CSV export for invoices" \
+  -p ~/Projekte/rechnung \
+  --strategy hybrid \
+  --proof "python3 -m unittest discover -s tests" \
+  --dry-run
+```
+
+This is what the loop sets up by itself (with the models from section 1 installed):
+
+| Role | Automatic | Change with |
+| :--- | :--- | :--- |
+| 🏗️ Architect | first cloud CLI of `codex`, `claude`, `agy`, `gemini` | `--architekt` |
+| 🧐 Reviewer | Ollama with a reasoning model, e.g. `gpt-oss:20b` | `--pruefstatiker`, `--pruefstatiker-model` |
+| 🔨 Builder | Ollama with a code model, e.g. `qwen3-coder:30b` | `--bauer`, `--bauer-model` |
+| 🔎 Acceptance | the Architect | `--abnahme`, `--abnahme-model` |
+| 🧩 Stages | on: plan with `## Etappen`, each stage one build round with the proof command | `--etappen aus` |
+
+The dry run shows the assignment and the complete command. Without `--dry-run` the real run starts. If you do not want to be asked at all, add `--plan-auto`: the loop then builds as soon as the Reviewer reports `APPROVED`, and stops otherwise.
 
 ## Variant A: Codex plans, Ollama reviews, another Ollama model builds, Codex accepts
 
@@ -113,9 +138,6 @@ claudegravity "Add a CSV export for invoices. Split the plan into numbered steps
 ```
 
 Without `--dry-run` the real run starts.
-
-> [!NOTE]
-> For the real run, use the same command without `--dry-run`. The "Generierter Shell-Befehl" at the end of the dry run currently drops `--architekt`, `--pruefstatiker`, `--bauer` and the effort flags, so it is incomplete for these variants. Also, without `--abnahme` the dry run sometimes shows Codex as acceptance although in the real run another Ollama model would accept. So always set `--abnahme` explicitly.
 
 **Instructions**
 
@@ -212,42 +234,37 @@ claudegravity "Move invoice storage from JSON files to SQLite, including a migra
 
 ## Variant E: Stages, the task in small pieces
 
-This is the answer to "Ollama is faster with small pieces". The loop does not split a task by itself, and an Ollama Builder does not see in round 2 what it wrote in round 1. So Codex cuts the task into stages once, and each stage runs as its own short loop on top of the previous stage.
+This is the answer to "Ollama is faster with small pieces", and the loop does it by itself. Stage mode is on automatically for Ollama, LM Studio and endpoint Builders (`--etappen auto`), and with `--etappen an` also for Codex or Claude.
 
-**Step 1: let Codex cut the stages** (read-only, without the loop):
+How it runs:
 
-```bash
-cd ~/Projekte/rechnung
-codex exec -s read-only --output-last-message etappen.txt \
-  "Split this task into 3 to 8 stages that can be implemented one after another. Each stage changes at most two files and is testable afterwards. Output only the stages, one per line, without numbers and without blank lines. Task: CSV export for invoices with filters by period and customer."
-cat etappen.txt   # read, shorten, reorder: you decide
-```
-
-**Step 2: build the stages one after another**, each with Variant A:
+1. The Architect (e.g. Codex) is told to end the plan with `## Etappen`: 2 to 8 stages, each changing at most two files and testable afterwards.
+2. The Reviewer checks plan and stages. After approval the loop lists the stages.
+3. In each round the Ollama Builder gets only the current stage, the completed stages, the plan and the **current content** of the affected files and the files it already wrote.
+4. The loop runs `--proof`. Green: next stage. Red: the output goes back to the Builder, up to 3 attempts per stage; then the loop stops and `claudegravity -c` continues.
+5. After the last stage, Codex accepts the whole diff. If there are findings, the loop appends a rework stage.
 
 ```bash
-GOAL="CSV export for invoices with filters by period and customer"
-while IFS= read -r stage <&3; do
-  [ -z "$stage" ] && continue
-  echo "=== Stage: $stage"
-  claudegravity "Overall goal: $GOAL. Implement ONLY this stage now: $stage" \
-    -p ~/Projekte/rechnung \
-    --architekt codex --architekt-effort medium \
-    --pruefstatiker ollama --pruefstatiker-model gpt-oss:20b \
-    --bauer ollama --bauer-model qwen3-coder:30b \
-    --abnahme codex \
-    --proof "python3 -m unittest discover -s tests" \
-    --merge -m 3
-done 3< etappen.txt
+claudegravity "CSV export for invoices with filters by period and customer" \
+  -p ~/Projekte/rechnung \
+  --architekt codex --architekt-effort medium \
+  --pruefstatiker ollama --pruefstatiker-model gpt-oss:20b \
+  --bauer ollama --bauer-model qwen3-coder:30b \
+  --abnahme codex \
+  --proof "python3 -m unittest discover -s tests" \
+  --merge
 ```
+
+Shorter, with the same roles: `--strategy hybrid --proof "…" --merge`.
 
 **Instructions**
 
-1. `3< etappen.txt` and `<&3` are deliberate: the loop reads the stages through a separate channel, so the approval menu keeps reading from your keyboard.
-2. `--merge` is required: only then does each accepted stage land in your branch, and the next stage builds on it.
-3. The loop does not stop the shell loop by itself. If a stage is not accepted, choose `[5] Beenden` in the approval menu of the next stage or press Ctrl+C, then continue the open stage with `claudegravity -c -p ~/Projekte/rechnung`.
-4. Here Codex needs a small plan and an acceptance check per stage. For even less Codex usage, use Variant C instead of A in step 2.
-5. On Windows (PowerShell) the loop looks like this: `foreach ($stage in Get-Content etappen.txt) { if ($stage) { .\claudegravity.ps1 "Overall goal: $GOAL. Implement ONLY this stage now: $stage" <other flags as above> } }`.
+1. Without `--proof` every stage counts as done after one round. Always pass the project's test command.
+2. If the project has no tests yet, `unittest discover` is red before the first stage. Add a small test first, or write into the task that stage 1 creates the tests.
+3. In the approval menu, read the `## Etappen` section with `[4]`. Have stages that are too big cut smaller with `[2]`.
+4. You do not need `-m`: without it the run gets 2 rounds per stage plus 2.
+5. `LOG.md` in the session folder shows the progress (`Etappe n/N erledigt`); `state.json` remembers stage and state for `-c`.
+6. Stages by hand, each as its own run, still work: one stage as the task, `--etappen aus`, `--merge`.
 
 ## Which variant when?
 
@@ -257,7 +274,7 @@ done 3< etappen.txt
 | New small project, the plan may be drafted locally | B | review + acceptance |
 | Small fix with known files | C | acceptance only |
 | Big rewrite, many files, tests inside the project | D | review + the whole build |
-| Larger task, but build locally | E | stages + plan and acceptance per stage |
+| Larger task, but build locally | E or `--strategy hybrid` | one plan in stages + one acceptance at the end |
 
 ## Via MCP: setup and calls
 
@@ -293,34 +310,38 @@ claude mcp list
 
 **1. Check what the server sees**: tool `claudegravity_info`, no parameters. Expected: `Codex CLI (codex)`, `Ollama CLI (ollama-cli)` and `Ollama (Lokal: …) (ollama)`.
 
-**2. Have the command computed**: tool `claudegravity_optimize`:
+**2. Have the command computed**: tool `claudegravity_optimize`, Variant A automatically:
 
 ```json
 {
   "task": "Add a CSV export for invoices",
-  "priority": "local-free",
+  "priority": "hybrid",
   "project_path": "/Users/<name>/Projekte/rechnung",
-  "proof": "python3 -m unittest discover -s tests",
-  "max_iterations": 6
+  "proof": "python3 -m unittest discover -s tests"
 }
 ```
 
-If no CLIs other than Codex and Ollama are installed, this yields `claudegravity '…' --strategy local-free --bauer-model qwen2.5-coder:latest --proof '…' -m 6 -p …`. In the run this becomes roughly Variant A: Codex plans, `ollama run qwen2.5-coder:latest` reviews, the Ollama server builds with `qwen2.5-coder:latest`, Codex accepts. If `claude` is installed as well, Claude plans instead of Codex.
+Result: `claudegravity '…' --strategy hybrid --proof '…' -p …`. The loop picks the Ollama models from the installed models at start; the optimizer shows "automatic" for them.
 
-> [!WARNING]
-> The MCP tools have no role or model parameters. The model names `claudegravity_optimize` shows for Architect and Reviewer (e.g. `gemini-2.5-pro`) are defaults for Claude/Gemini and do not apply to Codex and Ollama. You have to fetch the Builder value `qwen2.5-coder:latest` beforehand with `ollama pull qwen2.5-coder`. For Variants A to E with your own models, use the command from this page.
+**3. A specific variant**: the tools take roles and models as parameters. Variant B:
 
-**3. Start a variant through the assistant**: since the tools take no roles, give the assistant the finished command. Example prompt in Codex or Claude Code:
-
-```text
-In the terminal, start claudegravity using Variant A from docs/en/ollama-und-codex.md
-for the project ~/Projekte/rechnung with the task "CSV export for invoices".
-Run the same command with --dry-run first and show me the role assignment.
+```json
+{
+  "task": "Add a CSV export for invoices",
+  "architekt": "ollama", "architekt_model": "qwen3:30b",
+  "pruefstatiker": "codex",
+  "bauer": "ollama", "bauer_model": "qwen3-coder:30b",
+  "abnahme": "codex",
+  "stages": "an",
+  "proof": "python3 -m unittest discover -s tests"
+}
 ```
+
+More parameters: `abnahme_model`, `approve_plan` (`--plan-auto`) and `merge` (`--merge`). The optimizer shows model names only for Claude and Gemini; Codex uses its default model unless you set one.
 
 With the skill [`skills/claudegravity`](../../skills/claudegravity/SKILL.md) the assistant already knows the role flags.
 
-**4. `claudegravity_run`**: with `background: false` the tool only returns the command with `cd` to copy. `background: true` is not suitable for these variants: the approval menu and the permission question need a terminal.
+**4. `claudegravity_run`**: the same parameters. With `background: false` the tool returns the command with `cd` to copy. With `background: true` the loop starts without a terminal and with `--plan-auto`: it only builds if the Reviewer reports `APPROVED`. Ollama Builders do not need `yolo` for that; a Codex Builder (Variant D) does.
 
 **Testing without a client** (one JSON-RPC line via stdin):
 

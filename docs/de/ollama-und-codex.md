@@ -6,19 +6,22 @@ Diese Seite spielt durch, wie du die vier Rollen zwischen **Codex** (Cloud, übe
 
 **Faustregel:** Ollama ist schnell und kostenlos, solange die Stücke klein sind. Codex lohnt sich dort, wo wenige Tokens viel entscheiden: Plan, Plan-Prüfung und Abnahme.
 
+**Automatisch:** `--strategy hybrid` stellt die Aufteilung von Variante A selbst ein (Cloud-CLI plant und nimmt ab, Ollama prüft und baut), wählt die Ollama-Modelle aus den installierten und baut den Plan in Etappen. Die Varianten unten zeigen, was dabei passiert und wie du davon abweichst.
+
 ## Inhalt
 
 1. [Einrichtung von Ollama und Codex](#1-einrichtung-von-ollama-und-codex)
 2. [Was du vorher wissen solltest](#2-was-du-vorher-wissen-solltest)
-3. [Variante A: Codex plant, Ollama prüft, anderes Ollama-Modell baut, Codex nimmt ab](#variante-a-codex-plant-ollama-prüft-anderes-ollama-modell-baut-codex-nimmt-ab)
-4. [Variante B: Ollama plant, Codex prüft, Ollama baut, Codex nimmt ab](#variante-b-ollama-plant-codex-prüft-ollama-baut-codex-nimmt-ab)
-5. [Variante C: Alles lokal, nur die Abnahme macht Codex](#variante-c-alles-lokal-nur-die-abnahme-macht-codex)
-6. [Variante D: Schwere Aufgabe, Codex baut, Ollama nimmt ab](#variante-d-schwere-aufgabe-codex-baut-ollama-nimmt-ab)
-7. [Variante E: Etappen, die Aufgabe in kleinen Stücken](#variante-e-etappen-die-aufgabe-in-kleinen-stücken)
-8. [Welche Variante wann?](#welche-variante-wann)
-9. [Über MCP: Einrichtung und Aufrufe](#über-mcp-einrichtung-und-aufrufe)
-10. [Ollama-Modelle für einen Mac M4 mit 48 GB](#ollama-modelle-für-einen-mac-m4-mit-48-gb)
-11. [Checkliste bei Problemen](#checkliste-bei-problemen)
+3. [Der schnellste Weg: `--strategy hybrid`](#der-schnellste-weg---strategy-hybrid)
+4. [Variante A: Codex plant, Ollama prüft, anderes Ollama-Modell baut, Codex nimmt ab](#variante-a-codex-plant-ollama-prüft-anderes-ollama-modell-baut-codex-nimmt-ab)
+5. [Variante B: Ollama plant, Codex prüft, Ollama baut, Codex nimmt ab](#variante-b-ollama-plant-codex-prüft-ollama-baut-codex-nimmt-ab)
+6. [Variante C: Alles lokal, nur die Abnahme macht Codex](#variante-c-alles-lokal-nur-die-abnahme-macht-codex)
+7. [Variante D: Schwere Aufgabe, Codex baut, Ollama nimmt ab](#variante-d-schwere-aufgabe-codex-baut-ollama-nimmt-ab)
+8. [Variante E: Etappen, die Aufgabe in kleinen Stücken](#variante-e-etappen-die-aufgabe-in-kleinen-stücken)
+9. [Welche Variante wann?](#welche-variante-wann)
+10. [Über MCP: Einrichtung und Aufrufe](#über-mcp-einrichtung-und-aufrufe)
+11. [Ollama-Modelle für einen Mac M4 mit 48 GB](#ollama-modelle-für-einen-mac-m4-mit-48-gb)
+12. [Checkliste bei Problemen](#checkliste-bei-problemen)
 
 ## 1. Einrichtung von Ollama und Codex
 
@@ -79,16 +82,38 @@ Diese Punkte entscheiden, ob eine Aufteilung mit Ollama klappt:
 | :--- | :--- | :--- |
 | `--bauer ollama` usw. | Der Schlüssel `ollama` ist der Ollama-**Server** (OpenAI-API). Fehlt er bei `--info`, nimmt der Loop ohne Fehlermeldung ein anderes Backend. | Vor jedem Lauf `--dry-run`. |
 | Ollama sieht keine Dateien | Ein Ollama-Prüfstatiker bekommt nur Aufgabe und Plan, eine Ollama-Abnahme nur den Diff (bis 60 000 Zeichen). Codex dagegen liest das Projekt selbst. | Ollama dort einsetzen, wo der Text reicht. Codex dort, wo man das Projekt kennen muss. |
-| Ollama-Bauleiter hat kein Gedächtnis | Jede Bau-Runde bekommt den ganzen Plan und die Rückmeldung des Prüfbefehls, aber weder die bisherigen Antworten noch den aktuellen Dateistand. Er schreibt jede Datei vollständig neu. | Aufgaben so klein schneiden, dass eine Runde reicht. Für mehr: [Variante E](#variante-e-etappen-die-aufgabe-in-kleinen-stücken). |
+| Ollama-Bauleiter sieht keine Dateien | Endpunkt-Bauleiter bekommen den Plan und ab der zweiten Runde den aktuellen Inhalt der Dateien, die sie geschrieben haben; im Etappen-Modus zusätzlich die Dateien, die die Etappe nennt. Jede Datei schreiben sie vollständig neu. | Den [Etappen-Modus](#variante-e-etappen-die-aufgabe-in-kleinen-stücken) nutzen (bei Ollama-Bauleitern automatisch an). |
 | Ollama führt keine Tests aus | Der Bauleiter schreibt nur Dateien. | Immer `--proof "<testbefehl>"` angeben, der Loop führt ihn selbst aus. |
 | Urteil nur aus `VERDICT:` | Fehlt die letzte Zeile `VERDICT: APPROVED`, zählt das Review nicht als Freigabe. | Für Prüfer- und Abnahme-Rollen Modelle nehmen, die Formatvorgaben einhalten (siehe [Modelle](#ollama-modelle-für-einen-mac-m4-mit-48-gb)). |
-| Zwei Ollama-Rollen | Gleiches Backend mit **verschiedenen Modellen** gilt als andere Identität. Gleiches Modell prüft sich selbst. | Für Architekt/Prüfstatiker bzw. Bauleiter/Abnahme immer unterschiedliche Modelle wählen. |
+| Zwei Ollama-Rollen | Gleiches Backend mit **verschiedenen Modellen** gilt als andere Identität. Gleiches Modell prüft sich selbst. Fehlt das Modell, wählt der Loop eins aus den installierten und gibt Prüfstatiker und Abnahme nie das Modell des Bauleiters. | Für Architekt/Prüfstatiker bzw. Bauleiter/Abnahme unterschiedliche Modelle; ohne Angabe übernimmt das der Loop. |
 | Abnahme | Standard ist der Prüfstatiker, nie der Bauleiter. Ist der Prüfstatiker ein anderes Ollama-Modell, nimmt **Ollama** ab, nicht Codex. | Codex als Abnahme ausdrücklich mit `--abnahme codex` setzen. |
-| Freigabe-Menü | Nach dem Review fragt der Loop im Terminal nach der Freigabe, vor Phase 3 nach den Schreibrechten. | Im Terminal starten. `--yolo` überspringt nur die Rechte-Frage. |
+| Freigabe-Menü | Nach dem Review fragt der Loop im Terminal nach der Freigabe, vor Phase 3 nach den Schreibrechten. | Im Terminal starten. `--yolo` überspringt die Rechte-Frage, `--plan-auto` die Freigabe (gebaut wird dann nur ein Plan mit `APPROVED`). |
 
 Die Aufgabe selbst ist dein stärkster Hebel: Schreib in den Aufgabentext, wie der Plan aussehen soll, zum Beispiel „Gliedere den Plan in nummerierte Schritte; jeder Schritt ändert höchstens eine Datei und nennt seinen Test“. Der Architekt bekommt den Text wörtlich.
 
 In allen Beispielen sind `~/Projekte/rechnung` das Projekt und `python3 -m unittest discover -s tests` der Prüfbefehl. Ersetze beides durch dein Projekt und seinen eigenen Testbefehl (z. B. `npm test`, `vendor/bin/phpunit`).
+
+## Der schnellste Weg: `--strategy hybrid`
+
+```bash
+claudegravity "Füge einen CSV-Export für Rechnungen hinzu" \
+  -p ~/Projekte/rechnung \
+  --strategy hybrid \
+  --proof "python3 -m unittest discover -s tests" \
+  --dry-run
+```
+
+Das stellt der Loop dabei selbst ein (mit den Modellen aus Abschnitt 1 installiert):
+
+| Rolle | Automatisch | Ändern mit |
+| :--- | :--- | :--- |
+| 🏗️ Architekt | erste Cloud-CLI aus `codex`, `claude`, `agy`, `gemini` | `--architekt` |
+| 🧐 Prüfstatiker | Ollama mit Denk-Modell, z. B. `gpt-oss:20b` | `--pruefstatiker`, `--pruefstatiker-model` |
+| 🔨 Bauleiter | Ollama mit Code-Modell, z. B. `qwen3-coder:30b` | `--bauer`, `--bauer-model` |
+| 🔎 Abnahme | der Architekt | `--abnahme`, `--abnahme-model` |
+| 🧩 Etappen | an: Plan mit `## Etappen`, jede Etappe eine Bau-Runde mit Prüfbefehl | `--etappen aus` |
+
+Der Trockenlauf zeigt die Belegung und den vollständigen Befehl. Ohne `--dry-run` startet der echte Lauf. Willst du gar nicht gefragt werden, hängst du `--plan-auto` an: Dann baut der Loop, sobald der Prüfstatiker `APPROVED` meldet, und hält sonst an.
 
 ## Variante A: Codex plant, Ollama prüft, anderes Ollama-Modell baut, Codex nimmt ab
 
@@ -113,9 +138,6 @@ claudegravity "Füge einen CSV-Export für Rechnungen hinzu. Gliedere den Plan i
 ```
 
 Ohne `--dry-run` startet der echte Lauf.
-
-> [!NOTE]
-> Für den echten Lauf denselben Befehl ohne `--dry-run` verwenden. Der „Generierte Shell-Befehl“ am Ende des Trockenlaufs lässt derzeit `--architekt`, `--pruefstatiker`, `--bauer` und die Effort-Flags weg und ist für diese Varianten nicht vollständig. Außerdem zeigt der Trockenlauf ohne `--abnahme` manchmal Codex als Abnahme, obwohl im echten Lauf ein anderes Ollama-Modell abnehmen würde. Deshalb `--abnahme` immer ausdrücklich setzen.
 
 **Handlungsanweisungen**
 
@@ -212,42 +234,37 @@ claudegravity "Stelle die Rechnungsablage von JSON-Dateien auf SQLite um, mit Mi
 
 ## Variante E: Etappen, die Aufgabe in kleinen Stücken
 
-Das ist die Antwort auf „Ollama arbeitet schneller mit kleinen Stücken“. Der Loop teilt eine Aufgabe nicht selbst auf, und ein Ollama-Bauleiter sieht in Runde 2 nicht, was er in Runde 1 geschrieben hat. Deshalb zerlegt Codex die Aufgabe einmal in Etappen, und jede Etappe läuft als eigener kurzer Loop mit dem Stand der vorigen Etappe.
+Das ist die Antwort auf „Ollama arbeitet schneller mit kleinen Stücken“, und der Loop macht es selbst. Der Etappen-Modus ist bei Ollama-, LM-Studio- und Endpunkt-Bauleitern automatisch an (`--etappen auto`), mit `--etappen an` auch für Codex oder Claude.
 
-**Schritt 1: Etappen von Codex schneiden lassen** (nur lesend, ohne Loop):
+So läuft es:
 
-```bash
-cd ~/Projekte/rechnung
-codex exec -s read-only --output-last-message etappen.txt \
-  "Zerlege diese Aufgabe in 3 bis 8 Etappen, die nacheinander umsetzbar sind. Jede Etappe ändert höchstens zwei Dateien und ist danach testbar. Gib nur die Etappen aus, eine pro Zeile, ohne Nummern und ohne Leerzeilen. Aufgabe: CSV-Export für Rechnungen mit Filter nach Zeitraum und Kunde."
-cat etappen.txt   # lesen, kürzen, umsortieren: du entscheidest
-```
-
-**Schritt 2: Etappen nacheinander bauen**, jede mit Variante A:
+1. Der Architekt (z. B. Codex) bekommt die Vorgabe, den Plan mit `## Etappen` abzuschließen: 2 bis 8 Etappen, jede ändert höchstens zwei Dateien und ist danach testbar.
+2. Der Prüfstatiker prüft Plan und Etappen. Nach der Freigabe zeigt der Loop die Etappen an.
+3. Pro Runde bekommt der Ollama-Bauleiter nur die aktuelle Etappe, die erledigten Etappen, den Plan und den **aktuellen Inhalt** der betroffenen und schon geschriebenen Dateien.
+4. Der Loop führt `--proof` aus. Grün: nächste Etappe. Rot: Die Ausgabe geht zurück an den Bauleiter, bis zu 3 Versuche pro Etappe; danach hält der Loop an und `claudegravity -c` macht weiter.
+5. Nach der letzten Etappe nimmt Codex den gesamten Diff ab. Bei Befunden hängt der Loop eine Nacharbeits-Etappe an.
 
 ```bash
-ZIEL="CSV-Export für Rechnungen mit Filter nach Zeitraum und Kunde"
-while IFS= read -r etappe <&3; do
-  [ -z "$etappe" ] && continue
-  echo "=== Etappe: $etappe"
-  claudegravity "Gesamtziel: $ZIEL. Setze jetzt NUR diese Etappe um: $etappe" \
-    -p ~/Projekte/rechnung \
-    --architekt codex --architekt-effort medium \
-    --pruefstatiker ollama --pruefstatiker-model gpt-oss:20b \
-    --bauer ollama --bauer-model qwen3-coder:30b \
-    --abnahme codex \
-    --proof "python3 -m unittest discover -s tests" \
-    --merge -m 3
-done 3< etappen.txt
+claudegravity "CSV-Export für Rechnungen mit Filter nach Zeitraum und Kunde" \
+  -p ~/Projekte/rechnung \
+  --architekt codex --architekt-effort medium \
+  --pruefstatiker ollama --pruefstatiker-model gpt-oss:20b \
+  --bauer ollama --bauer-model qwen3-coder:30b \
+  --abnahme codex \
+  --proof "python3 -m unittest discover -s tests" \
+  --merge
 ```
+
+Kürzer, mit denselben Rollen: `--strategy hybrid --proof "…" --merge`.
 
 **Handlungsanweisungen**
 
-1. `3< etappen.txt` und `<&3` sind Absicht: So liest die Schleife die Etappen über einen eigenen Kanal, und das Freigabe-Menü des Loops liest weiter von deiner Tastatur.
-2. `--merge` ist Pflicht: Erst damit landet jede abgenommene Etappe in deinem Branch und die nächste Etappe baut darauf auf.
-3. Der Loop bricht die Schleife nicht von selbst ab. Wird eine Etappe nicht abgenommen, im Freigabe-Menü der nächsten Etappe `[5] Beenden` wählen oder mit Strg+C abbrechen, dann die offene Etappe mit `claudegravity -c -p ~/Projekte/rechnung` fortsetzen.
-4. Codex braucht hier pro Etappe einen kleinen Plan und eine Abnahme. Für noch weniger Codex-Verbrauch in Schritt 2 Variante C statt A einsetzen.
-5. Unter Windows (PowerShell) sieht die Schleife so aus: `foreach ($etappe in Get-Content etappen.txt) { if ($etappe) { .\claudegravity.ps1 "Gesamtziel: $ZIEL. Setze jetzt NUR diese Etappe um: $etappe" <weitere Flags wie oben> } }`.
+1. Ohne `--proof` gilt jede Etappe nach einer Runde als erledigt. Immer den Testbefehl des Projekts angeben.
+2. Hat das Projekt noch keine Tests, ist `unittest discover` schon vor der ersten Etappe rot. Lege vorher einen kleinen Test an oder schreib in die Aufgabe, dass Etappe 1 die Tests anlegt.
+3. Im Freigabe-Menü mit `[4]` den Abschnitt `## Etappen` lesen. Zu große Etappen mit `[2]` kleiner schneiden lassen.
+4. `-m` brauchst du nicht: Ohne Angabe bekommt der Lauf 2 Runden pro Etappe plus 2.
+5. Den Fortschritt zeigt `LOG.md` im Session-Ordner (`Etappe n/N erledigt`); `state.json` merkt sich Etappe und Stand für `-c`.
+6. Etappen von Hand, jede als eigener Lauf, gehen weiterhin: eine Etappe als Aufgabe, `--etappen aus`, `--merge`.
 
 ## Welche Variante wann?
 
@@ -257,7 +274,7 @@ done 3< etappen.txt
 | Neues kleines Projekt, Plan darf lokal entstehen | B | Review + Abnahme |
 | Kleiner Fix mit bekannten Dateien | C | nur Abnahme |
 | Großer Umbau, viele Dateien, Tests im Projekt | D | Review + gesamter Bau |
-| Größere Aufgabe, aber lokal bauen | E | Etappen + je Etappe Plan und Abnahme |
+| Größere Aufgabe, aber lokal bauen | E oder `--strategy hybrid` | ein Plan in Etappen + eine Abnahme am Ende |
 
 ## Über MCP: Einrichtung und Aufrufe
 
@@ -293,34 +310,38 @@ claude mcp list
 
 **1. Prüfen, was der Server sieht**: Tool `claudegravity_info`, ohne Parameter. Erwartet: `Codex CLI (codex)`, `Ollama CLI (ollama-cli)` und `Ollama (Lokal: …) (ollama)`.
 
-**2. Befehl berechnen lassen**: Tool `claudegravity_optimize`:
+**2. Befehl berechnen lassen**: Tool `claudegravity_optimize`, Variante A automatisch:
 
 ```json
 {
   "task": "Füge einen CSV-Export für Rechnungen hinzu",
-  "priority": "local-free",
+  "priority": "hybrid",
   "project_path": "/Users/<name>/Projekte/rechnung",
-  "proof": "python3 -m unittest discover -s tests",
-  "max_iterations": 6
+  "proof": "python3 -m unittest discover -s tests"
 }
 ```
 
-Sind außer Codex und Ollama keine weiteren CLIs installiert, ergibt das `claudegravity '…' --strategy local-free --bauer-model qwen2.5-coder:latest --proof '…' -m 6 -p …`. Im Lauf wird daraus ungefähr Variante A: Codex plant, `ollama run qwen2.5-coder:latest` prüft, der Ollama-Server baut mit `qwen2.5-coder:latest`, Codex nimmt ab. Ist zusätzlich `claude` installiert, plant Claude statt Codex.
+Ergebnis: `claudegravity '…' --strategy hybrid --proof '…' -p …`. Die Ollama-Modelle wählt der Loop beim Start aus den installierten Modellen; der Optimizer zeigt dafür „automatisch“.
 
-> [!WARNING]
-> Die MCP-Tools kennen keine Rollen- oder Modell-Parameter. Die Modellnamen, die `claudegravity_optimize` für Architekt und Prüfstatiker anzeigt (z. B. `gemini-2.5-pro`), sind Vorgaben für Claude/Gemini und gelten für Codex und Ollama nicht. Den Bauleiter-Wert `qwen2.5-coder:latest` musst du vorher mit `ollama pull qwen2.5-coder` laden. Für die Varianten A bis E mit eigenen Modellen den Befehl von dieser Seite verwenden.
+**3. Eine bestimmte Variante**: Die Tools nehmen Rollen und Modelle als Parameter. Variante B:
 
-**3. Eine Variante über den Assistenten starten**: Weil die Tools keine Rollen annehmen, gibst du dem Assistenten den fertigen Befehl. Beispiel für den Prompt in Codex oder Claude Code:
-
-```text
-Starte im Terminal claudegravity nach Variante A aus docs/de/ollama-und-codex.md
-für das Projekt ~/Projekte/rechnung mit der Aufgabe „CSV-Export für Rechnungen“.
-Führe zuerst denselben Befehl mit --dry-run aus und zeig mir die Belegung.
+```json
+{
+  "task": "Füge einen CSV-Export für Rechnungen hinzu",
+  "architekt": "ollama", "architekt_model": "qwen3:30b",
+  "pruefstatiker": "codex",
+  "bauer": "ollama", "bauer_model": "qwen3-coder:30b",
+  "abnahme": "codex",
+  "stages": "an",
+  "proof": "python3 -m unittest discover -s tests"
+}
 ```
+
+Weitere Parameter: `abnahme_model`, `approve_plan` (`--plan-auto`) und `merge` (`--merge`). Modellnamen zeigt der Optimizer nur für Claude und Gemini; Codex nutzt sein Standardmodell, solange du keins setzt.
 
 Mit dem Skill [`skills/claudegravity`](../../skills/claudegravity/SKILL.md) kennt der Assistent die Rollen-Flags bereits.
 
-**4. `claudegravity_run`**: mit `background: false` liefert das Tool nur den Befehl mit `cd` zum Kopieren. `background: true` ist für diese Varianten nicht geeignet: Freigabe-Menü und Rechte-Frage brauchen ein Terminal.
+**4. `claudegravity_run`**: dieselben Parameter. Mit `background: false` liefert das Tool den Befehl mit `cd` zum Kopieren. Mit `background: true` startet der Loop ohne Terminal und mit `--plan-auto`: Gebaut wird nur, wenn der Prüfstatiker `APPROVED` meldet. Ollama-Bauleiter brauchen dafür kein `yolo`; ein Codex-Bauleiter (Variante D) schon.
 
 **Zum Testen ohne Client** (eine JSON-RPC-Zeile über stdin):
 

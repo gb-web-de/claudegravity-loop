@@ -10,11 +10,12 @@ Statt jede Rolle einzeln einzustellen, wählst du mit `--strategy <name>` (Alias
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `balanced` *(Standard)* | – | `high` nur bei `agy` | `high` nur bei `agy` | CLI-Default | wie Architekt | Alltag |
 | `best-code` | `quality` | `high` | `high` | `high` | wie Architekt | Kernsysteme, Sicherheit, große Umbauten |
-| `eco` | `economy`, `cost` | `medium` | `medium` | `low` | `claude-3-5-haiku` (bei `claude`), sonst `gemini-2.5-flash` | Bis zu ~70 % Token-Ersparnis |
-| `local-free` | `free`, `local` | `high` | `high` | `low` | `qwen2.5-coder:32b` (Endpunkt), `qwen2.5-coder:latest` (Ollama), sonst `local-model` | 0 € API-Kosten im Bau-Loop |
+| `eco` | `economy`, `cost` | `medium` | `medium` | `low` | `claude-3-5-haiku` (bei `claude`), `gemini-2.5-flash` (bei `agy`/`gemini`), sonst CLI-Default | Bis zu ~70 % Token-Ersparnis |
+| `local-free` | `free`, `local` | `high` | `high` | `low` | Ollama: automatisch aus den installierten Modellen; Endpunkt: `qwen2.5-coder:32b`; sonst `local-model` | 0 € API-Kosten im Bau-Loop |
+| `hybrid` | `mixed` | CLI-Default | – | – | Ollama: automatisch | Cloud plant und nimmt ab, lokal wird geprüft und in Etappen gebaut |
 
 > [!NOTE]
-> `--effort`-Werte werden derzeit nur an `agy` (Antigravity) als `--effort` weitergereicht. Bei `claude` und anderen CLIs wirken sie nur als Anzeige im Audit-Bericht.
+> `--effort`-Werte werden an `agy` (`--effort`) und `codex` (`model_reasoning_effort`) weitergereicht. Bei `claude` und anderen CLIs wirken sie nur als Anzeige im Audit-Bericht.
 
 ## `best-code`
 
@@ -49,6 +50,25 @@ claudegravity "Refaktoriere das Modul" --strategy local-free \
   --endpoint http://192.168.1.50:11434/v1 --bauer endpoint --bauer-model qwen2.5-coder:7b
 ```
 
+## `hybrid`
+
+Die Aufteilung für Cloud-CLI plus lokales Modell, ohne jede Rolle einzeln zu setzen:
+
+| Rolle | Wird besetzt mit |
+| :--- | :--- |
+| 🏗️ Architekt | erste erkannte Cloud-CLI in der Reihenfolge `codex`, `claude`, `agy`, `gemini` |
+| 🧐 Prüfstatiker | lokales Modell (Ollama-Server, LM Studio, Endpunkt), Denk-Modell automatisch |
+| 🔨 Bauleiter | dasselbe lokale Backend, Code-Modell automatisch und nie dasselbe wie der Prüfstatiker |
+| 🔎 Abnahme | der Architekt (Cloud), also nie der Bauleiter |
+
+Dazu ist der [Etappen-Modus](bau-loop.md#etappen-modus) an: Der Architekt schneidet den Plan in Etappen, das lokale Modell baut sie einzeln und bekommt jedes Mal den aktuellen Stand der betroffenen Dateien. Jede Rolle, die du selbst angibst (`--architekt claude`, `--bauer-model …`), bleibt so, wie du sie setzt. Fehlt eine Cloud-CLI oder ein lokales Modell, meldet ClaudeGravity das und nutzt die normale Belegung.
+
+```bash
+claudegravity "CSV-Export für Rechnungen" --strategy hybrid --proof "python3 -m unittest discover -s tests"
+```
+
+Beispiele und Modellempfehlungen: [Ollama & Codex](ollama-und-codex.md).
+
 ## Presets prüfen
 
 Kombiniere jedes Preset mit `--dry-run`, um die konkrete Belegung auf deinem Rechner zu sehen:
@@ -59,4 +79,4 @@ claudegravity --dry-run "Neues Feature" --strategy eco
 
 ## Strategie per MCP wählen lassen
 
-Der [MCP-Server](mcp-server.md) bildet die Ziele `best-code`, `lowest-cost` (→ `eco`), `local-free` und `balanced` auf diese Presets ab und erzeugt den passenden Befehl.
+Der [MCP-Server](mcp-server.md) bildet die Ziele `best-code`, `lowest-cost` (→ `eco`), `local-free`, `hybrid` und `balanced` auf diese Presets ab und erzeugt den passenden Befehl.

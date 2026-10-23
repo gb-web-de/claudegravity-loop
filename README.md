@@ -33,6 +33,7 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 ## Highlights
 
 * **Strategie-Presets:** `--strategy best-code | eco | local-free | balanced` – bis zu ~70 % Token-Ersparnis oder 0 € im Bau-Loop mit lokalem Modell. → [Strategien](docs/de/strategien.md)
+* **Cloud + lokal automatisch:** `--strategy hybrid` lässt z. B. Codex planen und abnehmen, Ollama prüfen und bauen; die Ollama-Modelle wählt der Loop aus den installierten, der Plan wird in Etappen gebaut und jede mit `--proof` geprüft. → [Ollama & Codex](docs/de/ollama-und-codex.md)
 * **Beliebige Backends pro Rolle:** `claude`, `agy`, `gemini`, `codex`, `copilot`, Ollama, LM Studio oder eigene OpenAI-kompatible Server. → [Backends](docs/de/backends.md)
 * **Trockenlauf:** `--dry-run` zeigt Belegung und Befehl, ohne etwas zu ändern.
 * **Abnahme statt Selbstlob:** `--proof "<testbefehl>"` führt ClaudeGravity selbst aus; danach prüft ein anderes Modell den Diff. Prüfer lesen nur, Schreibrechte hat allein der Bauleiter. → [Bau-Loop](docs/de/bau-loop.md)
@@ -76,7 +77,7 @@ claudegravity "Create a Python weather CLI tool with full test coverage"
 claudegravity "Refactor auth" --strategy local-free --bauer ollama   # $0 build loop
 ```
 
-Key flags: `--strategy best-code|eco|local-free|balanced`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md).
+Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md).
 
 MCP server for Claude Code:
 

@@ -47,13 +47,18 @@ Analysiert die Aufgabe und liefert Rollenbelegung, Kosten-/Qualitäts-Einschätz
 | Parameter | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
 | `task` | string | *(Pflicht)* | Aufgabenbeschreibung |
-| `priority` | `best-code` \| `lowest-cost` \| `local-free` \| `balanced` | `balanced` | Ziel; `lowest-cost` entspricht `--strategy eco` |
+| `priority` | `best-code` \| `lowest-cost` \| `local-free` \| `hybrid` \| `balanced` | `balanced` | Ziel; `lowest-cost` entspricht `--strategy eco`, `hybrid` der Strategie `hybrid` (Cloud plant und nimmt ab, Ollama prüft und baut in Etappen) |
 | `endpoint` | string | – | OpenAI-kompatibler Endpunkt für den Bauleiter |
 | `project_path` | string | `.` | Zielprojekt |
 | `ask_mode` | boolean | `false` | Fragen-Modus (`-i`) |
 | `yolo` | boolean | `false` | `--yolo` anhängen |
 | `max_iterations` | integer | `10` | `-m` |
 | `proof` | string | – | Prüfbefehl (`--proof`), den der Loop nach jeder Bau-Runde selbst ausführt |
+| `architekt`, `pruefstatiker`, `bauer`, `abnahme` | string | – | Backend je Rolle, wie `--architekt` usw. (z. B. `codex`, `ollama`). Überschreibt die Wahl des Optimizers. |
+| `architekt_model`, `pruefstatiker_model`, `bauer_model`, `abnahme_model` | string | – | Modell je Rolle. Fehlt es bei `ollama`, wählt der Loop aus den installierten Modellen. |
+| `stages` | `auto` \| `an` \| `aus` | `auto` | Etappen-Modus (`--etappen`) |
+| `approve_plan` | boolean | `false` | `--plan-auto`: Plan ohne Rückfrage übernehmen, sobald der Prüfstatiker `APPROVED` meldet |
+| `merge` | boolean | `false` | `--merge`: Ergebnis nach der Abnahme in den Ausgangs-Branch mergen |
 
 ### `claudegravity_run`
 
@@ -61,12 +66,12 @@ Berechnet denselben Befehl und startet ihn.
 
 | Parameter | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
-| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof` | | wie oben | |
+| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, Rollen, `stages`, `approve_plan`, `merge` | | wie oben | |
 | `yolo` | boolean | `false` | Volle Rechte für den Bauleiter. Nur auf ausdrücklichen Wunsch setzen; ohne `yolo` kann ein Claude-Bauleiter im Hintergrund nichts schreiben. |
-| `background` | boolean | `false` | `true`: startet den Loop als Hintergrundprozess im Projektordner und meldet die PID. `false`: gibt nur den Befehl zum manuellen Start zurück. |
+| `background` | boolean | `false` | `true`: startet den Loop als Hintergrundprozess im Projektordner und meldet die PID; setzt dabei immer `--plan-auto`. `false`: gibt nur den Befehl zum manuellen Start zurück. |
 
 > [!WARNING]
-> Im Hintergrund laufen keine interaktiven Menüs (Plan-Freigabe, Rechte-Abfrage). Der Prozess ist ohne Terminal gestartet; prüfe Ergebnisse in `.dual-loop/sessions/` und `logs/` des Projekts. Der Befehl ruft `claudegravity` auf, das daher im `PATH` liegen muss.
+> Im Hintergrund gibt es kein Terminal: Der Plan wird nur gebaut, wenn der Prüfstatiker `APPROVED` meldet (`--plan-auto`), und die Rechte-Abfrage vor Phase 3 entfällt. Ein CLI-Bauleiter wie Claude oder Codex darf dann nur mit `yolo: true` schreiben; lokale Bauleiter (Ollama, Endpunkte) brauchen das nicht, weil ClaudeGravity ihre Dateien selbst schreibt. Ergebnisse stehen in `.dual-loop/sessions/` und `logs/` des Projekts. Gestartet wird `loop.py` direkt mit dem Python des MCP-Servers.
 
 ### `claudegravity_info`
 
@@ -77,8 +82,9 @@ Zeigt Betriebssystem, Python-Version, erkannte CLIs und Endpunkte sowie Strategi
 1. **Backends erkennen** wie `loop.py` (CLIs im `PATH`, Ollama/LM Studio auf localhost, `CLAUDEGRAVITY_ENDPOINT`/`OPENAI_BASE_URL`/`AI_ENDPOINT`).
 2. **Paarung:** Architekt `claude`, Prüfstatiker `agy` (sonst `gemini`, sonst ebenfalls `claude`).
 3. **Komplexität** per Stichwortsuche in der Aufgabe: Refactoring, Sicherheit/Auth und Architektur/Migration/Schema → `hoch`; kleine Fixes/Typos → `niedrig`; sonst `mittel`.
-4. **Priorität → Preset** (siehe [Strategien](strategien.md)); bei `lowest-cost` und `local-free` wird `--bauer-model` gesetzt.
-5. Bei **Architektur-Aufgaben** wird automatisch `-i` (Fragen-Modus) ergänzt.
+4. **Priorität → Preset** (siehe [Strategien](strategien.md)); bei `lowest-cost` (nur für Claude/Gemini) und bei `local-free` mit Endpunkt wird `--bauer-model` gesetzt. Für Ollama wählt der Loop das Modell selbst aus den installierten Modellen. Bei `hybrid` plant die erste Cloud-CLI (`codex`, `claude`, `agy`, `gemini`), das lokale Modell prüft und baut.
+5. **Ausdrückliche Rollen** (`architekt`, `bauer_model`, …) überschreiben die Wahl und landen als Flags im Befehl. Modellnamen zeigt der Optimizer nur für Claude und Gemini an; andere CLIs nutzen ihren CLI-Default.
+6. Bei **Architektur-Aufgaben** wird automatisch `-i` (Fragen-Modus) ergänzt.
 
 ## Direkt im Terminal (ohne MCP-Client)
 
@@ -92,7 +98,7 @@ claudegravity-mcp                                              # ohne Argumente:
 | Flag | Beschreibung | Standard |
 | :--- | :--- | :--- |
 | `--optimize`, `-o <aufgabe>` | Aufgabe analysieren und Empfehlung ausgeben | – |
-| `--priority` | `best-code`, `quality`, `eco`, `lowest-cost`, `cost`, `local-free`, `free`, `local`, `balanced` | `balanced` |
+| `--priority` | `best-code`, `quality`, `eco`, `lowest-cost`, `cost`, `local-free`, `free`, `local`, `hybrid`, `mixed`, `balanced` | `balanced` |
 | `--endpoint <url>` | Endpunkt für den Bauleiter | – |
 | `-p`, `--project` | Zielprojekt | `.` |
 | `-i`, `--ask` | Fragen-Modus im Befehl | aus |
