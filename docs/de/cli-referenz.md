@@ -26,6 +26,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). Siehe [Strategien](strategien.md). | `balanced` |
 | `--dry-run` | | Belegung, Kostenanalyse und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |
 | `--info` | `--check` | Erkannte CLIs/Endpunkte und Standard-Belegung anzeigen. | aus |
+| `--template <name>` | `--vorlage` | Aufgaben-Vorlage `bugfix`, `feature`, `refactor` oder eine eigene aus dem Profil. Siehe [Aufgaben-Vorlagen](#aufgaben-vorlagen). | – |
 | `init`, `--init` | `--einrichten` | Einrichtung: erkennt System und KI-CLIs, fragt Ziel, Prüfbefehl und Speicherort und schreibt ein Profil. Siehe [Schnellstart](schnellstart.md#1-einrichten). | – |
 | `--no-guide` | | Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil `"guide": false`). | aus |
 | `--print-effective-config` | `--config` | Wirksame Einstellungen mit Quelle (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden. Siehe [Vorrang der Einstellungen](#vorrang-der-einstellungen). | aus |
@@ -110,10 +111,11 @@ Jede Einstellung kommt aus der ersten Quelle, die sie setzt:
 
 1. **Kommandozeile:** Flag in diesem Aufruf
 2. **Session:** gespeicherter Wert aus `state.json` (nur bei `-c`)
-3. **Umgebung:** `CLAUDEGRAVITY_<EINSTELLUNG>`, z. B. `CLAUDEGRAVITY_STRATEGY=hybrid` oder `CLAUDEGRAVITY_BUILDER_MODEL=qwen2.5-coder:7b`
-4. **Projekt-Profil:** `<projekt>/.dual-loop/profile.json` (git-ignoriert)
-5. **Globales Profil:** `~/.config/claudegravity/profile.json` (`$XDG_CONFIG_HOME` wird beachtet, unter Windows `%APPDATA%\claudegravity\profile.json`, abweichender Ordner mit `CLAUDEGRAVITY_CONFIG_DIR`)
-6. **Standard:** Wert des Flags bzw. des gewählten Presets, danach der CLI-Default des Backends
+3. **Vorlage:** Werte der gewählten [Aufgaben-Vorlage](#aufgaben-vorlagen)
+4. **Umgebung:** `CLAUDEGRAVITY_<EINSTELLUNG>`, z. B. `CLAUDEGRAVITY_STRATEGY=hybrid` oder `CLAUDEGRAVITY_BUILDER_MODEL=qwen2.5-coder:7b`
+5. **Projekt-Profil:** `<projekt>/.dual-loop/profile.json` (git-ignoriert)
+6. **Globales Profil:** `~/.config/claudegravity/profile.json` (`$XDG_CONFIG_HOME` wird beachtet, unter Windows `%APPDATA%\claudegravity\profile.json`, abweichender Ordner mit `CLAUDEGRAVITY_CONFIG_DIR`)
+7. **Standard:** Wert des Flags bzw. des gewählten Presets, danach der CLI-Default des Backends
 
 Ein Profil ist ein flaches JSON-Objekt. Die Schlüssel sind die Flag-Namen ohne `--`, mit `-` oder `_` geschrieben, auch die deutschen Aliase:
 
@@ -139,6 +141,37 @@ claudegravity --print-effective-config -p ~/Projekte/rechnung
 ```
 
 Setzen zwei Quellen dieselbe Einstellung verschieden, markiert die Ausgabe das als **Konflikt** und nennt den überschriebenen Wert. Beim normalen Start zeigt der Loop in einer Zeile, welche Werte aus Umgebung oder Profil kommen, und meldet Konflikte.
+
+## Aufgaben-Vorlagen
+
+`--template <name>` (`--vorlage`) setzt mehrere Einstellungen passend zur Art der Aufgabe und hängt dem Aufgabentext eine kurze Arbeitsanweisung an. Einzelne Flags überschreiben die Vorlage.
+
+| Vorlage | Einstellungen | Pflicht | Anweisung an die Modelle |
+| :--- | :--- | :--- | :--- |
+| `bugfix` | `strategy: eco`, `etappen: aus`, `max_iterations: 5` | `--proof` | Kleinste Änderung, zuerst ein Test, der den Fehler zeigt. |
+| `feature` | `strategy: balanced`, `etappen: auto` | – | Vollständig umsetzen, mit Tests und kurzer Doku. |
+| `refactor` | `reviewer_effort: high`, `inspect: true`, `max_rounds: 3` | `--proof` | Struktur ändern, Verhalten nicht; bestehende Tests bleiben grün. |
+
+Fehlt ein Pflicht-Prüfbefehl, rät der Loop ihn aus dem Projekt (wie `claudegravity init`); findet er keinen, bricht er mit Hinweis ab.
+
+Vorlagen ändern oder eigene anlegen geht im globalen oder im Projekt-Profil unter `templates`. Projekt-Einträge ergänzen die globalen, die globalen die eingebauten:
+
+```json
+{
+  "template": "feature",
+  "templates": {
+    "bugfix": { "max_iterations": 8 },
+    "typo3": {
+      "strategy": "hybrid",
+      "proof": "vendor/bin/phpunit",
+      "requires": ["proof"],
+      "hint": "Halte dich an die TYPO3-Coding-Guidelines und ergänze Functional Tests."
+    }
+  }
+}
+```
+
+`template` im Profil wählt eine Standard-Vorlage für jeden Lauf. In einer Vorlage gelten dieselben Schlüssel wie im Profil, dazu `hint` (Anweisung) und `requires` (Pflicht-Einstellungen). `yolo` ist in Vorlagen nicht erlaubt. Welche Vorlage mit welchen Werten wirkt, zeigt `--print-effective-config`.
 
 ## Beispiele
 

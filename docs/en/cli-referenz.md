@@ -26,6 +26,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). See [Strategies](strategien.md). | `balanced` |
 | `--dry-run` | | Show the assignment, cost analysis and start command without running or creating anything. | off |
 | `--info` | `--check` | Show detected CLIs/endpoints and the default assignment. | off |
+| `--template <name>` | `--vorlage` | Task template `bugfix`, `feature`, `refactor` or your own from a profile. See [Task templates](#task-templates). | – |
 | `init`, `--init` | `--einrichten` | Setup: detects system and AI CLIs, asks for goal, proof command and location, and writes a profile. See [Quick start](schnellstart.md#1-set-up). | – |
 | `--no-guide` | | Do not show the hint on the first run without a profile (in a profile: `"guide": false`). | off |
 | `--print-effective-config` | `--config` | Show the effective settings with their source (command line, session, environment, profile, default) and exit. See [Settings precedence](#settings-precedence). | off |
@@ -110,10 +111,11 @@ Each setting comes from the first source that sets it:
 
 1. **Command line:** flag in this invocation
 2. **Session:** saved value from `state.json` (only with `-c`)
-3. **Environment:** `CLAUDEGRAVITY_<SETTING>`, e.g. `CLAUDEGRAVITY_STRATEGY=hybrid` or `CLAUDEGRAVITY_BUILDER_MODEL=qwen2.5-coder:7b`
-4. **Project profile:** `<project>/.dual-loop/profile.json` (git-ignored)
-5. **Global profile:** `~/.config/claudegravity/profile.json` (respects `$XDG_CONFIG_HOME`, on Windows `%APPDATA%\claudegravity\profile.json`, other folder via `CLAUDEGRAVITY_CONFIG_DIR`)
-6. **Default:** value of the flag or the selected preset, then the CLI default of the backend
+3. **Template:** values of the selected [task template](#task-templates)
+4. **Environment:** `CLAUDEGRAVITY_<SETTING>`, e.g. `CLAUDEGRAVITY_STRATEGY=hybrid` or `CLAUDEGRAVITY_BUILDER_MODEL=qwen2.5-coder:7b`
+5. **Project profile:** `<project>/.dual-loop/profile.json` (git-ignored)
+6. **Global profile:** `~/.config/claudegravity/profile.json` (respects `$XDG_CONFIG_HOME`, on Windows `%APPDATA%\claudegravity\profile.json`, other folder via `CLAUDEGRAVITY_CONFIG_DIR`)
+7. **Default:** value of the flag or the selected preset, then the CLI default of the backend
 
 A profile is a flat JSON object. Keys are the flag names without `--`, written with `-` or `_`, German aliases included:
 
@@ -139,6 +141,37 @@ claudegravity --print-effective-config -p ~/Projekte/rechnung
 ```
 
 If two sources set the same setting differently, the output marks it as a **conflict** and names the overridden value. On a normal start the loop shows in one line which values come from the environment or a profile, and reports conflicts.
+
+## Task templates
+
+`--template <name>` (`--vorlage`) sets several settings to match the kind of task and appends a short working instruction to the task text. Individual flags override the template.
+
+| Template | Settings | Required | Instruction to the models |
+| :--- | :--- | :--- | :--- |
+| `bugfix` | `strategy: eco`, `etappen: aus`, `max_iterations: 5` | `--proof` | Smallest change, first a test that shows the bug. |
+| `feature` | `strategy: balanced`, `etappen: auto` | – | Implement completely, with tests and short docs. |
+| `refactor` | `reviewer_effort: high`, `inspect: true`, `max_rounds: 3` | `--proof` | Change the structure, not the behaviour; existing tests stay green. |
+
+If a required proof command is missing, the loop guesses it from the project (like `claudegravity init`); if it finds none, it stops with a hint.
+
+Templates are changed or added in the global or project profile under `templates`. Project entries extend the global ones, global ones extend the built-in ones:
+
+```json
+{
+  "template": "feature",
+  "templates": {
+    "bugfix": { "max_iterations": 8 },
+    "typo3": {
+      "strategy": "hybrid",
+      "proof": "vendor/bin/phpunit",
+      "requires": ["proof"],
+      "hint": "Follow the TYPO3 coding guidelines and add functional tests."
+    }
+  }
+}
+```
+
+`template` in a profile selects a default template for every run. A template accepts the same keys as a profile, plus `hint` (instruction) and `requires` (required settings). `yolo` is not allowed in templates. `--print-effective-config` shows which template applies with which values.
 
 ## Examples
 

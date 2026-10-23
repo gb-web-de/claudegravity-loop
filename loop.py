@@ -2757,10 +2757,39 @@ SESSION_CONFIG_KEYS = {
     "swap": "swap_roles",
     "yolo": "yolo_enabled",
     "inspect": "inspect",
+    "template": "template",
+}
+TEMPLATE_DEST = "template"
+TEMPLATE_META_KEYS = {"hint", "hinweis", "requires", "pflicht", "beschreibung", "description"}
+# Eingebaute Vorlagen; Profile ändern sie oder fügen eigene hinzu ("templates": {"bugfix": {...}, "typo3": {...}})
+TASK_TEMPLATES = {
+    "bugfix": {
+        "beschreibung": "Fehler beheben: sparsam, ohne Etappen, Test zuerst",
+        "strategy": "eco",
+        "etappen": "aus",
+        "max_iterations": 5,
+        "requires": ["proof"],
+        "hint": "Behebe den Fehler mit möglichst kleiner Änderung. Schreibe zuerst einen Test, der den Fehler zeigt, und lass ihn dann grün werden.",
+    },
+    "feature": {
+        "beschreibung": "Neue Funktion: ausgewogen, Etappen nach Bedarf",
+        "strategy": "balanced",
+        "etappen": "auto",
+        "hint": "Setze die Funktion vollständig um, mit Tests für die neuen Fälle und kurzer Doku, wo Nutzer sie brauchen.",
+    },
+    "refactor": {
+        "beschreibung": "Umbau ohne Verhaltensänderung: strenge Prüfung, Abnahme an",
+        "reviewer_effort": "high",
+        "inspect": True,
+        "max_rounds": 3,
+        "requires": ["proof"],
+        "hint": "Ändere die Struktur, nicht das Verhalten. Alle bestehenden Tests müssen unverändert grün bleiben.",
+    },
 }
 CONFIG_SOURCE_LABELS = {
     "cli": "Kommandozeile",
     "session": "Session (Fortsetzen)",
+    "template": "Vorlage",
     "env": "Umgebung",
     "project": "Projekt-Profil",
     "global": "Globales Profil",
@@ -2847,36 +2876,34 @@ def resolve_config(
     project_profile: dict,
     global_profile: dict,
     session_state: dict | None = None,
-) -> tuple[dict, dict, list[str], list[str]]:
+) -> tuple[dict, dict, list[str], list[str], dict | None]:
     """Ermittelt je Einstellung Wert und Quelle.
 
-    Reihenfolge: Kommandozeile > Session (nur beim Fortsetzen) > Umgebung > Projekt-Profil
-    > globales Profil > Standard. Liefert (Werte, Quellen, Konflikte, Warnungen).
+    Reihenfolge: Kommandozeile > Session (nur beim Fortsetzen) > Vorlage > Umgebung > Projekt-Profil
+    > globales Profil > Standard. Liefert (Werte, Quellen, Konflikte, Warnungen, Vorlage).
     """
     actions = config_actions(parser)
     aliases = config_key_aliases(parser)
     warnings: list[str] = []
     layers: dict[str, dict] = {"session": {}, "env": {}, "project": {}, "global": {}}
 
-    for layer, profile in (("project", project_profile), ("global", global_profile)):
-        for raw_key, raw_value in profile.items():
-            if raw_key.startswith(("_", "$")):
-                continue  # Kommentare und Metadaten
-            key = raw_key.strip().lower().replace("-", "_")
-            if key in ("api_key", "apikey"):
-                warnings.append(f"⚠️ {CONFIG_SOURCE_LABELS[layer]}: `{raw_key}` wird ignoriert. Schlüssel gehören in CLAUDEGRAVITY_API_KEY, nie in eine Datei.")
+    template_defs: dict[str, dict] = {name: dict(spec) for name, spec in TASK_TEMPLATES.items()}
+    template_origin: dict[str, str] = {name: "eingebaut" for name in TASK_TEMPLATES}
+    for layer, profile in (("global", global_profile), ("project", project_profile)):
+        label = CONFIG_SOURCE_LABELS[layer]
+        custom = profile.get("templates", profile.get("vorlagen"))
+        if custom is not None and not isinstance(custom, dict):
+            warnings.append(f"⚠️ {label}: `templates` muss ein Objekt sein; wird ignoriert.")
+            custom = None
+        for name, spec in (custom or {}).items():
+            if not isinstance(spec, dict):
+                warnings.append(f"⚠️ {label}: Vorlage `{name}` muss ein Objekt sein; wird ignoriert.")
                 continue
-            dest = aliases.get(key)
-            if not dest:
-                warnings.append(f"⚠️ {CONFIG_SOURCE_LABELS[layer]}: unbekannte Einstellung `{raw_key}` wird ignoriert.")
-                continue
-            if layer == "project" and dest in PROJECT_PROFILE_FORBIDDEN:
-                warnings.append(f"⚠️ Projekt-Profil: `{raw_key}` wird ignoriert. Schreibrechte nur per Kommandozeile, Umgebung oder globalem Profil.")
-                continue
-            try:
-                layers[layer][dest] = coerce_config_value(actions[dest], raw_value)
-            except ValueError as exc:
-                warnings.append(f"⚠️ {CONFIG_SOURCE_LABELS[layer]}: `{raw_key}` {exc}; wird ignoriert.")
+            template_defs.setdefault(name.lower(), {}).update(spec)
+            template_origin[name.lower()] = label
+        entries = {k: v for k, v in profile.items() if k not in ("templates", "vorlagen")}
+        layers[layer], more = parse_config_entries(entries, label, actions, aliases, forbidden=PROJECT_PROFILE_FORBIDDEN if layer == "project" else set())
+        warnings += more
 
     for dest, action in actions.items():
         name = CONFIG_ENV_PREFIX + dest.upper()
@@ -2893,6 +2920,27 @@ def resolve_config(
             except ValueError:
                 pass  # Alter Session-Stand mit inzwischen anderen Auswahlwerten: Standard greift
 
+    # Vorlage: selbst eine Einstellung (Kommandozeile, Session, Umgebung, Profil), wirkt direkt nach der Session
+    template_name = next((src[TEMPLATE_DEST] for src in (explicit, layers["session"], layers["env"], layers["project"], layers["global"])
+                          if src.get(TEMPLATE_DEST)), None)
+    layers["template"] = {}
+    template_info = None
+    if template_name:
+        spec = template_defs.get(str(template_name).lower())
+        if spec is None:
+            warnings.append(f"❌ Unbekannte Vorlage `{template_name}`. Verfügbar: {', '.join(sorted(template_defs))}.")
+        else:
+            entries = {k: v for k, v in spec.items() if k not in TEMPLATE_META_KEYS}
+            forbidden = PROJECT_PROFILE_FORBIDDEN | {TEMPLATE_DEST}
+            layers["template"], more = parse_config_entries(entries, f"Vorlage `{template_name}`", actions, aliases, forbidden=forbidden)
+            warnings += more
+            template_info = {
+                "name": str(template_name).lower(),
+                "origin": template_origin.get(str(template_name).lower()),
+                "hint": spec.get("hint") or spec.get("hinweis"),
+                "requires": list(spec.get("requires") or spec.get("pflicht") or []),
+            }
+
     values: dict = {}
     sources: dict = {}
     conflicts: list[str] = []
@@ -2900,7 +2948,7 @@ def resolve_config(
         candidates = []
         if dest in explicit:
             candidates.append(("cli", explicit[dest]))
-        for layer in ("session", "env", "project", "global"):
+        for layer in ("session", "template", "env", "project", "global"):
             if dest in layers[layer]:
                 candidates.append((layer, layers[layer][dest]))
         if candidates:
@@ -2913,7 +2961,32 @@ def resolve_config(
             source, value = "default", action.default
         values[dest] = value
         sources[dest] = source
-    return values, sources, conflicts, warnings
+    return values, sources, conflicts, warnings, template_info
+
+
+def parse_config_entries(entries: dict, label: str, actions: dict, aliases: dict, forbidden: set) -> tuple[dict, list[str]]:
+    """Prüft Einträge aus Profil oder Vorlage gegen die Flags. Liefert (dest -> Wert, Warnungen)."""
+    result: dict = {}
+    warnings: list[str] = []
+    for raw_key, raw_value in entries.items():
+        if raw_key.startswith(("_", "$")):
+            continue  # Kommentare und Metadaten
+        key = raw_key.strip().lower().replace("-", "_")
+        if key in ("api_key", "apikey"):
+            warnings.append(f"⚠️ {label}: `{raw_key}` wird ignoriert. Schlüssel gehören in CLAUDEGRAVITY_API_KEY, nie in eine Datei.")
+            continue
+        dest = aliases.get(key)
+        if not dest:
+            warnings.append(f"⚠️ {label}: unbekannte Einstellung `{raw_key}` wird ignoriert.")
+            continue
+        if dest in forbidden:
+            warnings.append(f"⚠️ {label}: `{raw_key}` wird ignoriert. Schreibrechte nur per Kommandozeile, Umgebung oder globalem Profil.")
+            continue
+        try:
+            result[dest] = coerce_config_value(actions[dest], raw_value)
+        except ValueError as exc:
+            warnings.append(f"⚠️ {label}: `{raw_key}` {exc}; wird ignoriert.")
+    return result, warnings
 
 
 def explicit_cli_values(parser: argparse.ArgumentParser, argv: list[str]) -> dict:
@@ -2951,20 +3024,24 @@ def apply_config_layers(
         latest = find_latest_session(project_path / ".dual-loop")
         session_state = load_session_state(latest) if latest else None
     explicit = explicit_cli_values(parser, argv)
-    values, sources, conflicts, more = resolve_config(parser, explicit, env, project_profile, global_profile, session_state)
+    values, sources, conflicts, more, template = resolve_config(parser, explicit, env, project_profile, global_profile, session_state)
     warnings += more
     for dest, value in values.items():
         setattr(args, dest, value)
     return {"values": values, "sources": sources, "conflicts": conflicts, "warnings": warnings, "paths": paths,
+            "template": template,
             "loaded": {k: bool(v) for k, v in (("global", global_profile), ("project", project_profile))}}
 
 
 def format_effective_config(report: dict) -> str:
-    lines = ["⚙️  Wirksame Konfiguration (Kommandozeile > Session > Umgebung > Projekt-Profil > globales Profil > Standard)", ""]
+    lines = ["⚙️  Wirksame Konfiguration (Kommandozeile > Session > Vorlage > Umgebung > Projekt-Profil > globales Profil > Standard)", ""]
     for layer in ("project", "global"):
         state = "geladen" if report["loaded"][layer] else "nicht vorhanden"
         lines.append(f"  {CONFIG_SOURCE_LABELS[layer]:<16}: {report['paths'][layer]} ({state})")
     lines.append(f"  {'Umgebung':<16}: {CONFIG_ENV_PREFIX}<EINSTELLUNG>, z. B. {CONFIG_ENV_PREFIX}STRATEGY=hybrid")
+    tpl = report.get("template")
+    if tpl:
+        lines.append(f"  {'Vorlage':<16}: {tpl['name']} ({tpl['origin']})" + (f", Pflicht: {', '.join(tpl['requires'])}" if tpl["requires"] else ""))
     lines.append("")
     conflict_keys = {c.split(":", 1)[0] for c in report["conflicts"]}
     width = max(len(k) for k in report["values"])
@@ -3192,6 +3269,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--etappen", "--stages", default="auto", choices=["auto", "an", "aus", "on", "off"], help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)")
 
     parser.add_argument("--retries", "--neuversuche", type=int, default=None, help="Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, 5xx, Verbindungsabbruch) mit Backoff und Jitter (Standard: 3, 0 schaltet ab)")
+    parser.add_argument("--template", "--vorlage", default=None, help="Aufgaben-Vorlage: bugfix, feature, refactor oder eigene aus dem Profil (\"templates\"); einzelne Flags überschreiben sie")
     parser.add_argument("--init", "--einrichten", action="store_true", help="Einrichtung: erkennt System und KI-CLIs, fragt Ziel und Prüfbefehl, speichert ein Profil (auch: claudegravity init)")
     parser.add_argument("--no-guide", dest="guide", action="store_false", help="Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil: \"guide\": false)")
     parser.add_argument("--print-effective-config", "--config", dest="print_effective_config", action="store_true", help="Wirksame Konfiguration mit Quelle je Einstellung (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden")
@@ -3215,6 +3293,18 @@ def main():
             f"{d}={config_report['values'][d]!r} ({CONFIG_SOURCE_LABELS[config_report['sources'][d]]})" for d in sorted(layered)))
     for conflict in config_report["conflicts"]:
         print(f"⚠️  Konfigurationskonflikt: {conflict}")
+    template = config_report.get("template")
+    if args.template and not template:
+        sys.exit(1)  # unbekannte Vorlage, Warnung steht oben
+    if template and not args.init and not args.check:
+        print(f"🧩 Vorlage `{template['name']}` ({template['origin']})")
+        if "proof" in template["requires"] and not args.proof and not args.resume:
+            guessed = suggest_proof_command(Path(args.project).resolve())
+            if not guessed:
+                sys.exit(f"Fehler: Die Vorlage `{template['name']}` braucht einen Prüfbefehl. Bitte --proof \"<testbefehl>\" angeben.")
+            args.proof = guessed
+            config_report["sources"]["proof"] = "template"
+            print(f"   Prüfbefehl aus dem Projekt geraten: {guessed} (anderer mit --proof)")
 
     global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING, RETRY_OVERRIDE
     RETRY_OVERRIDE = args.retries
@@ -3588,6 +3678,12 @@ def main():
             "last_iteration": 0,
             "max_iterations": args.max_iterations or 10
         }
+        template = config_report.get("template")
+        if template:
+            state["template"] = template["name"]
+            if template.get("hint"):
+                task = f"{task}\n\nVorgehen ({template['name']}): {template['hint']}"
+                state["task"] = task
         save_session_state(session_dir, state)
 
     # Paarung festlegen
