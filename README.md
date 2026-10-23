@@ -70,6 +70,7 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 | [CLI-Referenz](docs/de/cli-referenz.md) | Alle Flags |
 | [MCP-Server](docs/de/mcp-server.md) | Registrierung, Tools, Optimizer |
 | [Sessions & Dateien](docs/de/sessions-und-dateien.md) | `.dual-loop/`, `state.json`, `.done`, Projektkontext |
+| [Sicherheit](docs/de/sicherheit.md) | Bedrohungsmodell, Schutzmaßnahmen, Empfehlungen |
 | [Fehlerbehebung](docs/de/fehlerbehebung.md) | Entscheidungsbaum, Fehlercodes CG-xxxx, häufige Probleme, bekannte Einschränkungen |
 
 ---
@@ -93,7 +94,7 @@ Choose your path:
 
 Not sure? `claudegravity init` asks three questions and saves a profile; `--dry-run` shows the role assignment first.
 
-Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md).
+Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md). Threat model: [Security](docs/en/sicherheit.md).
 
 MCP server for Claude Code:
 

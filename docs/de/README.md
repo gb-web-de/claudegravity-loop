@@ -17,4 +17,5 @@
 | [CLI-Referenz](cli-referenz.md) | Alle Flags von `claudegravity`, Profile, Vorlagen |
 | [MCP-Server](mcp-server.md) | Registrierung, Tools, Optimizer im Terminal |
 | [Sessions & Dateien](sessions-und-dateien.md) | `.dual-loop/`, `state.json`, Fortsetzen, `.done`-Audit, `CLAUDE.md` & `knowledge/` |
+| [Sicherheit](sicherheit.md) | Bedrohungsmodell: was der Loop schützt, wie, und was du selbst absichern musst |
 | [Fehlerbehebung](fehlerbehebung.md) | Entscheidungsbaum, Fehlercodes CG-xxxx, häufige Probleme, bekannte Einschränkungen |
