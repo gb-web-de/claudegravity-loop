@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT))
 import loop  # noqa: E402
 import mcp_server  # noqa: E402
 
-GB = 1024 ** 3
+GB = 1024**3
 MODELS = [
     {"name": "qwen3-coder:30b", "size": 19 * GB},
     {"name": "gpt-oss:20b", "size": 14 * GB},
@@ -30,8 +30,16 @@ MODELS = [
 
 def make_args(**overrides) -> argparse.Namespace:
     base = dict(
-        resume=False, strategy="balanced", planner=None, reviewer=None, builder=None, inspector=None,
-        planner_model=None, reviewer_model=None, builder_model=None, inspector_model=None,
+        resume=False,
+        strategy="balanced",
+        planner=None,
+        reviewer=None,
+        builder=None,
+        inspector=None,
+        planner_model=None,
+        reviewer_model=None,
+        builder_model=None,
+        inspector_model=None,
     )
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -43,10 +51,7 @@ def fake_agents(*keys: str) -> dict:
 
 class ParseStagesTest(unittest.TestCase):
     def test_reads_numbered_list_under_heading(self):
-        plan = (
-            "# Plan\nText\n\n## Etappen\n1. Parser in `src/a.py`\n2. Tests in tests/test_a.py\n"
-            "   mit Randfall\n\n## Risiken\n1. keine\n"
-        )
+        plan = "# Plan\nText\n\n## Etappen\n1. Parser in `src/a.py`\n2. Tests in tests/test_a.py\n   mit Randfall\n\n## Risiken\n1. keine\n"
         self.assertEqual(loop.parse_stages(plan), ["Parser in `src/a.py`", "Tests in tests/test_a.py mit Randfall"])
 
     def test_accepts_numbered_heading_and_english(self):
@@ -161,20 +166,54 @@ class AutoRolesTest(unittest.TestCase):
 class DryRunCommandTest(unittest.TestCase):
     def test_contains_every_role_flag(self):
         args = argparse.Namespace(
-            endpoint=None, architekt_endpoint=None, pruefstatiker_endpoint=None, bauer_endpoint=None,
-            planner="codex", planner_model=None, planner_effort="high",
-            reviewer="ollama", reviewer_model="gpt-oss:20b", reviewer_effort=None,
-            builder="ollama", builder_model="qwen3-coder:30b", builder_effort=None,
-            inspector="codex", inspector_model=None, inspector_effort=None, effort=None,
-            proof="python -m unittest", etappen="an", swap=False, ask=False, yolo=False, approve_plan=True,
-            auto_switch=False, merge=True, inspect=True, max_iterations=None, project=".",
-            escalate="auto", escalate_after=3,
+            endpoint=None,
+            architekt_endpoint=None,
+            pruefstatiker_endpoint=None,
+            bauer_endpoint=None,
+            planner="codex",
+            planner_model=None,
+            planner_effort="high",
+            reviewer="ollama",
+            reviewer_model="gpt-oss:20b",
+            reviewer_effort=None,
+            builder="ollama",
+            builder_model="qwen3-coder:30b",
+            builder_effort=None,
+            inspector="codex",
+            inspector_model=None,
+            inspector_effort=None,
+            effort=None,
+            proof="python -m unittest",
+            etappen="an",
+            swap=False,
+            ask=False,
+            yolo=False,
+            approve_plan=True,
+            auto_switch=False,
+            merge=True,
+            inspect=True,
+            max_iterations=None,
+            project=".",
+            escalate="auto",
+            escalate_after=3,
         )
         cmd = loop.dry_run_command(args, "CSV-Export", "hybrid")
         joined = " ".join(cmd)
-        for part in ["--strategy hybrid", "--architekt codex", "--architekt-effort high", "--pruefstatiker ollama",
-                     "--pruefstatiker-model gpt-oss:20b", "--bauer ollama", "--bauer-model qwen3-coder:30b",
-                     "--abnahme codex", "--etappen an", "--plan-auto", "--merge", "--escalate auto", "--escalate-after 3"]:
+        for part in [
+            "--strategy hybrid",
+            "--architekt codex",
+            "--architekt-effort high",
+            "--pruefstatiker ollama",
+            "--pruefstatiker-model gpt-oss:20b",
+            "--bauer ollama",
+            "--bauer-model qwen3-coder:30b",
+            "--abnahme codex",
+            "--etappen an",
+            "--plan-auto",
+            "--merge",
+            "--escalate auto",
+            "--escalate-after 3",
+        ]:
             self.assertIn(part, joined)
         self.assertEqual(cmd[1], "CSV-Export")
 
@@ -182,7 +221,8 @@ class DryRunCommandTest(unittest.TestCase):
 class McpRolesTest(unittest.TestCase):
     def setUp(self):
         patcher = mock.patch.object(
-            mcp_server, "detect_installed_agents",
+            mcp_server,
+            "detect_installed_agents",
             return_value={"codex": "Codex CLI", "ollama-cli": "Ollama CLI", "ollama": "Ollama"},
         )
         patcher.start()
@@ -198,12 +238,19 @@ class McpRolesTest(unittest.TestCase):
 
     def test_roles_are_passed_through(self):
         opt = mcp_server.optimize_claudegravity_command(
-            "CSV", roles={"architekt": "ollama", "pruefstatiker": "codex", "bauer": "ollama", "bauer_model": "qwen3-coder:30b"},
-            stages="an", approve_plan=True,
+            "CSV",
+            roles={"architekt": "ollama", "pruefstatiker": "codex", "bauer": "ollama", "bauer_model": "qwen3-coder:30b"},
+            stages="an",
+            approve_plan=True,
         )
         args = opt["loop_args"]
-        for flag, value in [("--architekt", "ollama"), ("--pruefstatiker", "codex"), ("--bauer", "ollama"),
-                            ("--bauer-model", "qwen3-coder:30b"), ("--etappen", "an")]:
+        for flag, value in [
+            ("--architekt", "ollama"),
+            ("--pruefstatiker", "codex"),
+            ("--bauer", "ollama"),
+            ("--bauer-model", "qwen3-coder:30b"),
+            ("--etappen", "an"),
+        ]:
             self.assertEqual(args[args.index(flag) + 1], value)
         self.assertIn("--plan-auto", args)
 
@@ -230,25 +277,38 @@ class McpRolesTest(unittest.TestCase):
 class BuildPromptTest(unittest.TestCase):
     def test_stage_prompt_names_only_the_current_stage(self):
         prompt = loop.compose_build_prompt(
-            "CSV-Export", Path("PLAN_v1.md"), "make test", "Test x rot", endpoint=True,
-            plan_text="# Plan", file_ctx="```filepath: a.py\n```", stage=("Etappe 2/3", "Export", "- [x] Parser"),
+            "CSV-Export",
+            Path("PLAN_v1.md"),
+            "make test",
+            "Test x rot",
+            endpoint=True,
+            plan_text="# Plan",
+            file_ctx="```filepath: a.py\n```",
+            stage=("Etappe 2/3", "Export", "- [x] Parser"),
         )
-        for part in ("JETZT NUR ETAPPE 2/3: Export", "- [x] Parser", "`make test`", "Test x rot",
-                     "--- GENEHMIGTER PLAN ---", "BETROFFENEN DATEIEN", "FORMAT FÜR DATEI-ÄNDERUNGEN"):
+        for part in (
+            "JETZT NUR ETAPPE 2/3: Export",
+            "- [x] Parser",
+            "`make test`",
+            "Test x rot",
+            "--- GENEHMIGTER PLAN ---",
+            "BETROFFENEN DATEIEN",
+            "FORMAT FÜR DATEI-ÄNDERUNGEN",
+        ):
             self.assertIn(part, prompt)
         self.assertIn("KEINE Fertigmeldung", prompt)
 
     def test_full_plan_prompt_asks_for_done_marker(self):
-        prompt = loop.compose_build_prompt("CSV-Export", Path("PLAN_v1.md"), None, "", endpoint=False,
-                                           rel_done_path=Path("sess/.done"))
+        prompt = loop.compose_build_prompt("CSV-Export", Path("PLAN_v1.md"), None, "", endpoint=False, rel_done_path=Path("sess/.done"))
         self.assertTrue(prompt.startswith("Führe den genehmigten Plan (PLAN_v1.md)"))
         self.assertIn(f"'{Path('sess/.done')}'", prompt)
         self.assertNotIn("GENEHMIGTER PLAN ---", prompt)
         self.assertNotIn("Prüfbefehl", prompt)
 
     def test_endpoint_full_plan_prompt_carries_plan_and_done_block(self):
-        prompt = loop.compose_build_prompt("CSV-Export", Path("PLAN_v1.md"), "make test", "", endpoint=True,
-                                           plan_text="# Plan", rel_done_path=Path("sess/.done"))
+        prompt = loop.compose_build_prompt(
+            "CSV-Export", Path("PLAN_v1.md"), "make test", "", endpoint=True, plan_text="# Plan", rel_done_path=Path("sess/.done")
+        )
         self.assertIn("--- GENEHMIGTER PLAN ---\n# Plan", prompt)
         self.assertTrue(prompt.endswith(f"```filepath: {Path('sess/.done')}\n# Aufgabe abgeschlossen\n```"))
 
@@ -300,20 +360,53 @@ class StageLoopEndToEndTest(unittest.TestCase):
                 (project / "tests" / "test_smoke.py").write_text(
                     "import unittest\n\nclass S(unittest.TestCase):\n    def test_ok(self):\n        pass\n", encoding="utf-8"
                 )
-                env = {k: v for k, v in os.environ.items()
-                       if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT", "OLLAMA_HOST")}
+                env = {
+                    k: v
+                    for k, v in os.environ.items()
+                    if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT", "OLLAMA_HOST")
+                }
                 env["CLAUDEGRAVITY_CONFIG_DIR"] = os.devnull  # kein globales Profil des Nutzers
                 env["PATH"] = tmp
                 env["OLLAMA_HOST"] = "127.0.0.1:9"
                 env["PYTHONIOENCODING"] = "utf-8"
                 res = subprocess.run(
-                    [sys.executable, str(ROOT / "loop.py"), "Addition mit Test", "-p", tmp, "--no-worktree", "-d", "0",
-                     "--architekt-endpoint", url, "--architekt", "architekt_ep",
-                     "--pruefstatiker-endpoint", url, "--pruefstatiker", "pruefstatiker_ep", "--pruefstatiker-model", "pruefer",
-                     "--bauer-endpoint", url, "--bauer", "bauer_ep", "--bauer-model", "bauer",
-                     "--abnahme", "pruefstatiker_ep", "--plan-auto",
-                     "--proof", f"{sys.executable} -m unittest discover -s tests"],
-                    input="", capture_output=True, text=True, encoding="utf-8", timeout=120, env=env,
+                    [
+                        sys.executable,
+                        str(ROOT / "loop.py"),
+                        "Addition mit Test",
+                        "-p",
+                        tmp,
+                        "--no-worktree",
+                        "-d",
+                        "0",
+                        "--architekt-endpoint",
+                        url,
+                        "--architekt",
+                        "architekt_ep",
+                        "--pruefstatiker-endpoint",
+                        url,
+                        "--pruefstatiker",
+                        "pruefstatiker_ep",
+                        "--pruefstatiker-model",
+                        "pruefer",
+                        "--bauer-endpoint",
+                        url,
+                        "--bauer",
+                        "bauer_ep",
+                        "--bauer-model",
+                        "bauer",
+                        "--abnahme",
+                        "pruefstatiker_ep",
+                        "--plan-auto",
+                        "--proof",
+                        f"{sys.executable} -m unittest discover -s tests",
+                    ],
+                    input="",
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    timeout=120,
+                    env=env,
                 )
                 out = res.stdout
                 self.assertEqual(res.returncode, 0, res.stderr)

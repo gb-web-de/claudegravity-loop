@@ -35,6 +35,7 @@ LOOP_ARTIFACT_DIRS = (".dual-loop/", "logs/")
 
 
 def git_head(path: Path) -> str | None:
+    """Aktueller Commit des Projekts oder None außerhalb eines Git-Repositorys."""
     if not is_git_repo(path):
         return None
     res = _git(path, "rev-parse", "HEAD")
@@ -47,7 +48,8 @@ def collect_build_changes(work_path: Path, base: str | None, limit: int = 60000)
         return "(Kein Git-Basis-Commit: Prüfe die im Plan genannten Dateien direkt.)"
     diff = _git(work_path, "diff", "--no-ext-diff", "--no-color", base, "--").stdout
     untracked = [
-        f for f in _git(work_path, "ls-files", "--others", "--exclude-standard").stdout.splitlines()
+        f
+        for f in _git(work_path, "ls-files", "--others", "--exclude-standard").stdout.splitlines()
         if f and not f.startswith(LOOP_ARTIFACT_DIRS)
     ]
     parts = [f"### Geänderte Dateien seit {base[:10]} (git diff)\n```diff\n{diff.strip() or '(keine)'}\n```"]
@@ -77,7 +79,7 @@ def parse_stages(plan_text: str) -> list[str]:
     headings = list(STAGE_HEADING.finditer(plan_text))
     if not headings:
         return []
-    section = plan_text[headings[-1].end():]
+    section = plan_text[headings[-1].end() :]
     stages: list[str] = []
     for line in section.splitlines():
         if re.match(r"^#{1,6}\s", line):
@@ -186,6 +188,7 @@ def compose_build_prompt(
 @dataclasses.dataclass
 class BuildContext:
     """Was jede Bau-Runde braucht und sich im Bau-Loop nicht ändert (außer der Liste geschriebener Dateien)."""
+
     work_path: Path
     session_dir: Path
     session_log: Path
@@ -221,7 +224,7 @@ def run_build_call(
         auto_switch=ctx.auto_switch,
         role="builder",
         metrics_tracker=ctx.metrics,
-        exclude={ctx.inspector.binary} if ctx.inspector is not None else None
+        exclude={ctx.inspector.binary} if ctx.inspector is not None else None,
     )
     say(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [{label}]:")
     say(res)
@@ -229,7 +232,8 @@ def run_build_call(
     if endpoint:
         name = builder.name
         written = apply_code_blocks(
-            ctx.work_path, res,
+            ctx.work_path,
+            res,
             on_blocked=lambda rel: record_audit_event(ctx.session_dir, "blocked_write", f"{name} wollte {rel} schreiben", ctx.metrics),
         )
         for w in written:
@@ -264,8 +268,7 @@ def run_proof(command: str, cwd: Path, timeout: int = 900) -> tuple[bool, str]:
     try:
         cmd, use_shell = build_cli_command(argv[0], argv[1:])
         res = subprocess.run(
-            cmd, cwd=str(cwd), capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=timeout, shell=use_shell
+            cmd, cwd=str(cwd), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, shell=use_shell
         )
     except (OSError, ValueError) as ex:
         return False, f"Prüfbefehl konnte nicht starten: {ex}"
@@ -288,7 +291,7 @@ def run_inspection(
     state: dict,
     agents: dict[str, AgentCLI],
     auto_switch: bool,
-    round_no: int
+    round_no: int,
 ) -> tuple[bool, str, str]:
     """Frische Abnahme-Sitzung (kein --resume). Liefert (freigegeben, Begründung, Antwort)."""
     prompt = (
@@ -313,7 +316,7 @@ def run_inspection(
         state=state,
         auto_switch=auto_switch,
         role="inspector",
-        exclude={builder.binary}
+        exclude={builder.binary},
     )
     (session_dir / f"INSPECTION_round{round_no}.md").write_text(answer, encoding="utf-8")
     approved, reason = review_decision(parse_review(answer))

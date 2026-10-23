@@ -28,11 +28,10 @@ def say(*parts: object, sep: str = " ", end: str = "\n", file=None, flush: bool 
     print(*parts, sep=sep, end=end, file=file, flush=flush)
 
 
-
-
 @dataclasses.dataclass
 class RuntimeSettings:
     """Einstellungen eines Laufs, die tief im Code gebraucht werden. main() setzt sie einmal (apply_runtime_settings)."""
+
     endpoint_timeout: int | None = None  # Sekunden pro Runde für Endpunkte (None = automatisch, siehe endpoint_timeout)
     shield: bool = True  # Datenschutzschild: Zugangsdaten vor dem Versand an Cloud-Modelle schwärzen
     stage_planning: bool = False  # Architekt schneidet den Plan in Etappen
@@ -66,10 +65,12 @@ STAGE_MAX_TRIES = 3
 
 
 def planning_directive() -> str:
+    """Anweisung an den Architekten, im Etappen-Modus mit dem Zusatz für den Abschnitt ## Etappen."""
     return PLANNING_DIRECTIVE + (STAGE_DIRECTIVE if SETTINGS.stage_planning else "")
 
 
 def sigint_handler(signum, frame):
+    """Strg+C: Abbruch vormerken, damit die laufende Runde sauber endet."""
     say("\n[!] Abbruch empfangen. Beende aktuelle Iteration sauber...")
     SETTINGS.stop_requested = True
 
@@ -80,6 +81,8 @@ if hasattr(signal, "SIGTERM"):
 
 
 class RateLimitError(Exception):
+    """Ein Backend meldet ein Limit oder eine Störung, die auch nach den Neuversuchen bleibt."""
+
     def __init__(self, binary: str, message: str, reset_time: str | None = None, reset_seconds: int | None = None, transient: bool = False):
         super().__init__(f"{binary} Limit erreicht: {message}")
         self.binary = binary
@@ -112,6 +115,7 @@ TIME_PATTERNS = [
 
 
 def is_rate_limit(text: str) -> bool:
+    """True, wenn der Text nach Rate-Limit, Kontingent oder Überlastung klingt."""
     return any(re.search(p, text, re.IGNORECASE) for p in RATE_LIMIT_PATTERNS)
 
 
@@ -152,6 +156,7 @@ def is_transient_error(text: str, local: bool = False) -> bool:
 
 
 def retry_policy(local: bool) -> dict:
+    """Neuversuch-Regeln (Versuche, Wartezeiten) für Cloud oder lokal, mit --retries als Vorrang."""
     policy = dict(RETRY_POLICIES["local" if local else "cloud"])
     if SETTINGS.retries is not None:
         policy["attempts"] = max(0, SETTINGS.retries)
@@ -175,6 +180,7 @@ def interruptible_sleep(seconds: float) -> bool:
 
 
 def extract_reset_time(text: str) -> str | None:
+    """Zeitangabe zum Limit-Ende aus einer Fehlermeldung ziehen, z. B. "3:45 PM" oder "20 minutes"."""
     for p in TIME_PATTERNS:
         m = re.search(p, text, re.IGNORECASE)
         if m:
@@ -183,24 +189,25 @@ def extract_reset_time(text: str) -> str | None:
 
 
 def parse_reset_seconds(time_str: str | None) -> int | None:
+    """Zeitangabe in Sekunden bis zum Reset umrechnen; Dauern und Uhrzeiten, None wenn unlesbar."""
     if not time_str:
         return None
     s = time_str.strip().lower()
 
-    dur_m = re.match(r'^([0-9]+(?:\.[0-9]+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)$', s)
+    dur_m = re.match(r"^([0-9]+(?:\.[0-9]+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)$", s)
     if dur_m:
         val = float(dur_m.group(1))
         unit = dur_m.group(2)
-        if unit.startswith('h'):
+        if unit.startswith("h"):
             return int(val * 3600)
-        elif unit.startswith('m'):
+        elif unit.startswith("m"):
             return int(val * 60)
-        elif unit.startswith('s'):
+        elif unit.startswith("s"):
             return int(val)
 
     now = datetime.datetime.now()
-    s_clean = re.sub(r'\(.*?\)', '', s).strip()
-    for fmt in ['%I:%M%p', '%I%p', '%H:%M', '%H:%M:%S']:
+    s_clean = re.sub(r"\(.*?\)", "", s).strip()
+    for fmt in ["%I:%M%p", "%I%p", "%H:%M", "%H:%M:%S"]:
         try:
             t = datetime.datetime.strptime(s_clean, fmt).time()
             target = datetime.datetime.combine(now.date(), t)
@@ -218,6 +225,7 @@ def parse_reset_seconds(time_str: str | None) -> int | None:
 
 
 def wait_countdown(seconds: int, reset_str: str = "") -> bool:
+    """Sichtbar bis zum Reset warten; False bei Abbruch durch Strg+C."""
     say(f"\n⏳ Starte Countdown ({seconds}s bis {reset_str or 'Reset'}). Drücke [Strg+C] zum Abbrechen...")
     try:
         for remaining in range(seconds, 0, -1):

@@ -1,6 +1,5 @@
 """Rollenbelegung: Strategien, automatische Rollen, Abnahme-Auswahl und Eskalation."""
 
-
 from .common import CLOUD_PLANNER_ORDER, ENDPOINT_BINARIES, HYBRID_STRATEGIES, LOCAL_BACKEND_ORDER, OLLAMA_KEYS
 from .backends import AgentCLI, DEFAULT_MODEL_LABEL, list_ollama_models, ollama_base_url, pick_ollama_model
 from .session import get_permission_flags
@@ -74,7 +73,9 @@ def apply_auto_roles(args, agents: dict[str, AgentCLI], models: list[dict] | Non
         chosen = pick_ollama_model(models, pref, exclude)
         if chosen is None:
             chosen = pick_ollama_model(models, pref)
-            notes.append(f"⚠️ Nur ein passendes Ollama-Modell installiert: {label} nutzt {chosen} wie eine andere Rolle und ist damit nicht unabhängig.")
+            notes.append(
+                f"⚠️ Nur ein passendes Ollama-Modell installiert: {label} nutzt {chosen} wie eine andere Rolle und ist damit nicht unabhängig."
+            )
         setattr(args, attr, chosen)
         notes.append(f"🤖 {label}: Ollama-Modell {chosen} automatisch gewählt (ändern mit --{ROLE_MODEL_FLAGS[attr]}).")
     return notes
@@ -120,8 +121,15 @@ def dry_run_command(args, task: str, strat: str, default_b_model: str | None = N
             cmd += [flag, str(value)]
     if args.etappen not in (None, "auto"):
         cmd += ["--etappen", args.etappen]
-    for flag, on in (("--swap", args.swap), ("-i", args.ask), ("--yolo", args.yolo), ("--plan-auto", args.approve_plan),
-                     ("--auto-switch", args.auto_switch), ("--merge", args.merge), ("--no-inspect", not args.inspect)):
+    for flag, on in (
+        ("--swap", args.swap),
+        ("-i", args.ask),
+        ("--yolo", args.yolo),
+        ("--plan-auto", args.approve_plan),
+        ("--auto-switch", args.auto_switch),
+        ("--merge", args.merge),
+        ("--no-inspect", not args.inspect),
+    ):
         if on:
             cmd.append(flag)
     if args.max_iterations:
@@ -154,9 +162,14 @@ def pick_inspector(builder: AgentCLI, candidates: list[AgentCLI], agents: dict[s
 ESCALATE_AFTER_DEFAULT = 2
 
 
-def choose_escalation(builder: AgentCLI, agents: dict[str, AgentCLI], choice: str | None,
-                      inspector: AgentCLI | None = None, prefer: str | None = None,
-                      write_allowed: bool = False) -> tuple[str | None, str]:
+def choose_escalation(
+    builder: AgentCLI,
+    agents: dict[str, AgentCLI],
+    choice: str | None,
+    inspector: AgentCLI | None = None,
+    prefer: str | None = None,
+    write_allowed: bool = False,
+) -> tuple[str | None, str]:
     """Ziel, auf das ein lokaler Bauleiter nach wiederholtem Scheitern eskaliert (Schlüssel in agents), oder None mit Grund.
 
     Nie die Abnahme (sonst prüft sich der neue Bauleiter selbst) und nie eine CLI, die ohne

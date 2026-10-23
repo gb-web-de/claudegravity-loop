@@ -18,8 +18,9 @@ import benchmark  # noqa: E402
 
 
 def run_tests(folder: Path) -> int:
-    return subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests"], cwd=folder,
-                          capture_output=True, timeout=60).returncode
+    return subprocess.run(
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests"], cwd=folder, capture_output=True, timeout=60
+    ).returncode
 
 
 class TaskPackTest(unittest.TestCase):
@@ -46,14 +47,16 @@ class FakeRunTest(unittest.TestCase):
             code, out = self.run_main(["--fake", "--tasks", "median-bug", "--strategies", "balanced,local-free", "--out", tmp])
             self.assertEqual(code, 0, out)
             results = json.loads((Path(tmp) / "results.json").read_text(encoding="utf-8"))
-            self.assertEqual([(r["strategy"], r["success"], r["build_rounds"]) for r in results],
-                             [("balanced", True, 1), ("local-free", True, 1)])
+            self.assertEqual(
+                [(r["strategy"], r["success"], r["build_rounds"]) for r in results], [("balanced", True, 1), ("local-free", True, 1)]
+            )
             self.assertIn("| balanced | 1/1 |", (Path(tmp) / "results.md").read_text(encoding="utf-8"))
             self.assertTrue((Path(tmp) / "median-bug-balanced.log").exists())
 
     def test_failing_builder_is_reported(self):
-        with unittest.mock.patch.object(benchmark, "fake_answer",
-                                        lambda prompt, solution: "VERDICT: APPROVED" if "Führe" not in prompt else "keine Ahnung"):
+        with unittest.mock.patch.object(
+            benchmark, "fake_answer", lambda prompt, solution: "VERDICT: APPROVED" if "Führe" not in prompt else "keine Ahnung"
+        ):
             code, out = self.run_main(["--fake", "--tasks", "fizzbuzz", "--", "-m", "1"])
         self.assertEqual(code, 1)
         self.assertIn("❌ Rundenlimit erreicht (1 Bau-Runden)", out)

@@ -129,7 +129,11 @@ class ConfigLayerTest(unittest.TestCase):
         env["PYTHONIOENCODING"] = "utf-8"
         res = subprocess.run(
             [sys.executable, str(ROOT / "loop.py"), "--print-effective-config", "-p", str(self.project)],
-            capture_output=True, text=True, encoding="utf-8", timeout=60, env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            env=env,
         )
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertRegex(res.stdout, r'strategy\s+= "eco"\s+\[Umgebung\]\s+⚠️ Konflikt')

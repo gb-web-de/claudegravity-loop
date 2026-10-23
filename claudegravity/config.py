@@ -15,7 +15,19 @@ from .session import find_latest_session, load_session_state
 CONFIG_ENV_PREFIX = "CLAUDEGRAVITY_"
 PROFILE_FILE = "profile.json"
 # Nicht über Umgebung oder Profil setzbar: Aufgabe/Ziel, einmalige Aktionen und Geheimnisse
-CONFIG_EXCLUDED = {"help", "help_all", "task", "project", "resume", "check", "dry_run", "print_effective_config", "api_key", "no_shield", "init"}
+CONFIG_EXCLUDED = {
+    "help",
+    "help_all",
+    "task",
+    "project",
+    "resume",
+    "check",
+    "dry_run",
+    "print_effective_config",
+    "api_key",
+    "no_shield",
+    "init",
+}
 # Das Projekt-Profil liegt im Projektordner, in den ein Bauleiter schreiben kann: keine Rechte daraus
 PROJECT_PROFILE_FORBIDDEN = {"yolo"}
 # Standardwerte, die erst später im Lauf gesetzt werden (für --print-effective-config)
@@ -99,10 +111,12 @@ def global_profile_path(env: dict | None = None) -> Path:
 
 
 def project_profile_path(project_path: Path) -> Path:
+    """Pfad des Projekt-Profils (.dual-loop/profile.json)."""
     return project_path / ".dual-loop" / PROFILE_FILE
 
 
 def config_actions(parser: argparse.ArgumentParser) -> dict[str, argparse.Action]:
+    """Optionen des Parsers, die über Profile, Umgebung und Vorlagen setzbar sind (ohne Ausnahmen aus CONFIG_EXCLUDED)."""
     return {a.dest: a for a in parser._actions if a.dest not in CONFIG_EXCLUDED and a.option_strings}
 
 
@@ -189,7 +203,9 @@ def resolve_config(
             template_defs.setdefault(name.lower(), {}).update(spec)
             template_origin[name.lower()] = label
         entries = {k: v for k, v in profile.items() if k not in ("templates", "vorlagen")}
-        layers[layer], more = parse_config_entries(entries, label, actions, aliases, forbidden=PROJECT_PROFILE_FORBIDDEN if layer == "project" else set())
+        layers[layer], more = parse_config_entries(
+            entries, label, actions, aliases, forbidden=PROJECT_PROFILE_FORBIDDEN if layer == "project" else set()
+        )
         warnings += more
 
     for dest, action in actions.items():
@@ -207,8 +223,14 @@ def resolve_config(
                 layers["session"][dest] = coerce_config_value(actions[dest], session_state[state_key])
 
     # Vorlage: selbst eine Einstellung (Kommandozeile, Session, Umgebung, Profil), wirkt direkt nach der Session
-    template_name = next((src[TEMPLATE_DEST] for src in (explicit, layers["session"], layers["env"], layers["project"], layers["global"])
-                          if src.get(TEMPLATE_DEST)), None)
+    template_name = next(
+        (
+            src[TEMPLATE_DEST]
+            for src in (explicit, layers["session"], layers["env"], layers["project"], layers["global"])
+            if src.get(TEMPLATE_DEST)
+        ),
+        None,
+    )
     layers["template"] = {}
     template_info = None
     if template_name:
@@ -314,12 +336,19 @@ def apply_config_layers(
     warnings += more
     for dest, value in values.items():
         setattr(args, dest, value)
-    return {"values": values, "sources": sources, "conflicts": conflicts, "warnings": warnings, "paths": paths,
-            "template": template,
-            "loaded": {k: bool(v) for k, v in (("global", global_profile), ("project", project_profile))}}
+    return {
+        "values": values,
+        "sources": sources,
+        "conflicts": conflicts,
+        "warnings": warnings,
+        "paths": paths,
+        "template": template,
+        "loaded": {k: bool(v) for k, v in (("global", global_profile), ("project", project_profile))},
+    }
 
 
 def format_effective_config(report: dict) -> str:
+    """Ausgabe für --print-effective-config: Schichten, geladene Profile und Wert mit Quelle je Einstellung."""
     lines = ["⚙️  Wirksame Konfiguration (Kommandozeile > Session > Vorlage > Umgebung > Projekt-Profil > globales Profil > Standard)", ""]
     for layer in ("project", "global"):
         state = "geladen" if report["loaded"][layer] else "nicht vorhanden"
@@ -327,7 +356,9 @@ def format_effective_config(report: dict) -> str:
     lines.append(f"  {'Umgebung':<16}: {CONFIG_ENV_PREFIX}<EINSTELLUNG>, z. B. {CONFIG_ENV_PREFIX}STRATEGY=hybrid")
     tpl = report.get("template")
     if tpl:
-        lines.append(f"  {'Vorlage':<16}: {tpl['name']} ({tpl['origin']})" + (f", Pflicht: {', '.join(tpl['requires'])}" if tpl["requires"] else ""))
+        lines.append(
+            f"  {'Vorlage':<16}: {tpl['name']} ({tpl['origin']})" + (f", Pflicht: {', '.join(tpl['requires'])}" if tpl["requires"] else "")
+        )
     lines.append("")
     conflict_keys = {c.split(":", 1)[0] for c in report["conflicts"]}
     width = max(len(k) for k in report["values"])

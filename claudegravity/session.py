@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 
 def task_keywords(task: str) -> set[str]:
+    """Wörter ab vier Buchstaben aus der Aufgabe, kleingeschrieben, für die Suche nach passendem Wissen."""
     return {w.lower() for w in re.findall(r"[\wäöüß]{4,}", task)}
 
 
@@ -53,7 +54,7 @@ def load_project_context(project_path: Path, task: str = "") -> str:
             context.append("### Verfügbares Projekt-Wissen (knowledge/):")
             names_only = []
             for kf in k_files:
-                content = kf.read_text(encoding='utf-8', errors='ignore')
+                content = kf.read_text(encoding="utf-8", errors="ignore")
                 haystack = (kf.stem.replace("_", " ").replace("-", " ") + " " + content[:4000]).lower()
                 if not keywords or any(k in haystack for k in keywords):
                     context.append(f"--- Datei: {kf.name} ---\n{content[:500]}\n")
@@ -66,8 +67,9 @@ def load_project_context(project_path: Path, task: str = "") -> str:
 
 
 def sanitize_filename(text: str) -> str:
-    cleaned = re.sub(r'[^a-zA-Z0-9_\-\s]', '', text)
-    cleaned = re.sub(r'\s+', '_', cleaned).strip('_')
+    """Aufgabentext als kurzer, sicherer Teil eines Ordnernamens (höchstens 30 Zeichen)."""
+    cleaned = re.sub(r"[^a-zA-Z0-9_\-\s]", "", text)
+    cleaned = re.sub(r"\s+", "_", cleaned).strip("_")
     return cleaned[:30] or "task"
 
 
@@ -86,6 +88,7 @@ def check_and_clean_done_marker(session_dir: Path, project_path: Path) -> bool:
                 root_done.unlink()
         return True
     return False
+
 
 # ==========================================
 # Git-Workspace (Worktree) pro Session
@@ -177,7 +180,9 @@ def release_worktree(project_path: Path, session_dir: Path, state: dict, task: s
                 say(f"🔀 Branch `{branch}` in `{base_branch}` gemerged und gelöscht.")
             else:
                 _git(project_path, "merge", "--abort")
-                say(f"[!] Merge von `{branch}` fehlgeschlagen (Konflikt?), Branch bleibt erhalten: {res.stdout.strip() or res.stderr.strip()}")
+                say(
+                    f"[!] Merge von `{branch}` fehlgeschlagen (Konflikt?), Branch bleibt erhalten: {res.stdout.strip() or res.stderr.strip()}"
+                )
 
     wt["released"] = True
     wt["merged"] = merged
@@ -191,10 +196,15 @@ def release_worktree(project_path: Path, session_dir: Path, state: dict, task: s
 # Architekt, Prüfstatiker und Abnahme lesen nur. Claude bekommt dafür ausschließlich
 # Read/Glob/Grep, kein MCP; alles andere wird ohne Nachfrage abgelehnt.
 CLAUDE_READONLY_FLAGS = [
-    "--permission-mode", "dontAsk",
-    "--tools", "Read,Glob,Grep",
-    "--allowedTools", "Read,Glob,Grep",
-    "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+    "--permission-mode",
+    "dontAsk",
+    "--tools",
+    "Read,Glob,Grep",
+    "--allowedTools",
+    "Read,Glob,Grep",
+    "--strict-mcp-config",
+    "--mcp-config",
+    '{"mcpServers":{}}',
 ]
 
 
@@ -238,7 +248,7 @@ def is_permission_error_response(text: str) -> bool:
         "keine Berechtigung, Dateien zu schreiben",
         "keine Berechtigung",
         "Schreibzugriff auf",
-        "Berechtigung nicht erteilt"
+        "Berechtigung nicht erteilt",
     ]
     text_lower = text.lower()
     return any(ind.lower() in text_lower for ind in indicators) and len(text.strip().splitlines()) < 15
@@ -247,7 +257,7 @@ def is_permission_error_response(text: str) -> bool:
 def extract_questions(text: str) -> str | None:
     """Extrahiert Fragen an den Nutzer, falls ein Agent welche formuliert hat."""
     patterns = [
-        r'(?:###|##)\s*(?:FRAGEN\s+AN\s+DEN\s+NUTZER|OFFENE\s+FRAGEN|RÜCKFRAGEN|QUESTIONS\s+FOR\s+USER)[:\s]*(.*?)(?=(?:\n###|\n##|\Z))',
+        r"(?:###|##)\s*(?:FRAGEN\s+AN\s+DEN\s+NUTZER|OFFENE\s+FRAGEN|RÜCKFRAGEN|QUESTIONS\s+FOR\s+USER)[:\s]*(.*?)(?=(?:\n###|\n##|\Z))",
     ]
     for p in patterns:
         m = re.search(p, text, re.IGNORECASE | re.DOTALL)
@@ -258,17 +268,19 @@ def extract_questions(text: str) -> str | None:
     return None
 
 
-VERDICT_LINE = re.compile(
-    r"^[\s>*_#`-]*VERDICT[\s*_`]*[:=][\s*_`]*(APPROVED|REVISE|BLOCKED)[\s*_`.!]*$",
-    re.IGNORECASE
-)
+VERDICT_LINE = re.compile(r"^[\s>*_#`-]*VERDICT[\s*_`]*[:=][\s*_`]*(APPROVED|REVISE|BLOCKED)[\s*_`.!]*$", re.IGNORECASE)
 FINDING_LINE = re.compile(
-    r"^\s*(?:[-*]|\d+[.)])\s*\[?\**(KRITISCH|CRITICAL|HOCH|HIGH|MITTEL|MEDIUM|NIEDRIG|LOW)\**\]?\s*[:\-–]?\s*(.*)$",
-    re.IGNORECASE
+    r"^\s*(?:[-*]|\d+[.)])\s*\[?\**(KRITISCH|CRITICAL|HOCH|HIGH|MITTEL|MEDIUM|NIEDRIG|LOW)\**\]?\s*[:\-–]?\s*(.*)$", re.IGNORECASE
 )
 SEVERITY = {
-    "kritisch": "high", "critical": "high", "hoch": "high", "high": "high",
-    "mittel": "medium", "medium": "medium", "niedrig": "low", "low": "low",
+    "kritisch": "high",
+    "critical": "high",
+    "hoch": "high",
+    "high": "high",
+    "mittel": "medium",
+    "medium": "medium",
+    "niedrig": "low",
+    "low": "low",
 }
 
 REVIEW_FORMAT = (
@@ -331,6 +343,7 @@ def findings_digest(review: str) -> str:
 
 
 def sha256_file(path: Path) -> str:
+    """SHA-256 des Dateiinhalts als Hex-Text."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -341,10 +354,10 @@ def next_plan_file(session_dir: Path) -> Path:
 
 
 def plan_diff(old: str, new: str) -> str:
+    """Unified Diff zwischen geprüftem und neuem Plan, damit der Prüfstatiker nur Änderungen liest."""
     import difflib
-    return "".join(difflib.unified_diff(
-        old.splitlines(keepends=True), new.splitlines(keepends=True), "geprüfter_plan", "neuer_plan", n=2
-    ))
+
+    return "".join(difflib.unified_diff(old.splitlines(keepends=True), new.splitlines(keepends=True), "geprüfter_plan", "neuer_plan", n=2))
 
 
 LOG_FORMATS = ("text", "json")
@@ -366,6 +379,7 @@ def log_event(session_dir: Path | None, event: str, **fields) -> None:
 
 
 def append_log(session_dir: Path, line: str) -> None:
+    """Zeile mit Uhrzeit an LOG.md der Session anhängen (Geheimnisse geschwärzt) und als Ereignis protokollieren."""
     line = mask_secrets(line)
     try:
         with open(session_dir / "LOG.md", "a", encoding="utf-8") as f:
@@ -380,7 +394,10 @@ def record_audit_event(session_dir: Path | None, kind: str, detail: str, metrics
     detail = mask_secrets(detail)
     label = AUDIT_EVENT_LABELS.get(kind, kind)
     code = AUDIT_EVENT_CODES.get(kind)
-    say(f"🛑 Audit{f' [{code}]' if code else ''}: {label}: {detail}" + (f"\n   👉 {ERROR_CODES[code][1]}\n   📖 {error_doc_link(code)}" if code else ""))
+    say(
+        f"🛑 Audit{f' [{code}]' if code else ''}: {label}: {detail}"
+        + (f"\n   👉 {ERROR_CODES[code][1]}\n   📖 {error_doc_link(code)}" if code else "")
+    )
     if metrics is not None:
         metrics.note_audit(kind)
     if session_dir is None:
@@ -389,7 +406,12 @@ def record_audit_event(session_dir: Path | None, kind: str, detail: str, metrics
     log_event(session_dir, "audit", level="warning", kind=kind, code=code, detail=detail)
     try:
         with open(session_dir / "audit-events.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"time": datetime.datetime.now().isoformat(timespec="seconds"), "kind": kind, "detail": detail}, ensure_ascii=False) + "\n")
+            f.write(
+                json.dumps(
+                    {"time": datetime.datetime.now().isoformat(timespec="seconds"), "kind": kind, "detail": detail}, ensure_ascii=False
+                )
+                + "\n"
+            )
     except OSError:
         pass
 
@@ -399,7 +421,9 @@ def workspace_fingerprint(path: Path) -> dict | None:
     try:
         res = subprocess.run(
             ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-            cwd=str(path), capture_output=True, timeout=30,
+            cwd=str(path),
+            capture_output=True,
+            timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -421,6 +445,7 @@ def workspace_fingerprint(path: Path) -> dict | None:
 
 
 def fingerprint_changes(before: dict | None, after: dict | None) -> list[str]:
+    """Dateien, deren Fingerabdruck sich zwischen zwei Ständen unterscheidet, sortiert."""
     if before is None or after is None:
         return []
     return sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
@@ -471,6 +496,7 @@ def load_session_state(session_dir: Path) -> dict:
 
 
 def find_latest_session(loop_dir: Path) -> Path | None:
+    """Neuester Session-Ordner unter .dual-loop/sessions oder None."""
     sessions_dir = loop_dir / "sessions"
     if not sessions_dir.exists():
         return None

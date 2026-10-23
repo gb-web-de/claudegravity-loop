@@ -53,8 +53,9 @@ def start_server() -> tuple[http.server.HTTPServer, str]:
         def do_POST(self):
             req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             out = answer(req["messages"][-1]["content"])
-            body = json.dumps({"choices": [{"message": {"content": out}}],
-                               "usage": {"prompt_tokens": 100, "completion_tokens": 20}}).encode()
+            body = json.dumps(
+                {"choices": [{"message": {"content": out}}], "usage": {"prompt_tokens": 100, "completion_tokens": 20}}
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -70,13 +71,40 @@ def start_server() -> tuple[http.server.HTTPServer, str]:
 
 def smoke_command(project: Path, url: str, strategy: str) -> list[str]:
     cmd = [
-        sys.executable, str(ROOT / "loop.py"), "Addition mit Test", "-p", str(project), "--no-worktree", "-d", "0",
-        "--strategy", strategy, "--plan-auto", "--no-guide",
-        "--architekt-endpoint", url, "--architekt", "architekt_ep", "--architekt-model", "planer",
-        "--pruefstatiker-endpoint", url, "--pruefstatiker", "pruefstatiker_ep", "--pruefstatiker-model", "pruefer",
-        "--bauer-endpoint", url, "--bauer", "bauer_ep", "--bauer-model", "bauer",
-        "--abnahme", "pruefstatiker_ep",
-        "--proof", f'"{sys.executable}" -m unittest discover -s tests',
+        sys.executable,
+        str(ROOT / "loop.py"),
+        "Addition mit Test",
+        "-p",
+        str(project),
+        "--no-worktree",
+        "-d",
+        "0",
+        "--strategy",
+        strategy,
+        "--plan-auto",
+        "--no-guide",
+        "--architekt-endpoint",
+        url,
+        "--architekt",
+        "architekt_ep",
+        "--architekt-model",
+        "planer",
+        "--pruefstatiker-endpoint",
+        url,
+        "--pruefstatiker",
+        "pruefstatiker_ep",
+        "--pruefstatiker-model",
+        "pruefer",
+        "--bauer-endpoint",
+        url,
+        "--bauer",
+        "bauer_ep",
+        "--bauer-model",
+        "bauer",
+        "--abnahme",
+        "pruefstatiker_ep",
+        "--proof",
+        f'"{sys.executable}" -m unittest discover -s tests',
     ]
     # balanced: ganzer Plan in einer Runde; local-free: Etappen wie bei lokalen Bauleitern üblich
     cmd += ["--etappen", "aus" if strategy == "balanced" else "auto"]
@@ -84,10 +112,12 @@ def smoke_command(project: Path, url: str, strategy: str) -> list[str]:
 
 
 def smoke_env(tmp: Path) -> dict:
-    env = {k: v for k, v in os.environ.items()
-           if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT", "OLLAMA_HOST")}
-    env.update(PATH=str(tmp / "leer"), OLLAMA_HOST="127.0.0.1:9", PYTHONIOENCODING="utf-8",
-               CLAUDEGRAVITY_CONFIG_DIR=str(tmp / "config"))
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT", "OLLAMA_HOST")
+    }
+    env.update(PATH=str(tmp / "leer"), OLLAMA_HOST="127.0.0.1:9", PYTHONIOENCODING="utf-8", CLAUDEGRAVITY_CONFIG_DIR=str(tmp / "config"))
     if os.name == "nt":
         env["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", r"C:\Windows")
     return env
@@ -109,10 +139,18 @@ def run_smoke(strategy: str, out_dir: Path | None = None) -> dict:
             (project / "tests").mkdir(parents=True)
             # Ab Python 3.12 ist ein Testlauf ohne Tests rot; das Projekt hat daher schon einen Test
             (project / "tests" / "test_vorhanden.py").write_text(
-                "import unittest\n\nclass Vorhanden(unittest.TestCase):\n    def test_ok(self):\n        pass\n", encoding="utf-8")
+                "import unittest\n\nclass Vorhanden(unittest.TestCase):\n    def test_ok(self):\n        pass\n", encoding="utf-8"
+            )
             (tmp / "leer").mkdir()
-            res = subprocess.run(smoke_command(project, url, strategy), input="", capture_output=True, text=True,
-                                 encoding="utf-8", timeout=300, env=smoke_env(tmp))
+            res = subprocess.run(
+                smoke_command(project, url, strategy),
+                input="",
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=300,
+                env=smoke_env(tmp),
+            )
             sessions = sorted((project / ".dual-loop" / "sessions").glob("*"))
             session = sessions[-1] if sessions else None
             state = json.loads((session / "state.json").read_text(encoding="utf-8")) if session else {}
@@ -123,7 +161,9 @@ def run_smoke(strategy: str, out_dir: Path | None = None) -> dict:
                 "python": sys.version.split()[0],
                 "returncode": res.returncode,
                 "phase": state.get("phase"),
-                "files": sorted(p.relative_to(project).as_posix() for p in (project / "src").rglob("*.py")) if (project / "src").exists() else [],
+                "files": sorted(p.relative_to(project).as_posix() for p in (project / "src").rglob("*.py"))
+                if (project / "src").exists()
+                else [],
                 "kpi": kpi,
                 "ok": res.returncode == 0 and state.get("phase") == "completed" and bool(kpi and kpi.get("success")),
             }

@@ -10,6 +10,8 @@ from .common import say
 
 
 class SessionMetrics:
+    """Token, Kosten, Neuversuche, Audit-Ereignisse und Zähler einer Session, je Rolle und Modell aufgeschlüsselt."""
+
     def __init__(self):
         self.input_tokens = 0
         self.output_tokens = 0
@@ -25,6 +27,7 @@ class SessionMetrics:
         self.counters[name] = self.counters.get(name, 0) + 1
 
     def note_audit(self, kind: str):
+        """Rechte-Audit-Ereignis zählen (z. B. blocked_write)."""
         self.audit_events[kind] = self.audit_events.get(kind, 0) + 1
 
     def note_retry(self, outcome: str):
@@ -40,8 +43,9 @@ class SessionMetrics:
         cost_usd: float = 0.0,
         role: str | None = None,
         model: str | None = None,
-        effort: str | None = None
+        effort: str | None = None,
     ):
+        """Verbrauch eines Aufrufs buchen, gesamt und unter Rolle, Agent, Modell und Effort."""
         if total_tokens == 0:
             total_tokens = input_tokens + output_tokens
         self.input_tokens += input_tokens
@@ -77,6 +81,7 @@ class SessionMetrics:
             entry["effort"] = effort
 
     def to_dict(self) -> dict:
+        """Als JSON-taugliches dict für state.json."""
         return {
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
@@ -90,6 +95,7 @@ class SessionMetrics:
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "SessionMetrics":
+        """Aus state.json wiederherstellen (für --resume); fehlende Felder bleiben auf 0."""
         m = cls()
         if not data:
             return m
@@ -108,6 +114,7 @@ KPI_ROLE_KEYS = {"planner": "Architekt", "reviewer": "Prüfstatiker", "builder":
 
 
 def role_key(role_title: str) -> str | None:
+    """Kurzschlüssel (planner, reviewer, builder, inspector) zu einem Rollentitel; None, wenn keiner passt."""
     for key, word in KPI_ROLE_KEYS.items():
         if word in (role_title or ""):
             return key
@@ -167,8 +174,11 @@ def build_kpis(state: dict, metrics: SessionMetrics, now: datetime.datetime | No
 
 
 def format_kpi_block(kpi: dict) -> str:
+    """Kennzahlen-Block (KPI v1) als Markdown für .done und AUDIT.md."""
+
     def money(value: float) -> str:
         return f"{value:.4f} USD" if value else "0 USD"
+
     dur = kpi["duration_s"]
     dur_txt = f"{dur // 60} min {dur % 60} s" if dur is not None else "unbekannt"
     to_success = kpi["build_rounds_to_success"]
@@ -185,8 +195,14 @@ def format_kpi_block(kpi: dict) -> str:
         + f" · Abnahme {kpi['inspection_rounds']}",
         f"* **Nacharbeit:** {kpi['rework_rounds']} von {kpi['build_rounds']} Bau-Runden (Quote {kpi['rework_rate']:.0%}); "
         f"Prüfbefehl rot {kpi['proof_red']}/{kpi['proof_runs']}, Abnahme verweigert {kpi['inspection_rejected']}",
-        *([f"* **Eskalation:** Bau-Runde {kpi['escalation'].get('iteration')}: {kpi['escalation'].get('from')} → "
-            f"{kpi['escalation'].get('to')} ({kpi['escalation'].get('reason')})"] if kpi.get("escalation") else []),
+        *(
+            [
+                f"* **Eskalation:** Bau-Runde {kpi['escalation'].get('iteration')}: {kpi['escalation'].get('from')} → "
+                f"{kpi['escalation'].get('to')} ({kpi['escalation'].get('reason')})"
+            ]
+            if kpi.get("escalation")
+            else []
+        ),
         *([f"* **Abbruchgrund:** {kpi['abort_reason']}"] if kpi.get("abort_reason") else []),
         "",
         "```json",
@@ -197,6 +213,7 @@ def format_kpi_block(kpi: dict) -> str:
 
 
 def format_metrics_report(metrics: SessionMetrics, state: dict | None = None) -> str:
+    """Verbrauchsbericht als Markdown: Tokens, Kosten, Aufschlüsselung je Rolle und Audit-Ereignisse."""
     lines = [
         "",
         "---",
@@ -205,7 +222,7 @@ def format_metrics_report(metrics: SessionMetrics, state: dict | None = None) ->
         f"  * **Input-Tokens:** {metrics.input_tokens:,}",
         f"  * **Output-Tokens:** {metrics.output_tokens:,}",
         f"* **Entstandene Kosten (geschätzt):** ~${metrics.cost_usd:.4f} USD",
-        "* **Aufschlüsselung nach Rolle, Agent, Modell & Effort:**"
+        "* **Aufschlüsselung nach Rolle, Agent, Modell & Effort:**",
     ]
     if metrics.by_agent:
         for tracker_key, usage in metrics.by_agent.items():
@@ -218,13 +235,17 @@ def format_metrics_report(metrics: SessionMetrics, state: dict | None = None) ->
             if usage.get("effort"):
                 lines.append(f"    * **Reasoning-Effort:** `{usage['effort']}`")
             cost_str = f"~${usage['cost_usd']:.4f} USD" if usage.get("cost_usd", 0.0) > 0 else "Abo-Inklusivkontingent"
-            lines.append(f"    * **Verbrauch:** {usage['total_tokens']:,} Tokens (Input: {usage['input_tokens']:,}, Output: {usage['output_tokens']:,})")
+            lines.append(
+                f"    * **Verbrauch:** {usage['total_tokens']:,} Tokens (Input: {usage['input_tokens']:,}, Output: {usage['output_tokens']:,})"
+            )
             lines.append(f"    * **Kosten:** {cost_str}")
     else:
         lines.append("  * Keine detaillierte Modell-Aufschlüsselung verfügbar.")
     if metrics.retries.get("attempts"):
         r = metrics.retries
-        lines.append(f"* **Automatische Neuversuche:** {r['attempts']} (danach erfolgreich: {r.get('recovered', 0)}, aufgegeben: {r.get('exhausted', 0)})")
+        lines.append(
+            f"* **Automatische Neuversuche:** {r['attempts']} (danach erfolgreich: {r.get('recovered', 0)}, aufgegeben: {r.get('exhausted', 0)})"
+        )
     if metrics.audit_events:
         lines.append("* **Sicherheitsereignisse** (Details in `LOG.md` und `audit-events.jsonl`):")
         for kind, count in sorted(metrics.audit_events.items()):

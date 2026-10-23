@@ -56,15 +56,18 @@ class WizardTest(unittest.TestCase):
         target = loop.run_setup_wizard(self.project, CLOUD_AND_LOCAL, input_fn=scripted("", "", ""), global_path=self.global_path)
         self.assertEqual(target, loop.project_profile_path(self.project))
         data = json.loads(target.read_text(encoding="utf-8"))
-        self.assertEqual((data["strategy"], data["proof"], data["etappen"]),
-                         ("hybrid", "python3 -m unittest discover -s tests", "auto"))
+        self.assertEqual((data["strategy"], data["proof"], data["etappen"]), ("hybrid", "python3 -m unittest discover -s tests", "auto"))
         self.assertFalse(self.global_path.exists())
 
     def test_wizard_global_and_merge(self):
         self.global_path.parent.mkdir()
         self.global_path.write_text(json.dumps({"bauer-model": "qwen", "strategy": "eco"}), encoding="utf-8")
-        target = loop.run_setup_wizard(self.project, {"claude": fake("Claude"), "agy": fake("Antigravity")},
-                                       input_fn=scripted("x", "3", "-", "2"), global_path=self.global_path)
+        target = loop.run_setup_wizard(
+            self.project,
+            {"claude": fake("Claude"), "agy": fake("Antigravity")},
+            input_fn=scripted("x", "3", "-", "2"),
+            global_path=self.global_path,
+        )
         data = json.loads(target.read_text(encoding="utf-8"))
         self.assertEqual((data["strategy"], data["bauer-model"]), ("best-code", "qwen"))
         self.assertNotIn("proof", data)
@@ -99,7 +102,12 @@ class WizardTest(unittest.TestCase):
         env.update(PATH=str(self.root), CLAUDEGRAVITY_CONFIG_DIR=str(self.global_path.parent), PYTHONIOENCODING="utf-8")
         res = subprocess.run(
             [sys.executable, str(ROOT / "loop.py"), "init", "-p", str(self.project), "--endpoint", "http://127.0.0.1:9/v1"],
-            input="\nmake test\n\n", capture_output=True, text=True, encoding="utf-8", timeout=60, env=env,
+            input="\nmake test\n\n",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            env=env,
         )
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("Profil gespeichert", res.stdout)
@@ -116,8 +124,12 @@ class UnsafeConfigTest(unittest.TestCase):
         p = Path(".")
         self.assertTrue(any("ohne Git" in w for w in loop.unsafe_config_warnings(self.args("x", "--yolo"), p, False)))
         self.assertTrue(any("--no-worktree" in w for w in loop.unsafe_config_warnings(self.args("x", "--yolo", "--no-worktree"), p, True)))
-        self.assertTrue(any("--no-inspect" in w for w in loop.unsafe_config_warnings(self.args("x", "--no-inspect", "--proof", "t"), p, True)))
-        warn = loop.unsafe_config_warnings(self.args("x", "--endpoint", "http://ki.example.com/v1", "--api-key", "k", "--proof", "t"), p, True)
+        self.assertTrue(
+            any("--no-inspect" in w for w in loop.unsafe_config_warnings(self.args("x", "--no-inspect", "--proof", "t"), p, True))
+        )
+        warn = loop.unsafe_config_warnings(
+            self.args("x", "--endpoint", "http://ki.example.com/v1", "--api-key", "k", "--proof", "t"), p, True
+        )
         self.assertTrue(any("unverschlüsselt" in w for w in warn))
         self.assertEqual(loop.unsafe_config_warnings(self.args("x", "--proof", "t"), p, True), [])
 

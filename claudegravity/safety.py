@@ -60,6 +60,7 @@ def redact_secrets(text: str) -> tuple[str, list[str]]:
 
     for label, pattern in SECRET_PATTERNS:
         text = pattern.sub(lambda m, lb=label: mark(lb), text)
+
     def assignment(m: re.Match) -> str:
         value = m.group(2)
         # Code wie token = createToken() oder api_key = os.environ[...] bleibt stehen; Geheimnisse enthalten fast immer Ziffern.
@@ -92,13 +93,14 @@ SENSITIVE_PATHS = [
 
 
 def is_sensitive_path(rel_path: str) -> bool:
+    """True für Geheimnis-Dateien (.env, .ssh/, *.key, …), die Modell-Ausgaben nie schreiben dürfen."""
     p = rel_path.replace("\\", "/")
     return any(r.search(p) for r in SENSITIVE_PATHS)
 
 
 def resolve_project_target(project_path: Path, rel_path: str) -> Path | None:
     """Liefert den Zielpfad nur, wenn er innerhalb des Projektordners liegt und keine Geheimnis-Datei ist (sonst None)."""
-    cleaned = rel_path.strip().strip('"\'').replace("\\", "/")
+    cleaned = rel_path.strip().strip("\"'").replace("\\", "/")
     if not cleaned or cleaned.startswith("~") or Path(cleaned).is_absolute() or re.match(r"^[a-zA-Z]:", cleaned):
         return None
     root = project_path.resolve()
@@ -119,7 +121,7 @@ def apply_code_blocks(project_path: Path, text: str, on_blocked=None) -> list[st
     written_files = []
 
     def write_block(rel_path: str, content: str):
-        rel_path = rel_path.strip().strip('"\'')
+        rel_path = rel_path.strip().strip("\"'")
         if rel_path in written_files:
             return
         target = resolve_project_target(project_path, rel_path)
@@ -136,12 +138,15 @@ def apply_code_blocks(project_path: Path, text: str, on_blocked=None) -> list[st
             say(f"[!] Fehler beim Schreiben von {rel_path}: {ex}")
 
     # Muster 1: ```filepath: path/to/file.ext oder ```file: path/to/file.ext
-    pattern1 = re.compile(r'```(?:filepath:|file:)\s*([^\s\n\r`]+)\r?\n(.*?)```', re.DOTALL)
+    pattern1 = re.compile(r"```(?:filepath:|file:)\s*([^\s\n\r`]+)\r?\n(.*?)```", re.DOTALL)
     for match in pattern1.finditer(text):
         write_block(match.group(1), match.group(2))
 
     # Muster 2: Dateiname in Header vor Code-Block (### Datei: path/to/file.ext)
-    pattern2 = re.compile(r'(?:###|##|\*\*)\s*(?:Datei|File|Pfad|Path)[:\s]+`?([a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]+)`?.*?\n\s*```[a-zA-Z0-9_-]*\r?\n(.*?)```', re.DOTALL)
+    pattern2 = re.compile(
+        r"(?:###|##|\*\*)\s*(?:Datei|File|Pfad|Path)[:\s]+`?([a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]+)`?.*?\n\s*```[a-zA-Z0-9_-]*\r?\n(.*?)```",
+        re.DOTALL,
+    )
     for match in pattern2.finditer(text):
         write_block(match.group(1), match.group(2))
 

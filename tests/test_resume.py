@@ -45,7 +45,7 @@ class StateFileTest(unittest.TestCase):
         self.assertEqual(loop.load_session_state(self.dir), {})
 
 
-FAKE_CLAUDE = r'''
+FAKE_CLAUDE = r"""
 import json, os, pathlib, re, signal, sys
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
@@ -64,15 +64,15 @@ if "Führe den genehmigten Plan" in prompt:
 else:
     out = "# Plan\n- hallo.txt anlegen\n"
 print(json.dumps({"result": out, "session_id": "s1", "usage": {"input_tokens": 9, "output_tokens": 4}}))
-'''
+"""
 
-FAKE_GEMINI = r'''
+FAKE_GEMINI = r"""
 import json, os, sys
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
     f.write(json.dumps({"bin": "gemini", "inspection": "unabhängige Abnahme" in prompt}) + "\n")
 print("BEFUNDE:\n- keine\nVERDICT: APPROVED")
-'''
+"""
 
 
 @unittest.skipIf(sys.platform == "win32", "Fake-CLIs als Shebang-Skripte und SIGKILL nur unter Unix")
@@ -94,13 +94,36 @@ class CrashResumeTest(unittest.TestCase):
                 script.write_text(f"#!{sys.executable}\n" + textwrap.dedent(body), encoding="utf-8")
                 script.chmod(0o755)
             log = tmp / "calls.jsonl"
-            env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT")}
+            env = {
+                k: v for k, v in os.environ.items() if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT")
+            }
             env.update(PATH=str(bindir), FAKE_LOG=str(log), CLAUDEGRAVITY_CONFIG_DIR=str(tmp), PYTHONIOENCODING="utf-8")
-            base = [sys.executable, str(ROOT / "loop.py"), "-p", str(project), "--planner", "claude", "--reviewer", "gemini",
-                    "--yolo", "-d", "0", "-m", "3", "--no-worktree"]
+            base = [
+                sys.executable,
+                str(ROOT / "loop.py"),
+                "-p",
+                str(project),
+                "--planner",
+                "claude",
+                "--reviewer",
+                "gemini",
+                "--yolo",
+                "-d",
+                "0",
+                "-m",
+                "3",
+                "--no-worktree",
+            ]
 
-            crashed = subprocess.run(base + ["Lege hallo.txt an"], input="1\n", capture_output=True, text=True,
-                                     encoding="utf-8", timeout=120, env=dict(env, FAKE_CRASH=crash))
+            crashed = subprocess.run(
+                base + ["Lege hallo.txt an"],
+                input="1\n",
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=120,
+                env=dict(env, FAKE_CRASH=crash),
+            )
             self.assertLess(crashed.returncode, 0, crashed.stdout[-2000:])  # durch SIGKILL beendet
             session = next((project / ".dual-loop" / "sessions").iterdir())
             state = loop.load_session_state(session)
@@ -108,8 +131,7 @@ class CrashResumeTest(unittest.TestCase):
             self.assertNotEqual(state.get("phase"), "completed")
             self.assertFalse(list(session.glob("state.json.tmp")))
 
-            resumed = subprocess.run(base + ["-c"], input="", capture_output=True, text=True,
-                                     encoding="utf-8", timeout=120, env=env)
+            resumed = subprocess.run(base + ["-c"], input="", capture_output=True, text=True, encoding="utf-8", timeout=120, env=env)
             self.assertEqual(resumed.returncode, 0, resumed.stdout[-3000:] + resumed.stderr[-2000:])
             calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
             plans = [c for c in calls if c["bin"] == "claude" and not c["build"]]

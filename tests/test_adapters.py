@@ -58,19 +58,31 @@ class CliContractTest(unittest.TestCase):
                     self.assert_contract(self.run_adapter(name, completed(stdout))[0])
 
     def test_structured_output_is_parsed(self):
-        claude = json.dumps({"result": "ok", "usage": {"input_tokens": 3, "cache_read_input_tokens": 2, "output_tokens": 4},
-                             "total_cost_usd": 0.01, "modelUsage": {"claude-x": {}}, "session_id": "s"})
+        claude = json.dumps(
+            {
+                "result": "ok",
+                "usage": {"input_tokens": 3, "cache_read_input_tokens": 2, "output_tokens": 4},
+                "total_cost_usd": 0.01,
+                "modelUsage": {"claude-x": {}},
+                "session_id": "s",
+            }
+        )
         (text, m), _ = self.run_adapter("claude", completed(claude))
-        self.assertEqual((text, m["input_tokens"], m["output_tokens"], m["cost_usd"], m["reported_model"], m["session_id"]),
-                         ("ok", 5, 4, 0.01, "claude-x", "s"))
+        self.assertEqual(
+            (text, m["input_tokens"], m["output_tokens"], m["cost_usd"], m["reported_model"], m["session_id"]),
+            ("ok", 5, 4, 0.01, "claude-x", "s"),
+        )
         agy = json.dumps({"response": "ok", "usage": {"input_tokens": 1, "output_tokens": 2, "thinking_tokens": 7}})
         (text, m), _ = self.run_adapter("agy", completed(agy))
         self.assertEqual((text, m["total_tokens"]), ("ok", 3))
         self.assertIn("7 thinking", m["effort"])
-        codex = "\n".join(json.dumps(e) for e in (
-            {"type": "item.completed", "item": {"type": "agent_message", "text": "fertig"}},
-            {"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 5}},
-        ))
+        codex = "\n".join(
+            json.dumps(e)
+            for e in (
+                {"type": "item.completed", "item": {"type": "agent_message", "text": "fertig"}},
+                {"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 5}},
+            )
+        )
         (text, m), _ = self.run_adapter("codex", completed("Banner\n" + codex))
         self.assertEqual((text, m["total_tokens"]), ("fertig", 15))
 
@@ -140,7 +152,9 @@ class EndpointContractTest(unittest.TestCase):
         self.assertEqual((text, m["total_tokens"], m["cost_usd"]), ("ok", 5, 0.0))
 
     def test_reported_cost_from_public_endpoint(self):
-        body = json.dumps({"choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.002}})
+        body = json.dumps(
+            {"choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.002}}
+        )
         _, m = self.call(body, url="https://openrouter.ai/api/v1")
         self.assertEqual(m["cost_usd"], 0.002)
 

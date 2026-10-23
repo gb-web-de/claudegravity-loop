@@ -58,6 +58,7 @@ from .wizard import print_welcome
 @dataclasses.dataclass
 class RunContext:
     """Stand eines Laufs zwischen den Phasen: Rollen, Flags, Pfade und Einstellungen."""
+
     args: argparse.Namespace
     agents: dict
     project_path: Path
@@ -152,7 +153,7 @@ def open_session(args: argparse.Namespace, project_path: Path, config_report: di
             "rounds_completed": 0,
             "plan_approved": False,
             "last_iteration": 0,
-            "max_iterations": args.max_iterations or 10
+            "max_iterations": args.max_iterations or 10,
         }
         template = config_report.get("template")
         if template:
@@ -182,8 +183,11 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
     state.pop("abort_reason", None)
     if SETTINGS.budget and SETTINGS.budget.active:
         SETTINGS.budget.context = {"state": state, "session_dir": session_dir, "metrics": session_metrics}
-        say("[*] Budget            : " + ", ".join(f"{label} {format_budget(*limit)}" for _, label, limit, hard in SETTINGS.budget.limits() if hard)
-              + (f"; Warnung ab {format_budget(*SETTINGS.budget.warn_total)}" if SETTINGS.budget.warn_total else ""))
+        say(
+            "[*] Budget            : "
+            + ", ".join(f"{label} {format_budget(*limit)}" for _, label, limit, hard in SETTINGS.budget.limits() if hard)
+            + (f"; Warnung ab {format_budget(*SETTINGS.budget.warn_total)}" if SETTINGS.budget.warn_total else "")
+        )
 
     planner = create_agent(planner_base.binary, agents, role="🏗️ Architekt (Planung & Entwurf)", metrics_tracker=session_metrics)
     reviewer = create_agent(reviewer_base.binary, agents, role="🧐 Prüfstatiker (Prüfung & Review)", metrics_tracker=session_metrics)
@@ -204,7 +208,9 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
         builder_perm_flags = get_permission_flags(builder.binary)
         state["yolo_enabled"] = True
         save_session_state(session_dir, state)
-        say(f"🔓 YOLO-Modus aktiv: Bauleiter erhält volle Tool- & Schreibrechte ({' '.join(builder_perm_flags)}); Architekt und Prüfstatiker bleiben lesend.")
+        say(
+            f"🔓 YOLO-Modus aktiv: Bauleiter erhält volle Tool- & Schreibrechte ({' '.join(builder_perm_flags)}); Architekt und Prüfstatiker bleiben lesend."
+        )
 
     planner_flags = list(planner_perm_flags)
     reviewer_flags = list(reviewer_perm_flags)
@@ -236,9 +242,15 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
             for k in LOCAL_BACKEND_ORDER:
                 if k in agents:
                     builder_base = agents[k]
-                    builder = create_agent(builder_base.binary, agents, role="🔨 Bauleiter (Bau & Umsetzung)", metrics_tracker=session_metrics)
+                    builder = create_agent(
+                        builder_base.binary, agents, role="🔨 Bauleiter (Bau & Umsetzung)", metrics_tracker=session_metrics
+                    )
                     break
-        default_b_model = args.builder_model or ("qwen2.5-coder:32b" if "endpoint" in builder.binary else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model"))
+        default_b_model = args.builder_model or (
+            "qwen2.5-coder:32b"
+            if "endpoint" in builder.binary
+            else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model")
+        )
     else:  # balanced
         default_p_effort = "high" if planner.binary == "agy" else None
         default_r_effort = "high" if reviewer.binary == "agy" else None
@@ -316,11 +328,28 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
         state["ask_mode"] = True
     save_session_state(session_dir, state)
     return RunContext(
-        args=args, agents=agents, project_path=project_path, session_dir=session_dir, state=state, task=task,
-        metrics=session_metrics, strategy=strat, planner=planner, reviewer=reviewer, builder=builder,
-        planner_flags=planner_flags, reviewer_flags=reviewer_flags, builder_flags=builder_flags,
-        builder_model=builder_model, builder_effort=b_effort, yolo_active=yolo_active, auto_switch=auto_switch,
-        swap_roles=swap_roles, use_worktree=use_worktree, merge_worktree=merge_worktree, ask_mode=ask_mode,
+        args=args,
+        agents=agents,
+        project_path=project_path,
+        session_dir=session_dir,
+        state=state,
+        task=task,
+        metrics=session_metrics,
+        strategy=strat,
+        planner=planner,
+        reviewer=reviewer,
+        builder=builder,
+        planner_flags=planner_flags,
+        reviewer_flags=reviewer_flags,
+        builder_flags=builder_flags,
+        builder_model=builder_model,
+        builder_effort=b_effort,
+        yolo_active=yolo_active,
+        auto_switch=auto_switch,
+        swap_roles=swap_roles,
+        use_worktree=use_worktree,
+        merge_worktree=merge_worktree,
+        ask_mode=ask_mode,
     )
 
 
@@ -328,7 +357,13 @@ def print_run_banner(run: "RunContext") -> None:
     """Kopf des Laufs: Rollen, Modi und Session; legt fest, ob der Architekt in Etappen plant."""
     args, project_path, session_dir, state, task = run.args, run.project_path, run.session_dir, run.state, run.task
     planner, reviewer, builder, strat = run.planner, run.reviewer, run.builder, run.strategy
-    ask_mode, auto_switch, swap_roles, use_worktree, merge_worktree = run.ask_mode, run.auto_switch, run.swap_roles, run.use_worktree, run.merge_worktree
+    ask_mode, auto_switch, swap_roles, use_worktree, merge_worktree = (
+        run.ask_mode,
+        run.auto_switch,
+        run.swap_roles,
+        run.use_worktree,
+        run.merge_worktree,
+    )
     say("\n=======================================================")
     say("[*] ClaudeGravity Loop gestartet")
     say(f"[*] Ziel-Projekt      : {project_path}")
@@ -366,10 +401,14 @@ def print_run_banner(run: "RunContext") -> None:
     if task_secrets:
         cloud_roles = [a.name for a in (planner, reviewer, builder) if not a.local]
         if SETTINGS.shield:
-            say(f"🛡️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}); sie werden vor dem Versand an Cloud-Modelle geschwärzt.")
+            say(
+                f"🛡️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}); sie werden vor dem Versand an Cloud-Modelle geschwärzt."
+            )
         elif cloud_roles:
-            say(f"⚠️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}) und der Datenschutzschild ist aus: "
-                  f"sie gehen im Klartext an {', '.join(dict.fromkeys(cloud_roles))}. Besser als Umgebungsvariable übergeben.")
+            say(
+                f"⚠️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}) und der Datenschutzschild ist aus: "
+                f"sie gehen im Klartext an {', '.join(dict.fromkeys(cloud_roles))}. Besser als Umgebungsvariable übergeben."
+            )
         append_log(session_dir, f"Aufgabe enthält mögliche Zugangsdaten: {', '.join(task_secrets)}")
 
     # Etappen-Modus: hängt vom Bauleiter ab, der in Phase 3 tatsächlich baut
@@ -414,7 +453,7 @@ def run_plan_phase(run: "RunContext") -> bool:
             planner_flags=planner_flags,
             reviewer_flags=reviewer_flags,
             max_rounds=max(1, args.max_rounds),
-            ask_mode=ask_mode
+            ask_mode=ask_mode,
         )
 
         if SETTINGS.stop_requested:
@@ -434,8 +473,17 @@ def run_plan_phase(run: "RunContext") -> bool:
         else:
             # Interaktive Freigabe & Change-Routing (Approve / Changes / Swap)
             user_confirmed, plan_file, planner, reviewer, planner_flags, reviewer_flags = handle_plan_approval_and_changes(
-                plan_file, planner, reviewer, task, project_path, session_dir, state,
-                agents=agents, auto_switch=auto_switch, planner_flags=planner_flags, reviewer_flags=reviewer_flags
+                plan_file,
+                planner,
+                reviewer,
+                task,
+                project_path,
+                session_dir,
+                state,
+                agents=agents,
+                auto_switch=auto_switch,
+                planner_flags=planner_flags,
+                reviewer_flags=reviewer_flags,
             )
 
         if not user_confirmed or SETTINGS.stop_requested:
@@ -445,7 +493,13 @@ def run_plan_phase(run: "RunContext") -> bool:
         state["phase"] = "build"
         state["user_approved"] = True
         save_session_state(session_dir, state)
-    run.plan_file, run.planner, run.reviewer, run.planner_flags, run.reviewer_flags = plan_file, planner, reviewer, planner_flags, reviewer_flags
+    run.plan_file, run.planner, run.reviewer, run.planner_flags, run.reviewer_flags = (
+        plan_file,
+        planner,
+        reviewer,
+        planner_flags,
+        reviewer_flags,
+    )
     return True
 
 
@@ -463,7 +517,7 @@ def prepare_build(run: "RunContext") -> None:
             role="🔨 Bauleiter (Bau & Umsetzung)",
             model=builder_model,
             effort=b_effort,
-            metrics_tracker=session_metrics
+            metrics_tracker=session_metrics,
         )
 
     # Rechte- und Modell-Flags passend zum tatsächlichen Bauleiter neu aufbauen
@@ -477,7 +531,9 @@ def prepare_build(run: "RunContext") -> None:
     if not yolo_active:
         try:
             say("\n⚙️  Berechtigungs-Prüfung für Phase 3 (Implementierung):")
-            perm_ans = input(f"Soll 🔨 Bauleiter ({builder.name}) volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(builder.binary))})? [J/n]: ")
+            perm_ans = input(
+                f"Soll 🔨 Bauleiter ({builder.name}) volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(builder.binary))})? [J/n]: "
+            )
             if perm_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:
                 builder_perm_flags = get_permission_flags(builder.binary)
                 for f in builder_perm_flags:
@@ -521,8 +577,10 @@ def prepare_build(run: "RunContext") -> None:
         if inspector is not None and inspector not in (reviewer, planner):
             inspector = create_agent(inspector.binary, agents, role="🔎 Abnahme", metrics_tracker=session_metrics)
         if inspector is not None:
-            inspector_model = args.inspector_model or state.get("inspector_model") or (
-                inspector.model if inspector.model != DEFAULT_MODEL_LABEL else None
+            inspector_model = (
+                args.inspector_model
+                or state.get("inspector_model")
+                or (inspector.model if inspector.model != DEFAULT_MODEL_LABEL else None)
             )
             inspector_effort = args.inspector_effort or state.get("inspector_effort") or inspector.effort
             inspector_flags = get_readonly_flags(inspector.binary)
@@ -546,7 +604,13 @@ def prepare_build(run: "RunContext") -> None:
         say(f"⚠️ {plan_file.name} hat sich seit Baubeginn geändert. Der Bauleiter arbeitet mit der neuen Fassung weiter.")
         append_log(session_dir, f"{plan_file.name} nach Baubeginn geändert")
         state["build_plan_sha256"] = sha256_file(plan_file)
-    run.builder, run.builder_flags, run.session_log, run.work_path, run.in_worktree = builder, builder_flags, session_log, work_path, in_worktree
+    run.builder, run.builder_flags, run.session_log, run.work_path, run.in_worktree = (
+        builder,
+        builder_flags,
+        session_log,
+        work_path,
+        in_worktree,
+    )
     run.proof_cmd, run.inspector, run.inspector_flags = proof_cmd, inspector, inspector_flags
 
 
@@ -596,7 +660,9 @@ def run_build_phase(run: "RunContext") -> None:
         if inspector is None:
             return "finished"
         if inspections_used >= max(1, args.max_inspections):
-            say(f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Offene Befunde stehen in {session_dir.relative_to(project_path)}/INSPECTION_round*.md.")
+            say(
+                f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Offene Befunde stehen in {session_dir.relative_to(project_path)}/INSPECTION_round*.md."
+            )
             append_log(session_dir, "Abnahme-Limit erreicht, Aufgabe bleibt offen")
             state["phase"] = "inspection_open"
             state["abort_reason"] = f"Abnahme-Limit ({args.max_inspections}) erreicht, Befunde offen"
@@ -608,8 +674,19 @@ def run_build_phase(run: "RunContext") -> None:
         say(f"\n🔎 Phase 4: Abnahme (Runde {round_no}) durch {describe_agent(inspector)}...", flush=True)
         changes = collect_build_changes(work_path, state.get("build_base"))
         approved_build, reason, answer = run_inspection(
-            inspector, inspector_flags, builder, task, plan_file.read_text(encoding="utf-8"),
-            changes, proof_note, work_path, session_dir, state, agents, auto_switch, round_no
+            inspector,
+            inspector_flags,
+            builder,
+            task,
+            plan_file.read_text(encoding="utf-8"),
+            changes,
+            proof_note,
+            work_path,
+            session_dir,
+            state,
+            agents,
+            auto_switch,
+            round_no,
         )
         if approved_build:
             say(f"✅ Abnahme erteilt ({reason}).")
@@ -618,7 +695,9 @@ def run_build_phase(run: "RunContext") -> None:
         session_metrics.count("inspection_rejected")
         reject_done(f"Die unabhängige Abnahme hat die Fertigmeldung zurückgewiesen. Befunde:\n{findings_digest(answer)}")
         if inspections_used >= max(1, args.max_inspections):
-            say(f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Befunde: {session_dir.relative_to(project_path)}/INSPECTION_round{round_no}.md")
+            say(
+                f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Befunde: {session_dir.relative_to(project_path)}/INSPECTION_round{round_no}.md"
+            )
             append_log(session_dir, "Abnahme-Limit erreicht, Aufgabe bleibt offen")
             state["phase"] = "inspection_open"
             state["abort_reason"] = f"Abnahme-Limit ({args.max_inspections}) erreicht, Befunde offen"
@@ -627,7 +706,9 @@ def run_build_phase(run: "RunContext") -> None:
         return "retry"
 
     say(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {work_path}...")
-    b_build_desc = f"{builder.name}" + (f" (`{builder.model}`)" if builder.model else "") + (f" [{builder.effort}]" if builder.effort else "")
+    b_build_desc = (
+        f"{builder.name}" + (f" (`{builder.model}`)" if builder.model else "") + (f" [{builder.effort}]" if builder.effort else "")
+    )
     say(f"🔨 Ausführender Bauleiter: {b_build_desc}")
     start_iter = state.get("last_iteration", 0) + 1
     outcome = None
@@ -649,7 +730,9 @@ def run_build_phase(run: "RunContext") -> None:
             state["stages_plan_sha256"] = state.get("build_plan_sha256")
         stage_mode = len(stages) >= 2 or (len(stages) == 1 and (state.get("stage_mode") or args.etappen) in ("an", "on"))
         if not stage_mode:
-            say("ℹ️  Der Plan enthält keinen Abschnitt `## Etappen` mit mindestens zwei Etappen. Der Bauleiter baut den ganzen Plan auf einmal.")
+            say(
+                "ℹ️  Der Plan enthält keinen Abschnitt `## Etappen` mit mindestens zwei Etappen. Der Bauleiter baut den ganzen Plan auf einmal."
+            )
             append_log(session_dir, "Etappen-Modus: keine Etappen im Plan, normaler Bau")
     stage_index = state.get("stage_index", 0) if stage_mode else 0
     stage_tries = 0
@@ -666,8 +749,14 @@ def run_build_phase(run: "RunContext") -> None:
     else:
         max_iters = 10
     build_ctx = BuildContext(
-        work_path=work_path, session_dir=session_dir, session_log=session_log, state=state,
-        metrics=session_metrics, agents=agents, auto_switch=auto_switch, inspector=inspector,
+        work_path=work_path,
+        session_dir=session_dir,
+        session_log=session_log,
+        state=state,
+        metrics=session_metrics,
+        agents=agents,
+        auto_switch=auto_switch,
+        inspector=inspector,
         written_so_far=list(state.get("written_files", [])),
     )
     state["iteration_limit"] = max_iters
@@ -720,21 +809,34 @@ def run_build_phase(run: "RunContext") -> None:
             state["last_iteration"] = iteration
             stage_text = stages[stage_index]
             stage_label = f"Etappe {stage_index + 1}/{len(stages)}"
-            say(f"\n{'='*20} Iteration {iteration}/{max_iters} · {stage_label} {'='*20}\n{stage_text}\n", flush=True)
+            say(f"\n{'=' * 20} Iteration {iteration}/{max_iters} · {stage_label} {'=' * 20}\n{stage_text}\n", flush=True)
             done_list = "\n".join(f"- [x] {s}" for s in stages[:stage_index]) or "- (noch keine)"
             plan_ref = plan_file if in_worktree else plan_file.relative_to(project_path)
-            file_ctx = stage_file_context(work_path, stage_text + "\n" + pending_feedback, build_ctx.written_so_far) if is_endpoint_builder else ""
+            file_ctx = (
+                stage_file_context(work_path, stage_text + "\n" + pending_feedback, build_ctx.written_so_far) if is_endpoint_builder else ""
+            )
             prompt_build = compose_build_prompt(
-                task, plan_ref, proof_cmd, pending_feedback, is_endpoint_builder,
-                plan_text=plan_text_now, file_ctx=file_ctx, stage=(stage_label, stage_text, done_list),
+                task,
+                plan_ref,
+                proof_cmd,
+                pending_feedback,
+                is_endpoint_builder,
+                plan_text=plan_text_now,
+                file_ctx=file_ctx,
+                stage=(stage_label, stage_text, done_list),
             )
             ok = False
             output = ""
             try:
                 res, builder, builder_flags, _ = run_build_call(
-                    build_ctx, builder, builder_flags, prompt_build, is_endpoint_builder,
-                    wait_note=stage_label, label=stage_label,
-                    log_header=f"\n{'='*20} Iteration {iteration} · {stage_label} {'='*20}\n",
+                    build_ctx,
+                    builder,
+                    builder_flags,
+                    prompt_build,
+                    is_endpoint_builder,
+                    wait_note=stage_label,
+                    label=stage_label,
+                    log_header=f"\n{'=' * 20} Iteration {iteration} · {stage_label} {'=' * 20}\n",
                 )
                 if proof_cmd:
                     ok, output = run_proof_check(build_ctx, proof_cmd)
@@ -772,12 +874,18 @@ def run_build_phase(run: "RunContext") -> None:
                     say(f"🔁 Nacharbeit als Etappe {len(stages)} angehängt.")
             else:
                 stage_tries += 1
-                pending_feedback = f"Der Prüfbefehl `{proof_cmd}` schlägt nach {stage_label} fehl:\n```\n{output}\n```" if proof_cmd else f"Fehler: {output}"
+                pending_feedback = (
+                    f"Der Prüfbefehl `{proof_cmd}` schlägt nach {stage_label} fehl:\n```\n{output}\n```"
+                    if proof_cmd
+                    else f"Fehler: {output}"
+                )
                 state["pending_feedback"] = pending_feedback
                 say(f"❌ {stage_label} noch nicht fertig (Versuch {stage_tries}/{STAGE_MAX_TRIES}).")
                 note_build_round(False, f"{stage_label} " + ("Prüfbefehl rot" if proof_cmd else "fehlgeschlagen"))
                 if stage_tries >= STAGE_MAX_TRIES:
-                    say(f"🛑 {stage_label} ist nach {STAGE_MAX_TRIES} Versuchen nicht grün. Stand gesichert; weiter mit 'claudegravity -c'.")
+                    say(
+                        f"🛑 {stage_label} ist nach {STAGE_MAX_TRIES} Versuchen nicht grün. Stand gesichert; weiter mit 'claudegravity -c'."
+                    )
                     state["abort_reason"] = f"{stage_label} nach {STAGE_MAX_TRIES} Versuchen nicht grün"
                     append_log(session_dir, f"{stage_label} nach {STAGE_MAX_TRIES} Versuchen offen")
                     tail = "\n".join((output or "").strip().splitlines()[-30:])
@@ -809,7 +917,7 @@ def run_build_phase(run: "RunContext") -> None:
         save_session_state(session_dir, state)
 
         timestamp = datetime.datetime.now().isoformat()
-        log_header = f"\n{'='*20} Iteration {iteration}/{max_iters} @ {timestamp} {'='*20}\n"
+        log_header = f"\n{'=' * 20} Iteration {iteration}/{max_iters} @ {timestamp} {'=' * 20}\n"
         say(log_header, flush=True)
 
         # Im Worktree liegt der (git-ignorierte) Session-Ordner außerhalb des Arbeitsverzeichnisses -> absolute Pfade
@@ -818,16 +926,28 @@ def run_build_phase(run: "RunContext") -> None:
         is_endpoint_builder = builder.binary in ENDPOINT_BINARIES
         file_ctx = stage_file_context(work_path, pending_feedback, build_ctx.written_so_far) if is_endpoint_builder else ""
         prompt_build = compose_build_prompt(
-            task, plan_ref, proof_cmd, pending_feedback, is_endpoint_builder,
-            plan_text=plan_text_now, file_ctx=file_ctx, rel_done_path=rel_done_path,
+            task,
+            plan_ref,
+            proof_cmd,
+            pending_feedback,
+            is_endpoint_builder,
+            plan_text=plan_text_now,
+            file_ctx=file_ctx,
+            rel_done_path=rel_done_path,
         )
 
         call_failed = ""
         written = []
         try:
             res, builder, builder_flags, written = run_build_call(
-                build_ctx, builder, builder_flags, prompt_build, is_endpoint_builder,
-                wait_note="führt genehmigten Plan aus", label=f"Iteration {iteration}", log_header=log_header,
+                build_ctx,
+                builder,
+                builder_flags,
+                prompt_build,
+                is_endpoint_builder,
+                wait_note="führt genehmigten Plan aus",
+                label=f"Iteration {iteration}",
+                log_header=log_header,
             )
             pending_feedback = ""
             state["pending_feedback"] = ""
@@ -898,7 +1018,14 @@ def finish_run(run: "RunContext") -> None:
 
     if state.get("phase") != "completed" and state.get("abort_reason"):
         say(f"\n⏹️ Abbruchgrund: {state['abort_reason']}")
-    log_event(session_dir, "session_end", phase=state.get("phase"), success=state.get("phase") == "completed",
-              abort_reason=state.get("abort_reason"), tokens_total=session_metrics.total_tokens,
-              cost_usd_total=round(session_metrics.cost_usd, 4), build_rounds=state.get("last_iteration"))
+    log_event(
+        session_dir,
+        "session_end",
+        phase=state.get("phase"),
+        success=state.get("phase") == "completed",
+        abort_reason=state.get("abort_reason"),
+        tokens_total=session_metrics.total_tokens,
+        cost_usd_total=round(session_metrics.cost_usd, 4),
+        build_rounds=state.get("last_iteration"),
+    )
     say("\n[*] ClaudeGravity Loop beendet.")

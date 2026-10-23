@@ -22,10 +22,16 @@ class BudgetExceeded(BaseException):
 
 
 BUDGET_ROLE_ALIASES = {
-    "architekt": "planner", "planner": "planner",
-    "pruefstatiker": "reviewer", "prüfstatiker": "reviewer", "reviewer": "reviewer",
-    "bauleiter": "builder", "bauer": "builder", "builder": "builder",
-    "abnahme": "inspector", "inspector": "inspector",
+    "architekt": "planner",
+    "planner": "planner",
+    "pruefstatiker": "reviewer",
+    "prüfstatiker": "reviewer",
+    "reviewer": "reviewer",
+    "bauleiter": "builder",
+    "bauer": "builder",
+    "builder": "builder",
+    "abnahme": "inspector",
+    "inspector": "inspector",
 }
 BUDGET_ROLE_LABELS = {"planner": "Architekt", "reviewer": "Prüfstatiker", "builder": "Bauleiter", "inspector": "Abnahme"}
 BUDGET_AUTO_WARN = 0.8  # ohne --budget-warn: Warnung bei 80 % einer harten Grenze
@@ -54,6 +60,7 @@ def parse_budget(text: str) -> tuple[str, float]:
 
 
 def format_budget(unit: str, value: float) -> str:
+    """Budgetwert lesbar machen: USD mit passender Genauigkeit oder Tokens in k/M."""
     if unit == "usd":
         return f"{value:.2f} USD" if value >= 0.1 else f"{value:.4f} USD"
     if value >= 1_000_000:
@@ -81,10 +88,12 @@ class Budget:
 
     @property
     def active(self) -> bool:
+        """True, wenn irgendeine Grenze oder Warnschwelle gesetzt ist."""
         return bool(self.max_total or self.warn_total or self.roles)
 
     @staticmethod
     def usage(metrics: "SessionMetrics") -> dict:
+        """Verbrauch gesamt und je Rolle (tokens, usd) aus den Kennzahlen der Session."""
         used = {"total": {"tokens": metrics.total_tokens, "usd": metrics.cost_usd}}
         for entry in metrics.by_agent.values():
             role = role_key(entry.get("role", ""))
@@ -125,12 +134,12 @@ class Budget:
         return warnings
 
     def status(self, metrics: "SessionMetrics") -> str | None:
+        """Kurztext für die Statuszeile, z. B. "Budget 40% von 2.00 USD"; None ohne Gesamtgrenze."""
         if not self.max_total:
             return None
         unit, value = self.max_total
         spent = self.usage(metrics)["total"][unit]
         return f"Budget {spent / value:.0%} von {format_budget(unit, value)}"
-
 
 
 def handle_budget_exceeded(exc: BudgetExceeded) -> None:
@@ -144,8 +153,15 @@ def handle_budget_exceeded(exc: BudgetExceeded) -> None:
             (session_dir / "AUDIT.md").write_text(format_metrics_report(metrics, state), encoding="utf-8")
         save_session_state(session_dir, state)
         append_log(session_dir, f"Abbruch: Budget: {exc}")
-        log_event(session_dir, "session_end", level="error", phase=state.get("phase"), success=False,
-                  abort_reason=state["abort_reason"], code="CG-1404")
+        log_event(
+            session_dir,
+            "session_end",
+            level="error",
+            phase=state.get("phase"),
+            success=False,
+            abort_reason=state["abort_reason"],
+            code="CG-1404",
+        )
     say("\n🛑 Hartes Budget erreicht, Lauf beendet. Stand gesichert.")
     fail("CG-1404", str(exc), exit_code=3)
 
@@ -208,9 +224,17 @@ def estimate_run(history: list[dict], strategy: str, max_iterations: int) -> dic
     basis = same if len(same) >= ESTIMATE_MIN_SAME_STRATEGY else history
     if not basis:
         expected = min(3, max_iterations)
-        return {"source": "heuristik", "sessions": 0, "strategy_match": False,
-                "rounds": (1, expected, max_iterations), "tokens": None, "cost_usd": None,
-                "cost_sessions": 0, "rework_rate": None, "success_rate": None}
+        return {
+            "source": "heuristik",
+            "sessions": 0,
+            "strategy_match": False,
+            "rounds": (1, expected, max_iterations),
+            "tokens": None,
+            "cost_usd": None,
+            "cost_sessions": 0,
+            "rework_rate": None,
+            "success_rate": None,
+        }
     costed = [k["cost_usd_task"] for k in basis if (k.get("cost_usd_task") or 0) > 0]
     rounds = spread([k.get("build_rounds") for k in basis if k.get("build_rounds")])
     if rounds:
@@ -229,17 +253,17 @@ def estimate_run(history: list[dict], strategy: str, max_iterations: int) -> dic
     }
 
 
-def estimate_hints(est: dict, strategy: str, budget: "Budget | None", has_local: bool,
-                   proof: str | None) -> list[str]:
+def estimate_hints(est: dict, strategy: str, budget: "Budget | None", has_local: bool, proof: str | None) -> list[str]:
     """Spar- und Sicherheitshinweise passend zur Schätzung."""
     hints = []
-    worst = {"tokens": est["tokens"][2] if est["tokens"] else None,
-             "usd": est["cost_usd"][2] if est["cost_usd"] else None}
+    worst = {"tokens": est["tokens"][2] if est["tokens"] else None, "usd": est["cost_usd"][2] if est["cost_usd"] else None}
     if budget and budget.max_total:
         unit, limit = budget.max_total
         if worst[unit] is not None and worst[unit] >= limit:
-            hints.append(f"Im ungünstigsten Fall reicht --budget-max {format_budget(unit, limit)} nicht "
-                         f"(bisher bis {format_budget(unit, worst[unit])}); der Lauf bricht dann mit gesichertem Stand ab.")
+            hints.append(
+                f"Im ungünstigsten Fall reicht --budget-max {format_budget(unit, limit)} nicht "
+                f"(bisher bis {format_budget(unit, worst[unit])}); der Lauf bricht dann mit gesichertem Stand ab."
+            )
     elif worst["usd"]:
         hints.append(f"--budget-max {format_budget('usd', worst['usd'] * 1.2)} begrenzt den ungünstigsten Fall mit etwas Luft.")
     elif worst["tokens"]:
@@ -250,15 +274,23 @@ def estimate_hints(est: dict, strategy: str, budget: "Budget | None", has_local:
         elif strategy != "eco":
             hints.append("Mit --strategy eco baut ein Spar-Modell; ein lokales Modell (Ollama, LM Studio) spart den Bau ganz.")
     if est["rework_rate"] is not None and est["rework_rate"] >= 0.5:
-        hints.append(f"Viel Nacharbeit bisher (Median {est['rework_rate']:.0%})"
-                     + (": ein --proof-Befehl gibt dem Bauleiter früh ein klares Signal." if not proof
-                        else ": kleinere Aufgaben oder --etappen an senken die Runden."))
+        hints.append(
+            f"Viel Nacharbeit bisher (Median {est['rework_rate']:.0%})"
+            + (
+                ": ein --proof-Befehl gibt dem Bauleiter früh ein klares Signal."
+                if not proof
+                else ": kleinere Aufgaben oder --etappen an senken die Runden."
+            )
+        )
     return hints
 
 
 def format_estimate(est: dict, hints: list[str]) -> list[str]:
+    """Kostenschätzung vorab als Zeilen für den Trockenlauf (günstig, erwartet, ungünstig)."""
+
     def triple(values, fmt) -> str:
         return " · ".join(f"{name} {fmt(v)}" for name, v in zip(("günstig", "erwartet", "ungünstig"), values, strict=True))
+
     lines = ["\n💰 Kostenschätzung vorab:"]
     if est["source"] == "heuristik":
         lines.append(f"   • Bau-Runden    : {triple(est['rounds'], lambda v: str(v))} (Faustregel, noch kein Verlauf)")
@@ -272,8 +304,10 @@ def format_estimate(est: dict, hints: list[str]) -> list[str]:
         if est["tokens"]:
             lines.append(f"   • Tokens        : {triple(est['tokens'], lambda v: format_budget('tokens', v))}")
         if est["cost_usd"]:
-            lines.append(f"   • Kosten        : {triple(est['cost_usd'], lambda v: format_budget('usd', v))}"
-                         f" (gemeldet in {est['cost_sessions']} von {est['sessions']} Sessions)")
+            lines.append(
+                f"   • Kosten        : {triple(est['cost_usd'], lambda v: format_budget('usd', v))}"
+                f" (gemeldet in {est['cost_sessions']} von {est['sessions']} Sessions)"
+            )
         else:
             lines.append("   • Kosten        : keine gemeldet (Abo-CLIs und lokale Modelle melden keine; Tokens oben zum Nachrechnen)")
     lines.extend(f"   • Tipp: {hint}" for hint in hints)

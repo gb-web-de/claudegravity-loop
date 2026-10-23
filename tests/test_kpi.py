@@ -28,8 +28,13 @@ def sample_metrics() -> loop.SessionMetrics:
 
 class KpiTest(unittest.TestCase):
     def test_build_kpis(self):
-        state = {"phase": "completed", "strategy": "hybrid", "rounds_completed": 2,
-                 "created_at": "2026-10-23T10:00:00", "stages": ["a", "b"]}
+        state = {
+            "phase": "completed",
+            "strategy": "hybrid",
+            "rounds_completed": 2,
+            "created_at": "2026-10-23T10:00:00",
+            "stages": ["a", "b"],
+        }
         kpi = loop.build_kpis(state, sample_metrics(), now=datetime.datetime(2026, 10, 23, 10, 12, 30))
         self.assertTrue(kpi["success"])
         self.assertEqual(kpi["duration_s"], 750)

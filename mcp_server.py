@@ -42,11 +42,11 @@ MODEL_AWARE_CLIS = ("claude", "agy", "gemini")
 CLOUD_PLANNER_ORDER = ("codex", "claude", "agy", "gemini")
 LOCAL_BACKEND_ORDER = ("ollama", "lmstudio", "endpoint", "ollama-cli")
 OLLAMA_KEYS = ("ollama", "ollama-cli")
-ROLE_PARAMS = ("architekt", "architekt_model", "pruefstatiker", "pruefstatiker_model",
-               "bauer", "bauer_model", "abnahme", "abnahme_model")
+ROLE_PARAMS = ("architekt", "architekt_model", "pruefstatiker", "pruefstatiker_model", "bauer", "bauer_model", "abnahme", "abnahme_model")
 
 
 def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
+    """Kurzer GET-Test; auch 401/403/404/405 zählen als erreichbar, weil dort ein Server antwortet."""
     try:
         req = urllib.request.Request(url, method="GET", headers={"User-Agent": "ClaudeGravity-MCP/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -72,6 +72,7 @@ def ollama_base_url() -> str:
 
 
 def detect_installed_agents() -> dict[str, str]:
+    """Installierte CLIs und erreichbare Endpunkte mit Anzeigenamen, wie loop.py sie erkennt."""
     agents = {}
     if shutil.which("claude"):
         agents["claude"] = "Claude Code"
@@ -92,11 +93,7 @@ def detect_installed_agents() -> dict[str, str]:
     if is_endpoint_reachable("http://localhost:1234"):
         agents["lmstudio"] = "LM Studio (Lokal: http://localhost:1234)"
 
-    env_endpoint = (
-        os.environ.get("CLAUDEGRAVITY_ENDPOINT") or
-        os.environ.get("OPENAI_BASE_URL") or
-        os.environ.get("AI_ENDPOINT")
-    )
+    env_endpoint = os.environ.get("CLAUDEGRAVITY_ENDPOINT") or os.environ.get("OPENAI_BASE_URL") or os.environ.get("AI_ENDPOINT")
     if env_endpoint:
         label = "Benutzerdefinierter KI-Server"
         agents["endpoint"] = f"{label} ({env_endpoint})"
@@ -105,12 +102,15 @@ def detect_installed_agents() -> dict[str, str]:
 
 
 def analyze_task_complexity(task: str) -> dict:
+    """Grobe Einschätzung der Aufgabe aus Schlüsselwörtern (Refactor, Sicherheit, Architektur, Tests, kleiner Fix)."""
     t_lower = task.lower()
     is_refactor = any(w in t_lower for w in ["refactor", "refaktoriere", "umbau", "restrukturier", "clean up", "aufräumen"])
     is_security = any(w in t_lower for w in ["secur", "sicher", "auth", "token", "login", "vulnerability", "lücke", "passw"])
     is_architectural = any(w in t_lower for w in ["architekt", "migration", "redesign", "framework", "datenbank", "schema", "api design"])
     is_testing = any(w in t_lower for w in ["test", "unit", "pytest", "spec", "coverage", "abdeckung"])
-    is_small_fix = any(w in t_lower for w in ["fix", "bug", "fehler", "korrigier", "typo", "klein", "patch"]) and not (is_refactor or is_architectural)
+    is_small_fix = any(w in t_lower for w in ["fix", "bug", "fehler", "korrigier", "typo", "klein", "patch"]) and not (
+        is_refactor or is_architectural
+    )
 
     complexity = "hoch" if (is_architectural or is_refactor or is_security) else ("niedrig" if is_small_fix else "mittel")
 
@@ -146,6 +146,7 @@ def background_log_path(project_dir: Path) -> Path:
 
 
 def tail_lines(path: Path, count: int) -> list[str]:
+    """Letzte `count` Zeilen einer Textdatei; leere Liste, wenn sie fehlt oder unlesbar ist."""
     if count <= 0 or not path.is_file():
         return []
     try:
@@ -211,7 +212,7 @@ def optimize_claudegravity_command(
     roles: dict | None = None,
     stages: str = "auto",
     approve_plan: bool = False,
-    merge: bool = False
+    merge: bool = False,
 ) -> dict:
     """Berechnet Rollen und Befehl. `roles` überschreibt einzelne Rollen, z. B. {"architekt": "codex", "bauer_model": "qwen3-coder:30b"}."""
     agents = detect_installed_agents()
@@ -334,8 +335,7 @@ def optimize_claudegravity_command(
         builder_model = planner_model
         builder_effort = None
         cost_benefit = (
-            "⚖️ Ausgewogene Standard-Konfiguration: Hohe Denk-Präzision in der Planung bei "
-            "verlässlicher Ausführungsgeschwindigkeit."
+            "⚖️ Ausgewogene Standard-Konfiguration: Hohe Denk-Präzision in der Planung bei verlässlicher Ausführungsgeschwindigkeit."
         )
 
     # Modellnamen gelten nur für Claude und Gemini; andere CLIs nutzen ihr eigenes Standardmodell
@@ -370,10 +370,16 @@ def optimize_claudegravity_command(
         cmd_args += ["--strategy", strategy_flag]
     if endpoint:
         cmd_args += ["--endpoint", endpoint]
-    for flag, key in (("--architekt", "architekt"), ("--architekt-model", "architekt_model"),
-                      ("--pruefstatiker", "pruefstatiker"), ("--pruefstatiker-model", "pruefstatiker_model"),
-                      ("--bauer", "bauer"), ("--bauer-model", "bauer_model"),
-                      ("--abnahme", "abnahme"), ("--abnahme-model", "abnahme_model")):
+    for flag, key in (
+        ("--architekt", "architekt"),
+        ("--architekt-model", "architekt_model"),
+        ("--pruefstatiker", "pruefstatiker"),
+        ("--pruefstatiker-model", "pruefstatiker_model"),
+        ("--bauer", "bauer"),
+        ("--bauer-model", "bauer_model"),
+        ("--abnahme", "abnahme"),
+        ("--abnahme-model", "abnahme_model"),
+    ):
         if key in roles:
             cmd_args += [flag, str(roles[key])]
     if p_norm in ("lowest-cost", "local-free") and "bauer_model" not in roles and builder_model not in (AUTO_OLLAMA_MODEL, DEFAULT_MODEL):
@@ -408,39 +414,41 @@ def optimize_claudegravity_command(
                 "cli": planner_cli,
                 "model": planner_model,
                 "effort": planner_effort or "Standard",
-                "token_share": "~10-15% der Gesamt-Tokens"
+                "token_share": "~10-15% der Gesamt-Tokens",
             },
             "pruefstatiker": {
                 "role": "🧐 Prüfstatiker (Phase 2: Prüfung & Review)",
                 "cli": reviewer_cli,
                 "model": reviewer_model,
                 "effort": reviewer_effort or "Standard",
-                "token_share": "~5-10% der Gesamt-Tokens"
+                "token_share": "~5-10% der Gesamt-Tokens",
             },
             "bauleiter": {
                 "role": "🔨 Bauleiter (Phase 3: Bau & Umsetzung)",
                 "cli": builder_cli,
                 "model": builder_model,
                 "effort": builder_effort or "Standard",
-                "token_share": "~80-90% der Gesamt-Tokens (Hauptverbrauch!)"
+                "token_share": "~80-90% der Gesamt-Tokens (Hauptverbrauch!)",
             },
             "abnahme": {
                 "role": "🔎 Abnahme (Phase 4: Prüfung des fertigen Codes)",
-                "cli": inspector_cli or (planner_cli if p_norm == "hybrid" else "automatisch (Prüfstatiker oder Architekt, nie der Bauleiter)"),
+                "cli": inspector_cli
+                or (planner_cli if p_norm == "hybrid" else "automatisch (Prüfstatiker oder Architekt, nie der Bauleiter)"),
                 "model": roles.get("abnahme_model", DEFAULT_MODEL),
                 "effort": "Standard",
-                "token_share": "gering (nur der Diff)"
-            }
+                "token_share": "gering (nur der Diff)",
+            },
         },
         "stages": stages or "auto",
         "cost_benefit_analysis": cost_benefit,
         "recommended_command": command_str,
         "loop_args": cmd_args,
-        "installed_agents": agents
+        "installed_agents": agents,
     }
 
 
 def format_optimization_markdown(opt: dict) -> str:
+    """Empfehlung von claudegravity_optimize als Markdown mit Rollen und Startbefehlen für Bash, CMD und PowerShell."""
     r = opt["roles"]
     cmd_base = opt["recommended_command"]
     cmd_cmd = format_shell_command(["claudegravity.bat"] + opt["loop_args"], "cmd")
@@ -492,19 +500,39 @@ def format_optimization_markdown(opt: dict) -> str:
 ROLE_SCHEMA = {
     "architekt": {"type": "string", "description": "CLI für den Architekten (claude, agy, gemini, codex, ollama, lmstudio, endpoint)."},
     "architekt_model": {"type": "string", "description": "Modell für den Architekten (z. B. qwen3:30b bei Ollama)."},
-    "pruefstatiker": {"type": "string", "description": "CLI für den Prüfstatiker, nie derselbe Anbieter mit demselben Modell wie der Architekt."},
+    "pruefstatiker": {
+        "type": "string",
+        "description": "CLI für den Prüfstatiker, nie derselbe Anbieter mit demselben Modell wie der Architekt.",
+    },
     "pruefstatiker_model": {"type": "string", "description": "Modell für den Prüfstatiker (z. B. gpt-oss:20b bei Ollama)."},
     "bauer": {"type": "string", "description": "CLI für den Bauleiter (z. B. ollama)."},
-    "bauer_model": {"type": "string", "description": "Modell für den Bauleiter (z. B. qwen3-coder:30b). Ohne Angabe wählt der Loop bei Ollama aus den installierten Modellen."},
+    "bauer_model": {
+        "type": "string",
+        "description": "Modell für den Bauleiter (z. B. qwen3-coder:30b). Ohne Angabe wählt der Loop bei Ollama aus den installierten Modellen.",
+    },
     "abnahme": {"type": "string", "description": "CLI für die Abnahme des fertigen Codes, nie der Bauleiter (z. B. codex)."},
     "abnahme_model": {"type": "string", "description": "Modell für die Abnahme."},
-    "stages": {"type": "string", "enum": ["auto", "an", "aus"], "default": "auto", "description": "Etappen-Modus: Plan in Etappen, Bauleiter setzt sie einzeln um (auto: an bei lokalen Bauleitern)."},
-    "approve_plan": {"type": "boolean", "default": False, "description": "Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (--plan-auto). Im Hintergrund immer an."},
-    "merge": {"type": "boolean", "default": False, "description": "Session-Branch nach erfolgreicher Abnahme in den Ausgangs-Branch mergen (--merge)."},
+    "stages": {
+        "type": "string",
+        "enum": ["auto", "an", "aus"],
+        "default": "auto",
+        "description": "Etappen-Modus: Plan in Etappen, Bauleiter setzt sie einzeln um (auto: an bei lokalen Bauleitern).",
+    },
+    "approve_plan": {
+        "type": "boolean",
+        "default": False,
+        "description": "Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (--plan-auto). Im Hintergrund immer an.",
+    },
+    "merge": {
+        "type": "boolean",
+        "default": False,
+        "description": "Session-Branch nach erfolgreicher Abnahme in den Ausgangs-Branch mergen (--merge).",
+    },
 }
 
 
 def role_arguments(arguments: dict) -> dict:
+    """Nur die gesetzten Rollen-Parameter aus den Tool-Argumenten."""
     return {k: arguments.get(k) for k in ROLE_PARAMS if arguments.get(k)}
 
 
@@ -519,48 +547,41 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "task": {
-                    "type": "string",
-                    "description": "Beschreibung der Programmieraufgabe, des Refactorings oder des neuen Features."
-                },
+                "task": {"type": "string", "description": "Beschreibung der Programmieraufgabe, des Refactorings oder des neuen Features."},
                 "priority": {
                     "type": "string",
                     "enum": ["best-code", "lowest-cost", "local-free", "hybrid", "balanced"],
                     "default": "balanced",
-                    "description": "best-code (Frontier-Modelle), lowest-cost (bis zu 70% Ersparnis), local-free (0€ Bauleiter via Ollama, LM Studio oder Server im Heimnetz), hybrid (Cloud-CLI wie Codex plant und nimmt ab, Ollama prüft und baut in Etappen), balanced (ausgewogen)."
+                    "description": "best-code (Frontier-Modelle), lowest-cost (bis zu 70% Ersparnis), local-free (0€ Bauleiter via Ollama, LM Studio oder Server im Heimnetz), hybrid (Cloud-CLI wie Codex plant und nimmt ab, Ollama prüft und baut in Etappen), balanced (ausgewogen).",
                 },
                 "endpoint": {
                     "type": "string",
-                    "description": "Optionaler KI-Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)."
+                    "description": "Optionaler KI-Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1).",
                 },
-                "project_path": {
-                    "type": "string",
-                    "default": ".",
-                    "description": "Pfad zum Ziel-Projektverzeichnis (Standard: .)."
-                },
+                "project_path": {"type": "string", "default": ".", "description": "Pfad zum Ziel-Projektverzeichnis (Standard: .)."},
                 "ask_mode": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Ob der interaktive Fragen-Modus (-i / --ask) für menschliche Klärung aktiviert werden soll."
+                    "description": "Ob der interaktive Fragen-Modus (-i / --ask) für menschliche Klärung aktiviert werden soll.",
                 },
                 "yolo": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Ob volle Schreib- und Toolrechte ohne manuelle Nachfrage erteilt werden sollen (--yolo)."
+                    "description": "Ob volle Schreib- und Toolrechte ohne manuelle Nachfrage erteilt werden sollen (--yolo).",
                 },
                 "proof": {
                     "type": "string",
-                    "description": "Optionaler Prüfbefehl (--proof), den der Loop nach jeder Bau-Runde selbst ausführt."
+                    "description": "Optionaler Prüfbefehl (--proof), den der Loop nach jeder Bau-Runde selbst ausführt.",
                 },
                 "max_iterations": {
                     "type": "integer",
                     "default": 10,
-                    "description": "Maximale Anzahl autonomer Runden in Phase 3 (Standard: 10)."
+                    "description": "Maximale Anzahl autonomer Runden in Phase 3 (Standard: 10).",
                 },
-                **ROLE_SCHEMA
+                **ROLE_SCHEMA,
             },
-            "required": ["task"]
-        }
+            "required": ["task"],
+        },
     },
     {
         "name": "claudegravity_run",
@@ -568,49 +589,34 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "task": {
-                    "type": "string",
-                    "description": "Die auszuführende Aufgabe."
-                },
+                "task": {"type": "string", "description": "Die auszuführende Aufgabe."},
                 "priority": {
                     "type": "string",
                     "enum": ["best-code", "lowest-cost", "local-free", "hybrid", "balanced"],
-                    "default": "balanced"
+                    "default": "balanced",
                 },
-                "endpoint": {
-                    "type": "string",
-                    "description": "Optionaler KI-Endpunkt."
-                },
-                "project_path": {
-                    "type": "string",
-                    "default": "."
-                },
+                "endpoint": {"type": "string", "description": "Optionaler KI-Endpunkt."},
+                "project_path": {"type": "string", "default": "."},
                 "yolo": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Volle Schreib- und Toolrechte für den Bauleiter ohne Nachfrage (--yolo). Nur auf ausdrücklichen Wunsch setzen; Architekt und Prüfstatiker bleiben immer lesend."
+                    "description": "Volle Schreib- und Toolrechte für den Bauleiter ohne Nachfrage (--yolo). Nur auf ausdrücklichen Wunsch setzen; Architekt und Prüfstatiker bleiben immer lesend.",
                 },
                 "proof": {
                     "type": "string",
-                    "description": "Prüfbefehl, den der Loop nach jeder Bau-Runde selbst ausführt, z.B. 'python -m unittest discover -s tests'."
+                    "description": "Prüfbefehl, den der Loop nach jeder Bau-Runde selbst ausführt, z.B. 'python -m unittest discover -s tests'.",
                 },
-                "ask_mode": {
-                    "type": "boolean",
-                    "default": False
-                },
-                "max_iterations": {
-                    "type": "integer",
-                    "default": 10
-                },
+                "ask_mode": {"type": "boolean", "default": False},
+                "max_iterations": {"type": "integer", "default": 10},
                 "background": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Im Hintergrund starten. Setzt --plan-auto: gebaut wird nur ein vom Prüfstatiker genehmigter Plan."
+                    "description": "Im Hintergrund starten. Setzt --plan-auto: gebaut wird nur ein vom Prüfstatiker genehmigter Plan.",
                 },
-                **ROLE_SCHEMA
+                **ROLE_SCHEMA,
             },
-            "required": ["task"]
-        }
+            "required": ["task"],
+        },
     },
     {
         "name": "claudegravity_status",
@@ -623,22 +629,20 @@ MCP_TOOLS = [
             "type": "object",
             "properties": {
                 "project_path": {"type": "string", "default": ".", "description": "Pfad zum Ziel-Projekt (Standard: .)."},
-                "log_lines": {"type": "integer", "default": 15, "description": "Wie viele Zeilen vom Ende der Logs (0 = keine)."}
-            }
-        }
+                "log_lines": {"type": "integer", "default": 15, "description": "Wie viele Zeilen vom Ende der Logs (0 = keine)."},
+            },
+        },
     },
     {
         "name": "claudegravity_info",
         "description": "Prüft die installierten AI-CLIs (Claude, Antigravity, Gemini, Codex, Copilot, Ollama, LM Studio, eigene Endpunkte) und gibt Empfehlungen.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
-    }
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 
 def handle_tool_call(name: str, arguments: dict) -> dict:
+    """Einen MCP-Tool-Aufruf ausführen und das Ergebnis im MCP-Format liefern."""
     if name == "claudegravity_optimize":
         task = arguments.get("task", "")
         priority = arguments.get("priority", "balanced")
@@ -660,15 +664,10 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             roles=role_arguments(arguments),
             stages=arguments.get("stages", "auto"),
             approve_plan=arguments.get("approve_plan", False) or arguments.get("background", False),
-            merge=arguments.get("merge", False)
+            merge=arguments.get("merge", False),
         )
         md_text = format_optimization_markdown(opt)
-        return {
-            "content": [
-                {"type": "text", "text": md_text}
-            ],
-            "isError": False
-        }
+        return {"content": [{"type": "text", "text": md_text}], "isError": False}
 
     elif name == "claudegravity_run":
         task = arguments.get("task", "")
@@ -692,16 +691,13 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             roles=role_arguments(arguments),
             stages=arguments.get("stages", "auto"),
             approve_plan=arguments.get("approve_plan", False) or arguments.get("background", False),
-            merge=arguments.get("merge", False)
+            merge=arguments.get("merge", False),
         )
         cmd_str = opt["recommended_command"]
 
         p_dir = Path(project_path).resolve()
         if not p_dir.exists():
-            return {
-                "content": [{"type": "text", "text": f"Fehler: Projektpfad '{p_dir}' existiert nicht."}],
-                "isError": True
-            }
+            return {"content": [{"type": "text", "text": f"Fehler: Projektpfad '{p_dir}' existiert nicht."}], "isError": True}
 
         if background:
             log_path = background_log_path(p_dir)
@@ -722,33 +718,27 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
                         "text": (
                             f"🚀 ClaudeGravity Loop im Hintergrund gestartet (PID {proc.pid})!\nBefehl: `{cmd_str}`\nProjekt: `{p_dir}`\n"
                             f"Ausgabe: `{log_path}`\nStand abfragen: Tool `claudegravity_status` mit project_path `{p_dir}`"
-                        )
+                        ),
                     }
                 ],
-                "isError": False
+                "isError": False,
             }
         else:
             return {
                 "content": [
                     {
                         "type": "text",
-                        "text": f"📋 Bereit zum Starten. Bitte führe folgenden Befehl im Terminal aus:\n\n```bash\ncd {shlex.quote(str(p_dir))} && {cmd_str}\n```"
+                        "text": f"📋 Bereit zum Starten. Bitte führe folgenden Befehl im Terminal aus:\n\n```bash\ncd {shlex.quote(str(p_dir))} && {cmd_str}\n```",
                     }
                 ],
-                "isError": False
+                "isError": False,
             }
 
     elif name == "claudegravity_status":
         p_dir = Path(arguments.get("project_path", ".")).resolve()
         if not p_dir.exists():
-            return {
-                "content": [{"type": "text", "text": f"Fehler: Projektpfad '{p_dir}' existiert nicht."}],
-                "isError": True
-            }
-        return {
-            "content": [{"type": "text", "text": format_session_status(p_dir, int(arguments.get("log_lines", 15)))}],
-            "isError": False
-        }
+            return {"content": [{"type": "text", "text": f"Fehler: Projektpfad '{p_dir}' existiert nicht."}], "isError": True}
+        return {"content": [{"type": "text", "text": format_session_status(p_dir, int(arguments.get("log_lines", 15)))}], "isError": False}
 
     elif name == "claudegravity_info":
         agents = detect_installed_agents()
@@ -756,7 +746,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         lines = [
             f"### 🖥️ Betriebssystem: {os_name} (Python {platform.python_version()})",
             "### 🔍 Erkannte KI-Systeme & Endpoints auf diesem System:",
-            ""
+            "",
         ]
         for k, a in agents.items():
             lines.append(f"* **{a}** (`{k}`)")
@@ -766,17 +756,13 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         lines.append("💡 **Empfohlene Strategien:**")
         lines.append("1. **best-code:** Maximale Codequalität mit Claude Sonnet 3.7 & Gemini 2.5 Pro.")
         lines.append("2. **eco:** Bis zu 70% Ersparnis (Architekt=Sonnet, Bauleiter=Haiku oder Flash).")
-        lines.append("3. **local-free:** 0 € Kosten im Bau-Loop! Cloud-Architekt plant, lokaler Server (Ollama, LM Studio oder ein Rechner im Heimnetz) baut autonom.")
-        return {
-            "content": [{"type": "text", "text": "\n".join(lines)}],
-            "isError": False
-        }
+        lines.append(
+            "3. **local-free:** 0 € Kosten im Bau-Loop! Cloud-Architekt plant, lokaler Server (Ollama, LM Studio oder ein Rechner im Heimnetz) baut autonom."
+        )
+        return {"content": [{"type": "text", "text": "\n".join(lines)}], "isError": False}
 
     else:
-        return {
-            "content": [{"type": "text", "text": f"Unbekanntes Tool: {name}"}],
-            "isError": True
-        }
+        return {"content": [{"type": "text", "text": f"Unbekanntes Tool: {name}"}], "isError": True}
 
 
 def run_mcp_stdio_server():
@@ -801,14 +787,9 @@ def run_mcp_stdio_server():
                     "id": req_id,
                     "result": {
                         "protocolVersion": MCP_PROTOCOL_VERSION,
-                        "capabilities": {
-                            "tools": {}
-                        },
-                        "serverInfo": {
-                            "name": SERVER_NAME,
-                            "version": SERVER_VERSION
-                        }
-                    }
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+                    },
                 }
                 sys.stdout.write(json.dumps(res) + "\n")
                 sys.stdout.flush()
@@ -817,22 +798,12 @@ def run_mcp_stdio_server():
                 continue
 
             elif method == "ping":
-                res = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {}
-                }
+                res = {"jsonrpc": "2.0", "id": req_id, "result": {}}
                 sys.stdout.write(json.dumps(res) + "\n")
                 sys.stdout.flush()
 
             elif method == "tools/list":
-                res = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "tools": MCP_TOOLS
-                    }
-                }
+                res = {"jsonrpc": "2.0", "id": req_id, "result": {"tools": MCP_TOOLS}}
                 sys.stdout.write(json.dumps(res) + "\n")
                 sys.stdout.flush()
 
@@ -840,57 +811,38 @@ def run_mcp_stdio_server():
                 t_name = params.get("name", "")
                 t_args = params.get("arguments", {})
                 tool_res = handle_tool_call(t_name, t_args)
-                res = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": tool_res
-                }
+                res = {"jsonrpc": "2.0", "id": req_id, "result": tool_res}
                 sys.stdout.write(json.dumps(res) + "\n")
                 sys.stdout.flush()
 
             else:
-                res = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {
-                        "code": -32601,
-                        "message": f"Methode '{method}' wird nicht unterstützt."
-                    }
-                }
+                res = {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"Methode '{method}' wird nicht unterstützt."}}
                 sys.stdout.write(json.dumps(res) + "\n")
                 sys.stdout.flush()
 
         except json.JSONDecodeError as err:
-            err_res = {
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {
-                    "code": -32700,
-                    "message": f"Parse-Fehler: {err}"
-                }
-            }
+            err_res = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": f"Parse-Fehler: {err}"}}
             sys.stdout.write(json.dumps(err_res) + "\n")
             sys.stdout.flush()
         except (KeyboardInterrupt, BrokenPipeError):
             break
         except Exception as exc:
-            err_res = {
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {
-                    "code": -32603,
-                    "message": f"Interner Fehler: {exc}"
-                }
-            }
+            err_res = {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": f"Interner Fehler: {exc}"}}
             sys.stdout.write(json.dumps(err_res) + "\n")
             sys.stdout.flush()
 
 
 def main():
+    """MCP-Server über stdio starten oder, mit Aufgabe bzw. --optimize, eine Empfehlung direkt ausgeben."""
     parser = argparse.ArgumentParser(description="ClaudeGravity MCP Server & Command Optimizer")
     parser.add_argument("task_pos", nargs="?", default=None, help="Aufgabe (für direkten CLI-Aufruf)")
     parser.add_argument("--optimize", "-o", dest="optimize_task", default=None, help="Aufgabe analysieren und optimalen Befehl ausgeben")
-    parser.add_argument("--priority", default="balanced", choices=["best-code", "quality", "eco", "lowest-cost", "cost", "local-free", "free", "local", "hybrid", "mixed", "balanced"], help="Priorität: best-code, lowest-cost, local-free, hybrid, balanced")
+    parser.add_argument(
+        "--priority",
+        default="balanced",
+        choices=["best-code", "quality", "eco", "lowest-cost", "cost", "local-free", "free", "local", "hybrid", "mixed", "balanced"],
+        help="Priorität: best-code, lowest-cost, local-free, hybrid, balanced",
+    )
     parser.add_argument("--endpoint", default=None, help="KI-Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
     parser.add_argument("-p", "--project", default=".", help="Zielprojekt-Pfad")
     parser.add_argument("-i", "--ask", action="store_true", help="Fragen-Modus (-i)")
@@ -916,7 +868,7 @@ def main():
             endpoint=args.endpoint,
             ask_mode=args.ask,
             yolo=args.yolo,
-            max_iterations=args.max_iterations
+            max_iterations=args.max_iterations,
         )
         print("\n" + format_optimization_markdown(opt) + "\n")
         return

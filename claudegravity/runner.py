@@ -33,11 +33,7 @@ if TYPE_CHECKING:
     from .budget import Budget
 
 
-def get_alternative_agent(
-    current_agent: AgentCLI,
-    agents: dict[str, AgentCLI],
-    exclude: set[str] | None = None
-) -> AgentCLI | None:
+def get_alternative_agent(current_agent: AgentCLI, agents: dict[str, AgentCLI], exclude: set[str] | None = None) -> AgentCLI | None:
     """Findet eine alternative installierte CLI für Modell-Wechsel bei Limits.
 
     `exclude` enthält die Anbieter der Gegenrolle: Ein Wechsel darf nie dazu führen,
@@ -60,7 +56,7 @@ def handle_rate_limit(
     session_dir: Path,
     state: dict,
     auto_switch: bool = False,
-    exclude: set[str] | None = None
+    exclude: set[str] | None = None,
 ) -> tuple[str, AgentCLI | None]:
     """Behandelt RateLimit-Fehler interaktiv oder per automatischem Modell-Wechsel."""
     alt_agent = get_alternative_agent(current_agent, agents, exclude)
@@ -103,7 +99,7 @@ def handle_rate_limit(
                 secs = int(user_min) * 60 if user_min else 15 * 60
             except (ValueError, EOFError, KeyboardInterrupt):
                 secs = 15 * 60
-        ok = wait_countdown(secs, err.reset_time or f"{secs//60} Min")
+        ok = wait_countdown(secs, err.reset_time or f"{secs // 60} Min")
         if ok:
             return "wait", current_agent
         else:
@@ -120,12 +116,20 @@ PROGRESS_ROLE_LABELS = {"planner": "🏗️ Architekt", "reviewer": "🧐 Prüfs
 
 
 def format_duration(seconds: float) -> str:
+    """Dauer als "12 s" oder "3 min 5 s"."""
     seconds = int(seconds)
     return f"{seconds // 60} min {seconds % 60} s" if seconds >= 60 else f"{seconds} s"
 
 
-def format_progress(role: str, agent_name: str, state: dict, metrics: "SessionMetrics | None",
-                    elapsed: float, delta_tokens: int, budget: "Budget | None" = None) -> list[str]:
+def format_progress(
+    role: str,
+    agent_name: str,
+    state: dict,
+    metrics: "SessionMetrics | None",
+    elapsed: float,
+    delta_tokens: int,
+    budget: "Budget | None" = None,
+) -> list[str]:
     """Statuszeilen nach jedem KI-Aufruf: wo der Lauf steht, was er verbraucht hat und was als Nächstes kommt."""
     if role == "builder":
         where = f"Bau-Runde {state.get('last_iteration', 0)}/{state.get('iteration_limit') or state.get('max_iterations') or '?'}"
@@ -163,7 +167,7 @@ def safe_agent_run(
     auto_switch: bool,
     role: str = "planner",
     metrics_tracker: SessionMetrics | None = None,
-    exclude: set[str] | None = None
+    exclude: set[str] | None = None,
 ) -> tuple[str, AgentCLI, list[str]]:
     """Führt einen Prompt aus und fängt Raten- und Sitzungslimits mit Wiederholungs-Logik ab.
 
@@ -193,12 +197,20 @@ def safe_agent_run(
                     say(f"💶 Budget-Warnung: {warning}")
                     append_log(session_dir, f"Budget-Warnung: {warning}")
             delta = (tracker.total_tokens if tracker is not None else 0) - tokens_before
-            log_event(session_dir, "call", role=role, agent=agent.name, model=agent.reported_model or agent.model,
-                      phase=state.get("phase"), iteration=state.get("last_iteration") if role == "builder" else None,
-                      duration_s=round(time.monotonic() - started, 1), tokens=delta,
-                      tokens_total=tracker.total_tokens if tracker is not None else None,
-                      cost_usd_total=round(tracker.cost_usd, 4) if tracker is not None else None,
-                      retries=attempt or None)
+            log_event(
+                session_dir,
+                "call",
+                role=role,
+                agent=agent.name,
+                model=agent.reported_model or agent.model,
+                phase=state.get("phase"),
+                iteration=state.get("last_iteration") if role == "builder" else None,
+                duration_s=round(time.monotonic() - started, 1),
+                tokens=delta,
+                tokens_total=tracker.total_tokens if tracker is not None else None,
+                cost_usd_total=round(tracker.cost_usd, 4) if tracker is not None else None,
+                retries=attempt or None,
+            )
             if SETTINGS.progress:
                 for line in format_progress(role, agent.name, state, tracker, time.monotonic() - started, delta, SETTINGS.budget):
                     say(line, flush=True)
@@ -223,7 +235,10 @@ def safe_agent_run(
                     short = message.strip().splitlines()[0][:160] if message.strip() else type(exc).__name__
                     say(f"🔁 Vorübergehender Fehler bei {describe_agent(agent)}: {short}")
                     say(f"   Neuversuch {attempt}/{policy['attempts']} in {wait:.0f} s ...")
-                    append_log(session_dir, f"Vorübergehender Fehler bei {agent.name} ({short}); Neuversuch {attempt}/{policy['attempts']} in {wait:.0f} s")
+                    append_log(
+                        session_dir,
+                        f"Vorübergehender Fehler bei {agent.name} ({short}); Neuversuch {attempt}/{policy['attempts']} in {wait:.0f} s",
+                    )
                     if metrics_tracker:
                         metrics_tracker.note_retry("attempts")
                     if not interruptible_sleep(wait):
@@ -234,9 +249,7 @@ def safe_agent_run(
                 append_log(session_dir, f"{agent.name}: {attempt} Neuversuche ohne Erfolg, Auswahl Wechseln/Warten/Beenden")
                 err = RateLimitError(agent.binary, message, transient=True)
             attempt = 0
-            action, new_agent = handle_rate_limit(
-                agent, agents, err, session_dir, state, auto_switch=auto_switch, exclude=exclude
-            )
+            action, new_agent = handle_rate_limit(agent, agents, err, session_dir, state, auto_switch=auto_switch, exclude=exclude)
             if action == "switch" and new_agent:
                 if role == "builder":
                     role_label = "Bauleiter"
@@ -266,7 +279,9 @@ def safe_agent_run(
             elif action == "wait":
                 continue
             else:
-                state["abort_reason"] = f"Beendet im Limit-Menü ({agent.name}: {mask_secrets(err.message.strip().splitlines()[0][:120]) if err.message.strip() else 'Limit'})"
+                state["abort_reason"] = (
+                    f"Beendet im Limit-Menü ({agent.name}: {mask_secrets(err.message.strip().splitlines()[0][:120]) if err.message.strip() else 'Limit'})"
+                )
                 save_session_state(session_dir, state)
                 say(f"\n⏹️ Abbruchgrund: {state['abort_reason']}")
                 say("💾 Sitzung gesichert. Setze jederzeit fort mit 'claudegravity -c'.")

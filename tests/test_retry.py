@@ -69,8 +69,16 @@ class SafeAgentRunRetryTest(unittest.TestCase):
 
     def run_agent(self, agent, metrics=None):
         return loop.safe_agent_run(
-            agent=agent, prompt="p", cwd=self.session, flags=[], agents={}, session_dir=self.session,
-            state={}, auto_switch=False, role="builder", metrics_tracker=metrics,
+            agent=agent,
+            prompt="p",
+            cwd=self.session,
+            flags=[],
+            agents={},
+            session_dir=self.session,
+            state={},
+            auto_switch=False,
+            role="builder",
+            metrics_tracker=metrics,
         )
 
     def test_recovers_after_transient_errors(self):
@@ -115,8 +123,10 @@ class SafeAgentRunRetryTest(unittest.TestCase):
 
     def test_retries_can_be_disabled(self):
         agent, _ = flaky_agent([RuntimeError("HTTP 503")])
-        with mock.patch.object(loop.SETTINGS, "retries", 0), \
-                mock.patch.object(loop.runner, "handle_rate_limit", return_value=("wait", agent)) as menu:
+        with (
+            mock.patch.object(loop.SETTINGS, "retries", 0),
+            mock.patch.object(loop.runner, "handle_rate_limit", return_value=("wait", agent)) as menu,
+        ):
             self.run_agent(agent)
         self.assertEqual(self.sleeps, [])
         self.assertTrue(menu.called)

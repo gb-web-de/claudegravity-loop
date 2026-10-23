@@ -36,8 +36,7 @@ class SecretsHygieneTest(unittest.TestCase):
     def test_secret_in_output_is_reported(self):
         metrics = loop.SessionMetrics()
         agent = agent_with(lambda b, p, c, f: (f"Nutze {GH_TOKEN} für den Push", {}))
-        res, _, _ = loop.safe_agent_run(agent, "p", self.session, [], {}, self.session, {}, False,
-                                        role="planner", metrics_tracker=metrics)
+        res, _, _ = loop.safe_agent_run(agent, "p", self.session, [], {}, self.session, {}, False, role="planner", metrics_tracker=metrics)
         self.assertIn(GH_TOKEN, res)  # Antwort selbst bleibt unverändert
         self.assertEqual(metrics.audit_events, {"secret_in_output": 1})
         events = [json.loads(l) for l in (self.session / "audit-events.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -76,21 +75,18 @@ class PermissionAuditTest(unittest.TestCase):
             (cwd / "b.txt").write_text("b", encoding="utf-8")
             return "Plan", {}
 
-        loop.safe_agent_run(agent_with(sneaky), "p", project, [], {}, session, {}, False,
-                            role="reviewer", metrics_tracker=metrics)
+        loop.safe_agent_run(agent_with(sneaky), "p", project, [], {}, session, {}, False, role="reviewer", metrics_tracker=metrics)
         self.assertEqual(metrics.audit_events, {"readonly_changed": 1})
         self.assertIn("b.txt", (session / "LOG.md").read_text(encoding="utf-8"))
 
         # Bauleiter darf schreiben; Änderungen im Session-Ordner zählen nie
-        loop.safe_agent_run(agent_with(sneaky), "p", project, [], {}, session, {}, False,
-                            role="builder", metrics_tracker=metrics)
+        loop.safe_agent_run(agent_with(sneaky), "p", project, [], {}, session, {}, False, role="builder", metrics_tracker=metrics)
 
         def session_only(binary, prompt, cwd, flags):
             (session / "notiz.md").write_text("n", encoding="utf-8")
             return "ok", {}
 
-        loop.safe_agent_run(agent_with(session_only), "p", project, [], {}, session, {}, False,
-                            role="inspector", metrics_tracker=metrics)
+        loop.safe_agent_run(agent_with(session_only), "p", project, [], {}, session, {}, False, role="inspector", metrics_tracker=metrics)
         self.assertEqual(metrics.audit_events, {"readonly_changed": 1})
 
     def test_fingerprint_without_git(self):

@@ -51,8 +51,9 @@ class EventsEndToEndTest(unittest.TestCase):
                 (project / "tests").mkdir(parents=True)
                 (tmp / "leer").mkdir()
                 cmd = run_smoke.smoke_command(project, url, "balanced") + ["--log-format", "json"]
-                res = subprocess.run(cmd, input="", capture_output=True, text=True, encoding="utf-8",
-                                     timeout=120, env=run_smoke.smoke_env(tmp))
+                res = subprocess.run(
+                    cmd, input="", capture_output=True, text=True, encoding="utf-8", timeout=120, env=run_smoke.smoke_env(tmp)
+                )
                 session = next((project / ".dual-loop" / "sessions").iterdir())
                 events = [json.loads(line) for line in (session / "events.jsonl").read_text(encoding="utf-8").splitlines()]
         finally:

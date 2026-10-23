@@ -40,8 +40,9 @@ class ChooseTest(unittest.TestCase):
     def test_auto_prefers_planner_and_skips_inspector(self):
         choose = loop.choose_escalation
         self.assertEqual(choose(AGENTS["ollama"], AGENTS, "auto", prefer="gemini", write_allowed=True)[0], "gemini")
-        self.assertEqual(choose(AGENTS["ollama"], AGENTS, "auto", inspector=AGENTS["claude"], prefer="claude",
-                                write_allowed=True)[0], "gemini")
+        self.assertEqual(
+            choose(AGENTS["ollama"], AGENTS, "auto", inspector=AGENTS["claude"], prefer="claude", write_allowed=True)[0], "gemini"
+        )
 
     def test_without_write_rights_only_endpoints(self):
         key, _ = loop.choose_escalation(AGENTS["ollama"], AGENTS, "auto", prefer="claude", write_allowed=False)
@@ -60,13 +61,21 @@ class ChooseTest(unittest.TestCase):
         self.assertIn("kein Cloud-Anbieter", choose(AGENTS["ollama"], only_local, "auto", write_allowed=True)[1])
 
     def test_kpi_block_names_escalation(self):
-        state = {"phase": "completed", "strategy": "local-free",
-                 "escalation": {"from": "Ollama", "to": "Claude Code", "iteration": 3, "reason": "2 erfolglose Bau-Runden in Folge (zuletzt: Prüfbefehl rot)"}}
+        state = {
+            "phase": "completed",
+            "strategy": "local-free",
+            "escalation": {
+                "from": "Ollama",
+                "to": "Claude Code",
+                "iteration": 3,
+                "reason": "2 erfolglose Bau-Runden in Folge (zuletzt: Prüfbefehl rot)",
+            },
+        }
         block = loop.format_kpi_block(loop.build_kpis(state, loop.SessionMetrics()))
         self.assertIn("* **Eskalation:** Bau-Runde 3: Ollama → Claude Code (2 erfolglose Bau-Runden in Folge", block)
 
 
-FAKE_CLAUDE = r'''
+FAKE_CLAUDE = r"""
 import json, os, pathlib, re, sys
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
@@ -78,13 +87,13 @@ if "Führe den genehmigten Plan" in prompt:
 else:
     out = "# Plan\n- hallo.txt anlegen\n"
 print(json.dumps({"result": out, "session_id": "s1", "usage": {"input_tokens": 9, "output_tokens": 4}}))
-'''
+"""
 
-FAKE_GEMINI = r'''
+FAKE_GEMINI = r"""
 import sys
 sys.stdin.read()
 print("BEFUNDE:\n- keine\nVERDICT: APPROVED")
-'''
+"""
 
 
 @unittest.skipIf(sys.platform == "win32", "Fake-CLIs als Shebang-Skripte nur unter Unix")
@@ -98,8 +107,12 @@ class EscalationEndToEndTest(unittest.TestCase):
 
             def do_POST(self):
                 self.rfile.read(int(self.headers["Content-Length"]))
-                body = json.dumps({"choices": [{"message": {"content": "Ich weiß nicht weiter."}}],
-                                   "usage": {"prompt_tokens": 50, "completion_tokens": 5}}).encode()
+                body = json.dumps(
+                    {
+                        "choices": [{"message": {"content": "Ich weiß nicht weiter."}}],
+                        "usage": {"prompt_tokens": 50, "completion_tokens": 5},
+                    }
+                ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -123,18 +136,54 @@ class EscalationEndToEndTest(unittest.TestCase):
             script = bindir / name
             script.write_text(f"#!{sys.executable}\n" + textwrap.dedent(body), encoding="utf-8")
             script.chmod(0o755)
-        env = {k: v for k, v in os.environ.items()
-               if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT", "OLLAMA_HOST")}
-        env.update(PATH=str(bindir), FAKE_LOG=str(tmp / "calls.jsonl"), CLAUDEGRAVITY_CONFIG_DIR=str(tmp / "cfg"),
-                   OLLAMA_HOST="127.0.0.1:9")
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT", "OLLAMA_HOST")
+        }
+        env.update(
+            PATH=str(bindir), FAKE_LOG=str(tmp / "calls.jsonl"), CLAUDEGRAVITY_CONFIG_DIR=str(tmp / "cfg"), OLLAMA_HOST="127.0.0.1:9"
+        )
         url = f"http://127.0.0.1:{self.server.server_port}/v1"
         proof = f'"{sys.executable}" -c "import pathlib,sys; sys.exit(0 if pathlib.Path(\'hallo.txt\').exists() else 1)"'
         res = subprocess.run(
-            [sys.executable, str(ROOT / "loop.py"), "Lege hallo.txt an", "-p", str(project), "--no-worktree",
-             "--planner", "claude", "--reviewer", "gemini", "--abnahme", "gemini",
-             "--bauer-endpoint", url, "--bauer", "bauer_ep", "--bauer-model", "klein",
-             "--proof", proof, "--plan-auto", "--no-guide", "--etappen", "aus", "-d", "0", "-m", "5", *extra],
-            input="", capture_output=True, text=True, encoding="utf-8", timeout=120, env=env,
+            [
+                sys.executable,
+                str(ROOT / "loop.py"),
+                "Lege hallo.txt an",
+                "-p",
+                str(project),
+                "--no-worktree",
+                "--planner",
+                "claude",
+                "--reviewer",
+                "gemini",
+                "--abnahme",
+                "gemini",
+                "--bauer-endpoint",
+                url,
+                "--bauer",
+                "bauer_ep",
+                "--bauer-model",
+                "klein",
+                "--proof",
+                proof,
+                "--plan-auto",
+                "--no-guide",
+                "--etappen",
+                "aus",
+                "-d",
+                "0",
+                "-m",
+                "5",
+                *extra,
+            ],
+            input="",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=120,
+            env=env,
         )
         session = next((project / ".dual-loop" / "sessions").iterdir())
         state = json.loads((session / "state.json").read_text(encoding="utf-8"))

@@ -85,6 +85,7 @@ def app_data_dir() -> Path:
 # JSON-basierte MCP-Konfigurationen
 # --------------------------------------------------------------------
 
+
 def read_json(path: Path) -> dict | None:
     if not path.exists():
         return {}
@@ -142,6 +143,7 @@ def json_client(path: Path, key: str = "mcpServers", extra: dict | None = None):
 # Codex CLI (~/.codex/config.toml) – Block zwischen Markern
 # --------------------------------------------------------------------
 
+
 def strip_marked_block(text: str) -> str:
     start = text.find(MARK_BEGIN)
     end = text.find(MARK_END)
@@ -156,15 +158,17 @@ def codex_client():
 
     def block() -> str:
         # JSON-Strings sind gültige TOML-Basic-Strings (Backslashes unter Windows!)
-        return "\n".join([
-            MARK_BEGIN,
-            f"[mcp_servers.{SERVER_NAME}]",
-            f"command = {json.dumps(python_command())}",
-            f"args = [{json.dumps(str(MCP_SCRIPT))}]",
-            'env = { "PYTHONIOENCODING" = "utf-8" }',
-            MARK_END,
-            "",
-        ])
+        return "\n".join(
+            [
+                MARK_BEGIN,
+                f"[mcp_servers.{SERVER_NAME}]",
+                f"command = {json.dumps(python_command())}",
+                f"args = [{json.dumps(str(MCP_SCRIPT))}]",
+                'env = { "PYTHONIOENCODING" = "utf-8" }',
+                MARK_END,
+                "",
+            ]
+        )
 
     def install() -> bool:
         old = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -203,6 +207,7 @@ def codex_client():
 # Claude Code (über die offizielle CLI, Scope "user" = alle Projekte)
 # --------------------------------------------------------------------
 
+
 def run_cli(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
@@ -230,8 +235,9 @@ def claude_code_client():
             return True
         if status():
             run_cli([exe, "mcp", "remove", SERVER_NAME, "--scope", "user"])
-        res = run_cli([exe, "mcp", "add", "--scope", "user", SERVER_NAME,
-                       "-e", "PYTHONIOENCODING=utf-8", "--", python_command(), str(MCP_SCRIPT)])
+        res = run_cli(
+            [exe, "mcp", "add", "--scope", "user", SERVER_NAME, "-e", "PYTHONIOENCODING=utf-8", "--", python_command(), str(MCP_SCRIPT)]
+        )
         if res.returncode != 0:
             say("!", f"claude mcp add fehlgeschlagen: {(res.stderr or res.stdout).strip()}")
             return False
@@ -245,6 +251,7 @@ def claude_code_client():
 # Client-Registry: (Name, erkannt?, Factory)
 # --------------------------------------------------------------------
 
+
 def clients() -> dict[str, tuple[str, bool, tuple]]:
     gemini_dir = HOME / ".gemini"
     agy_dir = gemini_dir / "antigravity"
@@ -252,29 +259,33 @@ def clients() -> dict[str, tuple[str, bool, tuple]]:
     vscode_user = app_data_dir() / "Code" / "User"
     return {
         "claude": ("Claude Code", bool(shutil.which("claude")), claude_code_client()),
-        "claude-desktop": ("Claude Desktop", claude_desktop.is_dir(),
-                           json_client(claude_desktop / "claude_desktop_config.json")),
-        "gemini": ("Gemini CLI", bool(shutil.which("gemini")) or gemini_dir.is_dir(),
-                   json_client(gemini_dir / "settings.json")),
-        "antigravity": ("Google Antigravity", bool(shutil.which("agy")) or agy_dir.is_dir(),
-                        json_client(agy_dir / "mcp_config.json")),
-        "codex": ("OpenAI Codex CLI", bool(shutil.which("codex")) or (HOME / ".codex").is_dir(),
-                  codex_client()),
-        "copilot": ("GitHub Copilot CLI", bool(shutil.which("copilot")) or (HOME / ".copilot").is_dir(),
-                    json_client(HOME / ".copilot" / "mcp-config.json",
-                                extra={"type": "local", "tools": ["*"]})),
-        "cursor": ("Cursor", bool(shutil.which("cursor")) or (HOME / ".cursor").is_dir(),
-                   json_client(HOME / ".cursor" / "mcp.json")),
-        "windsurf": ("Windsurf", (HOME / ".codeium" / "windsurf").is_dir(),
-                     json_client(HOME / ".codeium" / "windsurf" / "mcp_config.json")),
-        "vscode": ("VS Code (Copilot Chat)", vscode_user.is_dir(),
-                   json_client(vscode_user / "mcp.json", key="servers", extra={"type": "stdio"})),
+        "claude-desktop": ("Claude Desktop", claude_desktop.is_dir(), json_client(claude_desktop / "claude_desktop_config.json")),
+        "gemini": ("Gemini CLI", bool(shutil.which("gemini")) or gemini_dir.is_dir(), json_client(gemini_dir / "settings.json")),
+        "antigravity": ("Google Antigravity", bool(shutil.which("agy")) or agy_dir.is_dir(), json_client(agy_dir / "mcp_config.json")),
+        "codex": ("OpenAI Codex CLI", bool(shutil.which("codex")) or (HOME / ".codex").is_dir(), codex_client()),
+        "copilot": (
+            "GitHub Copilot CLI",
+            bool(shutil.which("copilot")) or (HOME / ".copilot").is_dir(),
+            json_client(HOME / ".copilot" / "mcp-config.json", extra={"type": "local", "tools": ["*"]}),
+        ),
+        "cursor": ("Cursor", bool(shutil.which("cursor")) or (HOME / ".cursor").is_dir(), json_client(HOME / ".cursor" / "mcp.json")),
+        "windsurf": (
+            "Windsurf",
+            (HOME / ".codeium" / "windsurf").is_dir(),
+            json_client(HOME / ".codeium" / "windsurf" / "mcp_config.json"),
+        ),
+        "vscode": (
+            "VS Code (Copilot Chat)",
+            vscode_user.is_dir(),
+            json_client(vscode_user / "mcp.json", key="servers", extra={"type": "stdio"}),
+        ),
     }
 
 
 # --------------------------------------------------------------------
 # Globale Befehle
 # --------------------------------------------------------------------
+
 
 def bin_dir_default() -> Path:
     if IS_WINDOWS:
@@ -357,8 +368,8 @@ WIN_LAUNCHERS = {
 
 def win_user_path(new_value: str | None = None) -> str:
     import winreg
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0,
-                        winreg.KEY_READ | winreg.KEY_WRITE) as key:
+
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
         try:
             value, _ = winreg.QueryValueEx(key, "Path")
         except FileNotFoundError:
@@ -367,6 +378,7 @@ def win_user_path(new_value: str | None = None) -> str:
             winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, new_value)
             try:
                 import ctypes
+
                 # WM_SETTINGCHANGE an alle Fenster, damit neue Terminals den PATH sehen
                 ctypes.windll.user32.SendMessageTimeoutW(0xFFFF, 0x1A, 0, "Environment", 0x2, 5000, None)
             except Exception:
@@ -420,6 +432,7 @@ def uninstall_commands_windows(bin_dir: Path) -> None:
 # --------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------
+
 
 def main() -> int:
     global DRY_RUN
@@ -486,11 +499,9 @@ def main() -> int:
     if not args.no_commands:
         print("\nGlobale Befehle:" if not args.uninstall else "\nGlobale Befehle entfernen:")
         if IS_WINDOWS:
-            (uninstall_commands_windows(bin_dir) if args.uninstall
-             else install_commands_windows(bin_dir, not args.no_path))
+            (uninstall_commands_windows(bin_dir) if args.uninstall else install_commands_windows(bin_dir, not args.no_path))
         else:
-            (uninstall_commands_unix(bin_dir) if args.uninstall
-             else install_commands_unix(bin_dir, not args.no_path))
+            (uninstall_commands_unix(bin_dir) if args.uninstall else install_commands_unix(bin_dir, not args.no_path))
 
     print()
     if DRY_RUN:

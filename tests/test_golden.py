@@ -62,8 +62,13 @@ class GoldenTest(unittest.TestCase):
         m.count("proof_red")
         m.count("proof_green")
         m.count("proof_green")
-        state = {"phase": "completed", "strategy": "hybrid", "rounds_completed": 2,
-                 "created_at": "2026-10-23T10:00:00", "stages": ["a", "b", "c"]}
+        state = {
+            "phase": "completed",
+            "strategy": "hybrid",
+            "rounds_completed": 2,
+            "created_at": "2026-10-23T10:00:00",
+            "stages": ["a", "b", "c"],
+        }
         kpi = loop.build_kpis(state, m, now=datetime.datetime(2026, 10, 23, 10, 31, 5))
         self.check("kpi_block.md", normalize(loop.format_kpi_block(kpi)))
 
@@ -76,10 +81,16 @@ class GoldenTest(unittest.TestCase):
             tmp = Path(tmp)
             project = tmp / "projekt"
             (project / ".dual-loop").mkdir(parents=True)
-            (project / ".dual-loop" / "profile.json").write_text(json.dumps({
-                "strategy": "hybrid", "proof": "vendor/bin/phpunit",
-                "templates": {"typo3": {"etappen": "an", "hint": "TYPO3-Guidelines"}},
-            }), encoding="utf-8")
+            (project / ".dual-loop" / "profile.json").write_text(
+                json.dumps(
+                    {
+                        "strategy": "hybrid",
+                        "proof": "vendor/bin/phpunit",
+                        "templates": {"typo3": {"etappen": "an", "hint": "TYPO3-Guidelines"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
             gpath = tmp / "cfg" / "profile.json"
             gpath.parent.mkdir()
             gpath.write_text(json.dumps({"max_rounds": 3, "auto_switch": True}), encoding="utf-8")
@@ -95,15 +106,50 @@ class GoldenTest(unittest.TestCase):
             tmp = Path(tmp)
             (tmp / "leer").mkdir()
             ep = "http://127.0.0.1:9/v1"
-            env = {"PATH": str(tmp / "leer"), "OLLAMA_HOST": "127.0.0.1:9", "PYTHONIOENCODING": "utf-8",
-                   "CLAUDEGRAVITY_CONFIG_DIR": str(tmp), "HOME": str(tmp)}
+            env = {
+                "PATH": str(tmp / "leer"),
+                "OLLAMA_HOST": "127.0.0.1:9",
+                "PYTHONIOENCODING": "utf-8",
+                "CLAUDEGRAVITY_CONFIG_DIR": str(tmp),
+                "HOME": str(tmp),
+            }
             res = subprocess.run(
-                [sys.executable, str(ROOT / "loop.py"), "--dry-run", "Addition mit Test", "-p", str(tmp), "--no-guide",
-                 "--strategy", "local-free", "--proof", "make test",
-                 "--architekt-endpoint", ep, "--architekt", "architekt_ep", "--architekt-model", "planer",
-                 "--pruefstatiker-endpoint", ep, "--pruefstatiker", "pruefstatiker_ep", "--pruefstatiker-model", "pruefer",
-                 "--bauer-endpoint", ep, "--bauer", "bauer_ep", "--bauer-model", "bauer"],
-                capture_output=True, text=True, encoding="utf-8", timeout=60, env=env,
+                [
+                    sys.executable,
+                    str(ROOT / "loop.py"),
+                    "--dry-run",
+                    "Addition mit Test",
+                    "-p",
+                    str(tmp),
+                    "--no-guide",
+                    "--strategy",
+                    "local-free",
+                    "--proof",
+                    "make test",
+                    "--architekt-endpoint",
+                    ep,
+                    "--architekt",
+                    "architekt_ep",
+                    "--architekt-model",
+                    "planer",
+                    "--pruefstatiker-endpoint",
+                    ep,
+                    "--pruefstatiker",
+                    "pruefstatiker_ep",
+                    "--pruefstatiker-model",
+                    "pruefer",
+                    "--bauer-endpoint",
+                    ep,
+                    "--bauer",
+                    "bauer_ep",
+                    "--bauer-model",
+                    "bauer",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=60,
+                env=env,
             )
             self.assertEqual(res.returncode, 0, res.stderr)
             self.check("dry_run_local_free.txt", normalize(res.stdout, tmp))
@@ -118,11 +164,18 @@ class GoldenTest(unittest.TestCase):
             files = sorted(p.relative_to(session).as_posix() for p in session.rglob("*") if p.is_file())
             kpi = dict(summary["kpi"])
             kpi["duration_s"] = "<DAUER>"
-            text = "\n".join([
-                "# Dateien im Session-Ordner", *files, "",
-                "# LOG.md", (session / "LOG.md").read_text(encoding="utf-8"), "",
-                "# Kennzahlen", json.dumps(kpi, indent=2, ensure_ascii=False),
-            ])
+            text = "\n".join(
+                [
+                    "# Dateien im Session-Ordner",
+                    *files,
+                    "",
+                    "# LOG.md",
+                    (session / "LOG.md").read_text(encoding="utf-8"),
+                    "",
+                    "# Kennzahlen",
+                    json.dumps(kpi, indent=2, ensure_ascii=False),
+                ]
+            )
             text = re.sub(r"/tmp/[^\s`'\"]+/projekt", "<PROJEKT>", text)
             self.check("smoke_session_local_free.txt", normalize(text))
 

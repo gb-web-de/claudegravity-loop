@@ -42,8 +42,9 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("Test", report["template"]["hint"])
 
     def test_cli_beats_template_and_template_beats_profile(self):
-        args, report = self.resolve(["--vorlage", "bugfix", "-m", "9"], project={"strategy": "hybrid", "max_rounds": 4},
-                                    env={"CLAUDEGRAVITY_ETAPPEN": "an"})
+        args, report = self.resolve(
+            ["--vorlage", "bugfix", "-m", "9"], project={"strategy": "hybrid", "max_rounds": 4}, env={"CLAUDEGRAVITY_ETAPPEN": "an"}
+        )
         self.assertEqual(args.max_iterations, 9)
         self.assertEqual(args.strategy, "eco")
         self.assertEqual(args.etappen, "aus")
@@ -75,8 +76,18 @@ class TemplateTest(unittest.TestCase):
     def test_template_requires_proof_on_command_line(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDEGRAVITY_")}
         env.update(PATH=str(self.root), CLAUDEGRAVITY_CONFIG_DIR=str(self.global_path.parent), PYTHONIOENCODING="utf-8")
-        cmd = [sys.executable, str(ROOT / "loop.py"), "--dry-run", "Fix", "--template", "refactor",
-               "-p", str(self.project), "--endpoint", "http://127.0.0.1:9/v1"]
+        cmd = [
+            sys.executable,
+            str(ROOT / "loop.py"),
+            "--dry-run",
+            "Fix",
+            "--template",
+            "refactor",
+            "-p",
+            str(self.project),
+            "--endpoint",
+            "http://127.0.0.1:9/v1",
+        ]
         res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=60, env=env)
         self.assertNotEqual(res.returncode, 0)
         self.assertIn("braucht einen Prüfbefehl", res.stdout + res.stderr)

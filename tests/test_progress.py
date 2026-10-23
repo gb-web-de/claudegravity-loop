@@ -27,12 +27,20 @@ def metrics(tokens=0, usd=0.0):
 
 class FormatProgressTest(unittest.TestCase):
     def test_builder_with_stage_proof_and_budget(self):
-        state = {"last_iteration": 3, "iteration_limit": 8, "stages": ["a", "b", "c"], "stage_index": 1,
-                 "stage_mode_active": True, "proof": "make test"}
-        lines = loop.format_progress("builder", "Claude Code", state, metrics(40_000, 0.25), 75, 12_000,
-                                     loop.Budget(max_total="100k"))
-        self.assertEqual(lines[0], "📍 Bau-Runde 3/8 · Etappe 2/3 · 🔨 Bauleiter Claude Code fertig nach 1 min 15 s · "
-                                   "+12k Tokens (gesamt 40k Tokens, 0.25 USD gemeldet)")
+        state = {
+            "last_iteration": 3,
+            "iteration_limit": 8,
+            "stages": ["a", "b", "c"],
+            "stage_index": 1,
+            "stage_mode_active": True,
+            "proof": "make test",
+        }
+        lines = loop.format_progress("builder", "Claude Code", state, metrics(40_000, 0.25), 75, 12_000, loop.Budget(max_total="100k"))
+        self.assertEqual(
+            lines[0],
+            "📍 Bau-Runde 3/8 · Etappe 2/3 · 🔨 Bauleiter Claude Code fertig nach 1 min 15 s · "
+            "+12k Tokens (gesamt 40k Tokens, 0.25 USD gemeldet)",
+        )
         self.assertEqual(lines[1], "   Weiter: Prüfbefehl `make test` · Budget 40% von 100k Tokens")
 
     def test_plan_roles_and_inspection(self):
@@ -62,8 +70,9 @@ class AbortReasonEndToEndTest(unittest.TestCase):
                 (project / "tests").mkdir(parents=True)
                 (tmp / "leer").mkdir()
                 cmd = run_smoke.smoke_command(project, url, "balanced") + extra
-                res = subprocess.run(cmd, input="", capture_output=True, text=True, encoding="utf-8",
-                                     timeout=120, env=run_smoke.smoke_env(tmp))
+                res = subprocess.run(
+                    cmd, input="", capture_output=True, text=True, encoding="utf-8", timeout=120, env=run_smoke.smoke_env(tmp)
+                )
                 session = sorted((project / ".dual-loop" / "sessions").glob("*"))[-1]
                 state = json.loads((session / "state.json").read_text(encoding="utf-8"))
                 audit = (session / "AUDIT.md").read_text(encoding="utf-8") if (session / "AUDIT.md").exists() else ""
@@ -77,6 +86,7 @@ class AbortReasonEndToEndTest(unittest.TestCase):
             if "Führe den genehmigten Plan" in prompt:
                 return "Ich bin noch nicht fertig."
             return ORIGINAL(prompt)
+
         out, state, audit = self.run_loop(["-m", "2", "--no-inspect"], lazy_builder)
         self.assertIn("📍 Bau-Runde 2/2 · 🔨 Bauleiter", out)
         self.assertIn("⏹️ Abbruchgrund: Rundenlimit erreicht (2 Bau-Runden)", out)

@@ -72,6 +72,7 @@ def write_profile(path: Path, updates: dict) -> dict:
 
 def run_setup_wizard(project_path: Path, agents: dict, input_fn=input, global_path: Path | None = None) -> Path | None:
     """`claudegravity init`: erkennt Umgebung, fragt drei Dinge, schreibt ein Profil und zeigt den Startbefehl."""
+
     def ask(question: str, default: str, allowed: tuple[str, ...] | None = None) -> str:
         while True:
             try:

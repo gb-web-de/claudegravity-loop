@@ -85,11 +85,13 @@ class CodexTest(unittest.TestCase):
         self.assertEqual(loop.build_codex_args(None)[2], "read-only")
 
     def test_parses_jsonl_events(self):
-        raw = "\n".join([
-            json.dumps({"type": "thread.started", "thread_id": "t"}),
-            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "Plan"}}),
-            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 7, "output_tokens": 3}}),
-        ])
+        raw = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": "t"}),
+                json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "Plan"}}),
+                json.dumps({"type": "turn.completed", "usage": {"input_tokens": 7, "output_tokens": 3}}),
+            ]
+        )
         text, usage, error = loop.parse_codex_events(raw)
         self.assertEqual((text, usage["input_tokens"], error), ("Plan", 7, None))
 
@@ -180,12 +182,13 @@ class McpDefaultsTest(unittest.TestCase):
 
     def test_proof_reaches_loop_args(self):
         from unittest import mock
+
         with mock.patch.object(mcp_server, "detect_installed_agents", return_value={}):
             opt = mcp_server.optimize_claudegravity_command("Neue Seite bauen", proof="python -m unittest")
         self.assertEqual(opt["loop_args"][-2:], ["--proof", "python -m unittest"])
 
 
-FAKE_CLAUDE = r'''
+FAKE_CLAUDE = r"""
 import json, os, pathlib, re, sys
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
@@ -199,9 +202,9 @@ else:
     out = "# Plan\n- hallo.txt anlegen\n"
 print(json.dumps({"result": out, "session_id": "s1", "usage": {"input_tokens": 9, "output_tokens": 4},
                   "modelUsage": {"fake-opus": {}}}))
-'''
+"""
 
-FAKE_GEMINI = r'''
+FAKE_GEMINI = r"""
 import json, os, pathlib, sys
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
@@ -214,7 +217,7 @@ if "unabhängige Abnahme" in prompt:
         print("BEFUNDE:\n- [HOCH] hallo.txt: Test fehlt -> Test ergänzen\nVERDICT: REVISE")
         sys.exit(0)
 print("BEFUNDE:\n- keine\nVERDICT: APPROVED")
-'''
+"""
 
 
 @unittest.skipIf(sys.platform == "win32", "Fake-CLIs als Shebang-Skripte nur unter Unix")
@@ -232,17 +235,38 @@ class EndToEndTest(unittest.TestCase):
                 script.write_text(f"#!{sys.executable}\n" + textwrap.dedent(body), encoding="utf-8")
                 script.chmod(0o755)
             log = tmp / "calls.jsonl"
-            env = {k: v for k, v in os.environ.items()
-                   if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT")}
+            env = {
+                k: v for k, v in os.environ.items() if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT")
+            }
             env["CLAUDEGRAVITY_CONFIG_DIR"] = os.devnull  # kein globales Profil des Nutzers
             env.update(PATH=str(bindir), FAKE_LOG=str(log))
             proof = f'"{sys.executable}" -c "import pathlib,sys; sys.exit(0 if pathlib.Path(\'hallo.txt\').exists() else 1)"'
             task = "Lege hallo.txt an"
             res = subprocess.run(
-                [sys.executable, str(ROOT / "loop.py"), task, "-p", str(project),
-                 "--planner", "claude", "--reviewer", "gemini", "--yolo", "--proof", proof,
-                 "-d", "0", "-m", "5"],
-                input="1\n", capture_output=True, text=True, encoding="utf-8", timeout=120, env=env,
+                [
+                    sys.executable,
+                    str(ROOT / "loop.py"),
+                    task,
+                    "-p",
+                    str(project),
+                    "--planner",
+                    "claude",
+                    "--reviewer",
+                    "gemini",
+                    "--yolo",
+                    "--proof",
+                    proof,
+                    "-d",
+                    "0",
+                    "-m",
+                    "5",
+                ],
+                input="1\n",
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=120,
+                env=env,
             )
             self.assertEqual(res.returncode, 0, res.stdout[-3000:] + res.stderr[-3000:])
             calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
@@ -278,7 +302,7 @@ class EndToEndTest(unittest.TestCase):
             self.assertIn("angefordert `CLI-Default`, gemeldet `fake-opus`", log_md)
 
 
-FAKE_PLANNER_GEMINI = r'''
+FAKE_PLANNER_GEMINI = r"""
 import json, os, pathlib, re, sys
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
@@ -291,9 +315,9 @@ elif "Befunde zum Plan" in prompt:
     print("# Plan\n" + body + "\nSchritt 61: Test ergänzt\n## Stellungnahme zu den Befunden\n- übernommen")
 else:
     print("# Plan\n" + body)
-'''
+"""
 
-FAKE_REVIEWER_CLAUDE = r'''
+FAKE_REVIEWER_CLAUDE = r"""
 import json, os, sys
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
@@ -307,7 +331,7 @@ if ("Änderungen gegenüber der von dir geprüften Fassung" in prompt or "unabh�
 else:
     out = "BEFUNDE:\n- [MITTEL] Plan: Test fehlt -> ergänzen\nVERDICT: REVISE"
 print(json.dumps({"result": out, "session_id": "rev-1", "usage": {}}))
-'''
+"""
 
 
 @unittest.skipIf(sys.platform == "win32", "Fake-CLIs als Shebang-Skripte nur unter Unix")
@@ -323,14 +347,32 @@ class ReviewResumeTest(unittest.TestCase):
             script.write_text(f"#!{sys.executable}\n" + textwrap.dedent(body), encoding="utf-8")
             script.chmod(0o755)
         log = tmp / "calls.jsonl"
-        env = {k: v for k, v in os.environ.items()
-               if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT")}
+        env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT")}
         env["CLAUDEGRAVITY_CONFIG_DIR"] = os.devnull  # kein globales Profil des Nutzers
         env.update(PATH=str(bindir), FAKE_LOG=str(log), **extra_env)
         res = subprocess.run(
-            [sys.executable, str(ROOT / "loop.py"), "Plane etwas", "-p", str(project),
-             "--planner", "gemini", "--reviewer", "claude", "--yolo", "-d", "0", "-m", "2"],
-            input="1\n", capture_output=True, text=True, encoding="utf-8", timeout=120, env=env,
+            [
+                sys.executable,
+                str(ROOT / "loop.py"),
+                "Plane etwas",
+                "-p",
+                str(project),
+                "--planner",
+                "gemini",
+                "--reviewer",
+                "claude",
+                "--yolo",
+                "-d",
+                "0",
+                "-m",
+                "2",
+            ],
+            input="1\n",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=120,
+            env=env,
         )
         self.assertEqual(res.returncode, 0, res.stdout[-3000:] + res.stderr[-3000:])
         calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]

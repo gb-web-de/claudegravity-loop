@@ -54,9 +54,7 @@ class OptimizerTest(unittest.TestCase):
     def test_background_run_never_uses_shell(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(mcp_server.subprocess, "Popen") as popen:
             popen.return_value.pid = 4242
-            res = mcp_server.handle_tool_call(
-                "claudegravity_run", {"task": HOSTILE_TASK, "project_path": tmp, "background": True}
-            )
+            res = mcp_server.handle_tool_call("claudegravity_run", {"task": HOSTILE_TASK, "project_path": tmp, "background": True})
             logs = list((Path(tmp) / ".dual-loop" / "sessions").glob("*_background.log"))
         self.assertFalse(res["isError"])
         argv = popen.call_args.args[0]
@@ -80,11 +78,21 @@ class OptimizerTest(unittest.TestCase):
             sessions = Path(tmp) / ".dual-loop" / "sessions"
             sess = sessions / "20261023_100000_csv"
             sess.mkdir(parents=True)
-            (sess / "state.json").write_text(json.dumps({
-                "task": "CSV-Export", "phase": "build", "last_iteration": 2, "stages": ["a", "b", "c"],
-                "stage_index": 1, "metrics": {"total_tokens": 12345, "cost_usd": 0.5},
-                "abort_reason": "Budget: 10k erreicht", "updated_at": "2026-10-23T10:05:00",
-            }), encoding="utf-8")
+            (sess / "state.json").write_text(
+                json.dumps(
+                    {
+                        "task": "CSV-Export",
+                        "phase": "build",
+                        "last_iteration": 2,
+                        "stages": ["a", "b", "c"],
+                        "stage_index": 1,
+                        "metrics": {"total_tokens": 12345, "cost_usd": 0.5},
+                        "abort_reason": "Budget: 10k erreicht",
+                        "updated_at": "2026-10-23T10:05:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
             (sess / "LOG.md").write_text("Zeile 1\nZeile 2\nZeile 3\n", encoding="utf-8")
             (sessions / "20261023_100000_background.log").write_text("gestartet\n", encoding="utf-8")
             text = mcp_server.handle_tool_call("claudegravity_status", {"project_path": tmp, "log_lines": 2})["content"][0]["text"]
@@ -105,14 +113,22 @@ class StdioProtocolTest(unittest.TestCase):
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-            {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-             "params": {"name": "claudegravity_optimize", "arguments": {"task": "Fix typo"}}},
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "claudegravity_optimize", "arguments": {"task": "Fix typo"}},
+            },
             {"jsonrpc": "2.0", "id": 4, "method": "does/not/exist"},
         ]
         stdin = "\n".join(json.dumps(r) for r in requests) + "\nkein json\n"
         res = subprocess.run(
             [sys.executable, str(ROOT / "mcp_server.py")],
-            input=stdin, capture_output=True, text=True, encoding="utf-8", timeout=60,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
         )
         responses = [json.loads(line) for line in res.stdout.splitlines() if line.strip()]
         by_id = {r["id"]: r for r in responses}

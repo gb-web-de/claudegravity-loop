@@ -13,14 +13,14 @@ sys.path.insert(0, str(ROOT))
 import loop  # noqa: E402
 
 
-def write_session(project: Path, name: str, strategy: str, builds: int, tokens: int,
-                  usd: float = 0.0, done: bool = True, rework: int = 0) -> None:
+def write_session(
+    project: Path, name: str, strategy: str, builds: int, tokens: int, usd: float = 0.0, done: bool = True, rework: int = 0
+) -> None:
     session = project / ".dual-loop" / "sessions" / name
     session.mkdir(parents=True)
     metrics = loop.SessionMetrics()
     for _ in range(builds):
-        metrics.add("Claude Code" if usd else "Ollama", tokens // builds, 0,
-                    cost_usd=usd / builds, role="🔨 Bauleiter")
+        metrics.add("Claude Code" if usd else "Ollama", tokens // builds, 0, cost_usd=usd / builds, role="🔨 Bauleiter")
     metrics.counters["proof_red"] = rework
     state = {"phase": "completed" if done else "build", "strategy": strategy, "created_at": "2026-10-23T10:00:00"}
     target = session / (".done" if done else "AUDIT.md")
@@ -67,9 +67,33 @@ class EstimateTest(unittest.TestCase):
 
     def test_spread_from_same_strategy(self):
         history = [
-            {"version": 1, "strategy": "balanced", "build_rounds": 2, "tokens_total": 20_000, "cost_usd_task": 0.2, "success": True, "rework_rate": 0.0},
-            {"version": 1, "strategy": "balanced", "build_rounds": 6, "tokens_total": 90_000, "cost_usd_task": 0.9, "success": False, "rework_rate": 0.5},
-            {"version": 1, "strategy": "balanced", "build_rounds": 3, "tokens_total": 30_000, "cost_usd_task": 0.0, "success": True, "rework_rate": 0.33},
+            {
+                "version": 1,
+                "strategy": "balanced",
+                "build_rounds": 2,
+                "tokens_total": 20_000,
+                "cost_usd_task": 0.2,
+                "success": True,
+                "rework_rate": 0.0,
+            },
+            {
+                "version": 1,
+                "strategy": "balanced",
+                "build_rounds": 6,
+                "tokens_total": 90_000,
+                "cost_usd_task": 0.9,
+                "success": False,
+                "rework_rate": 0.5,
+            },
+            {
+                "version": 1,
+                "strategy": "balanced",
+                "build_rounds": 3,
+                "tokens_total": 30_000,
+                "cost_usd_task": 0.0,
+                "success": True,
+                "rework_rate": 0.33,
+            },
             {"version": 1, "strategy": "local-free", "build_rounds": 9, "tokens_total": 500_000, "success": True},
         ]
         est = loop.estimate_run(history, "balanced", 5)
@@ -121,9 +145,25 @@ class DryRunTest(unittest.TestCase):
             write_session(project, "20261021_b", "balanced", 4, 60_000, usd=1.0)
             env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDEGRAVITY_")}
             env.update(CLAUDEGRAVITY_CONFIG_DIR=str(Path(tmp) / "cfg"), PYTHONIOENCODING="utf-8")
-            res = subprocess.run([sys.executable, str(ROOT / "loop.py"), "Aufgabe", "-p", str(project),
-                                  "--dry-run", "--strategy", "balanced", "--endpoint", "http://127.0.0.1:9/v1"],
-                                 capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "loop.py"),
+                    "Aufgabe",
+                    "-p",
+                    str(project),
+                    "--dry-run",
+                    "--strategy",
+                    "balanced",
+                    "--endpoint",
+                    "http://127.0.0.1:9/v1",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                env=env,
+                timeout=60,
+            )
             out = res.stdout
             self.assertEqual(res.returncode, 0, res.stderr[-2000:])
             self.assertIn("Kostenschätzung vorab", out)

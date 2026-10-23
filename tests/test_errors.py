@@ -47,7 +47,11 @@ class ErrorCodeTest(unittest.TestCase):
             env.update(PATH=tmp, CLAUDEGRAVITY_CONFIG_DIR=tmp, PYTHONIOENCODING="utf-8")
             res = subprocess.run(
                 [sys.executable, str(ROOT / "loop.py"), "x", "-p", str(Path(tmp) / "fehlt"), "--endpoint", "http://127.0.0.1:9/v1"],
-                capture_output=True, text=True, encoding="utf-8", timeout=60, env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=60,
+                env=env,
             )
         self.assertEqual(res.returncode, 1)
         self.assertIn("[CG-1003]", res.stderr)

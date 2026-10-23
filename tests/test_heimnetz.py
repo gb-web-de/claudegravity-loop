@@ -1,4 +1,5 @@
 """Tests für Heimnetz-Endpunkte, Pfadschutz und Datenschutzschild. Ausführen: python3 -m unittest discover -s tests"""
+
 import os
 import sys
 import tempfile
@@ -73,8 +74,10 @@ class ShieldTest(unittest.TestCase):
             self.assertIn("[GESCHWÄRZT", redacted)
 
     def test_keeps_normal_text(self):
-        text = ("Baue ein Login mit password_hash(). api_key = ${API_KEY}. Bestellnummer 1234 5678 9012 3456.\n"
-                "token = create_token(user_id2)\napi_key = os.environ[\"API_KEY_2\"]\nsecret: str = load_secret()")
+        text = (
+            "Baue ein Login mit password_hash(). api_key = ${API_KEY}. Bestellnummer 1234 5678 9012 3456.\n"
+            'token = create_token(user_id2)\napi_key = os.environ["API_KEY_2"]\nsecret: str = load_secret()'
+        )
         redacted, found = loop.redact_secrets(text)
         self.assertEqual(found, [])
         self.assertEqual(redacted, text)
@@ -107,16 +110,25 @@ class ApplyCodeBlocksTest(unittest.TestCase):
         return f"```filepath: {path}\n{content}```\n"
 
     def test_writes_inside_project(self):
-        written = loop.apply_code_blocks(self.project, self.block("src/app.py", "print(1)\n")
-                                         + self.block(".dual-loop/sessions/s1/.done"))
+        written = loop.apply_code_blocks(self.project, self.block("src/app.py", "print(1)\n") + self.block(".dual-loop/sessions/s1/.done"))
         self.assertEqual(written, ["src/app.py", ".dual-loop/sessions/s1/.done"])
         self.assertEqual((self.project / "src/app.py").read_text(), "print(1)\n")
 
     def test_blocks_escape_and_secrets(self):
-        evil = "".join(self.block(p) for p in [
-            "../ausserhalb.txt", "src/../../ausserhalb2.txt", str(self.root / "abs.txt"),
-            "~/.bashrc", ".env", "config/.env.local", ".ssh/authorized_keys", ".git/config", "certs/server.key",
-        ])
+        evil = "".join(
+            self.block(p)
+            for p in [
+                "../ausserhalb.txt",
+                "src/../../ausserhalb2.txt",
+                str(self.root / "abs.txt"),
+                "~/.bashrc",
+                ".env",
+                "config/.env.local",
+                ".ssh/authorized_keys",
+                ".git/config",
+                "certs/server.key",
+            ]
+        )
         with mock.patch("builtins.print"):
             written = loop.apply_code_blocks(self.project, evil)
         self.assertEqual(written, [])

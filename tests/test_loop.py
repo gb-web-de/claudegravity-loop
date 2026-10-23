@@ -88,10 +88,7 @@ class ApplyCodeBlocksTest(unittest.TestCase):
             return loop.apply_code_blocks(self.project, text)
 
     def test_writes_files_inside_project(self):
-        text = (
-            "```filepath: src/app.py\nprint('hi')\n```\n"
-            "### Datei: `docs/readme.md`\n```markdown\n# Doku\n```\n"
-        )
+        text = "```filepath: src/app.py\nprint('hi')\n```\n### Datei: `docs/readme.md`\n```markdown\n# Doku\n```\n"
         self.assertEqual(self.apply(text), ["src/app.py", "docs/readme.md"])
         self.assertEqual((self.project / "src/app.py").read_text(encoding="utf-8"), "print('hi')\n")
         self.assertEqual((self.project / "docs/readme.md").read_text(encoding="utf-8"), "# Doku\n")
@@ -130,7 +127,7 @@ class ApplyCodeBlocksTest(unittest.TestCase):
 
 class WindowsCommandTest(unittest.TestCase):
     NPM_SHIM = (
-        '@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n'
+        "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n"
         'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n'
         'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  '
         '"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\cli.js" %*\r\n'
@@ -152,7 +149,7 @@ class WindowsCommandTest(unittest.TestCase):
             self.assertIsNone(loop.unwrap_npm_cmd_shim(bat))
 
     def test_quote_cmd_arg_neutralises_metacharacters(self):
-        self.assertEqual(loop.quote_cmd_arg('a & b'), '"a & b"')
+        self.assertEqual(loop.quote_cmd_arg("a & b"), '"a & b"')
         self.assertEqual(loop.quote_cmd_arg('say "hi"'), '"say ""hi"""')
         self.assertEqual(loop.quote_cmd_arg("%PATH%"), '"%%cd:~,%PATH%%cd:~,%"')
         self.assertEqual(loop.quote_cmd_arg("C:\\dir\\"), '"C:\\dir\\\\"')
@@ -170,8 +167,7 @@ class WindowsCommandTest(unittest.TestCase):
             shim = Path(tmp) / "claude.cmd"
             shim.write_text(self.NPM_SHIM, encoding="utf-8")
             (Path(tmp) / "node.exe").write_text("", encoding="utf-8")
-            with mock.patch.object(loop.sys, "platform", "win32"), \
-                 mock.patch.object(loop.shutil, "which", return_value=str(shim)):
+            with mock.patch.object(loop.sys, "platform", "win32"), mock.patch.object(loop.shutil, "which", return_value=str(shim)):
                 cmd, shell = loop.build_cli_command("claude", ["-p", "Zeile 1\nZeile 2 & mehr"])
         self.assertFalse(shell)
         self.assertEqual(cmd[-2:], ["-p", "Zeile 1\nZeile 2 & mehr"])
@@ -181,7 +177,11 @@ class CliSmokeTest(unittest.TestCase):
     def run_loop(self, *args):
         return subprocess.run(
             [sys.executable, str(ROOT / "loop.py"), *args],
-            cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", timeout=60,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
         )
 
     def test_help(self):
@@ -217,8 +217,14 @@ class CliSmokeTest(unittest.TestCase):
         # Ein (nicht erreichbarer) Endpunkt reicht als Agent, damit der Test ohne installierte CLIs läuft.
         with tempfile.TemporaryDirectory() as tmp:
             res = self.run_loop(
-                "--dry-run", "Teste den Trockenlauf", "-p", tmp,
-                "--strategy", "local-free", "--endpoint", "http://127.0.0.1:9/v1",
+                "--dry-run",
+                "Teste den Trockenlauf",
+                "-p",
+                tmp,
+                "--strategy",
+                "local-free",
+                "--endpoint",
+                "http://127.0.0.1:9/v1",
             )
             self.assertEqual(res.returncode, 0, res.stderr)
             self.assertIn("Bauleiter", res.stdout)
@@ -226,13 +232,18 @@ class CliSmokeTest(unittest.TestCase):
 
     def test_exits_cleanly_without_any_agent(self):
         with tempfile.TemporaryDirectory() as tmp:
-            env = {k: v for k, v in os.environ.items()
-                   if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT")}
+            env = {
+                k: v for k, v in os.environ.items() if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT")
+            }
             env["CLAUDEGRAVITY_CONFIG_DIR"] = os.devnull  # kein globales Profil des Nutzers
             env["PATH"] = tmp
             res = subprocess.run(
                 [sys.executable, str(ROOT / "loop.py"), "--dry-run", "x", "-p", tmp],
-                capture_output=True, text=True, encoding="utf-8", timeout=60, env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=60,
+                env=env,
             )
         self.assertEqual(res.returncode, 1)
         self.assertIn("[CG-1001]", res.stderr)
@@ -259,7 +270,13 @@ class RolePickTest(unittest.TestCase):
         self.assertIs(planner, reviewer)
 
     def test_strategy_aliases(self):
-        for alias, name in [("Quality", "best-code"), ("cost", "eco"), ("free", "local-free"), ("mixed", "mixed"), ("balanced", "balanced")]:
+        for alias, name in [
+            ("Quality", "best-code"),
+            ("cost", "eco"),
+            ("free", "local-free"),
+            ("mixed", "mixed"),
+            ("balanced", "balanced"),
+        ]:
             self.assertEqual(loop.normalize_strategy(alias), name)
 
 
@@ -267,8 +284,9 @@ class RuntimeSettingsTest(unittest.TestCase):
     def test_apply_runtime_settings_fills_settings(self):
         saved = loop.dataclasses.replace(loop.SETTINGS)
         self.addCleanup(lambda: loop.SETTINGS.__dict__.update(saved.__dict__))
-        args = loop.build_parser().parse_args(["--retries", "0", "--no-progress", "--log-format", "json", "--timeout", "77",
-                                               "--no-shield", "--budget-max", "10k", "x"])
+        args = loop.build_parser().parse_args(
+            ["--retries", "0", "--no-progress", "--log-format", "json", "--timeout", "77", "--no-shield", "--budget-max", "10k", "x"]
+        )
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("CLAUDEGRAVITY_TIMEOUT", None)
             loop.apply_runtime_settings(args)

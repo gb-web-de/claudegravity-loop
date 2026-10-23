@@ -42,8 +42,10 @@ def run_adversarial_plan(
     planner_flags: list[str] | None = None,
     reviewer_flags: list[str] | None = None,
     max_rounds: int = 2,
-    ask_mode: bool = False
+    ask_mode: bool = False,
 ) -> tuple[bool, Path, AgentCLI, AgentCLI, list[str], list[str]]:
+    """Phase 1 und 2: Architekt entwirft, Prüfstatiker prüft, bis APPROVED oder max_rounds erreicht ist.
+    Liefert (freigegeben, Plan-Datei, Architekt, Prüfstatiker, Flags Architekt, Flags Prüfstatiker); Rollen können nach einem Limit-Wechsel neu sein."""
     loop_dir = project_path / ".dual-loop"
 
     # Alte temporäre Dateien im Root von .dual-loop aufräumen
@@ -90,7 +92,7 @@ def run_adversarial_plan(
             state=state,
             auto_switch=auto_switch,
             role="planner",
-            exclude={reviewer.binary}
+            exclude={reviewer.binary},
         )
 
         # Sicherheitsprüfung: Hat Modell versehentlich eine Permission-Meldung zurückgegeben?
@@ -107,7 +109,7 @@ def run_adversarial_plan(
                 state=state,
                 auto_switch=auto_switch,
                 role="planner",
-                exclude={reviewer.binary}
+                exclude={reviewer.binary},
             )
 
         if ask_mode:
@@ -141,7 +143,7 @@ def run_adversarial_plan(
                         state=state,
                         auto_switch=auto_switch,
                         role="planner",
-                        exclude={reviewer.binary}
+                        exclude={reviewer.binary},
                     )
                     if is_permission_error_response(plan):
                         plan, planner, planner_flags = safe_agent_run(
@@ -154,7 +156,7 @@ def run_adversarial_plan(
                             state=state,
                             auto_switch=auto_switch,
                             role="planner",
-                            exclude={reviewer.binary}
+                            exclude={reviewer.binary},
                         )
 
         plan_v1_file.write_text(plan, encoding="utf-8")
@@ -198,7 +200,7 @@ def run_adversarial_plan(
         f"- **Aufgabe:** {task}",
         f"- **🏗️ Architekt (Planung & Bau):** {p_details}",
         f"- **🧐 Prüfstatiker (Prüfung & Review):** {r_details}",
-        f"- **Session-Pfad:** `{session_dir.relative_to(project_path)}`"
+        f"- **Session-Pfad:** `{session_dir.relative_to(project_path)}`",
     ]
 
     reviewed_plan: str | None = None
@@ -251,7 +253,7 @@ def run_adversarial_plan(
                 state=state,
                 auto_switch=auto_switch,
                 role="reviewer",
-                exclude={planner.binary}
+                exclude={planner.binary},
             )
         except RuntimeError:
             if resumed_reviewer is None:
@@ -272,7 +274,7 @@ def run_adversarial_plan(
                 state=state,
                 auto_switch=auto_switch,
                 role="reviewer",
-                exclude={planner.binary}
+                exclude={planner.binary},
             )
         if "--resume" not in call_flags:
             reviewer_flags = call_flags
@@ -338,7 +340,7 @@ def run_adversarial_plan(
                 state=state,
                 auto_switch=auto_switch,
                 role="planner",
-                exclude={reviewer.binary}
+                exclude={reviewer.binary},
             )
 
             # Prüfen ob Modell trotz Directive einen Permission-Fehler zurückgab
@@ -355,13 +357,13 @@ def run_adversarial_plan(
                     state=state,
                     auto_switch=auto_switch,
                     role="planner",
-                    exclude={reviewer.binary}
+                    exclude={reviewer.binary},
                 )
 
             plan_next_file = next_plan_file(session_dir)
             plan_next_file.write_text(plan, encoding="utf-8")
             current_plan_file = plan_next_file
-            say(f"📄 Plan v{r+1} gespeichert in {plan_next_file.relative_to(project_path)}")
+            say(f"📄 Plan v{r + 1} gespeichert in {plan_next_file.relative_to(project_path)}")
             save_session_state(session_dir, state)
         else:
             say("🛑 Maximale Review-Runden erreicht.")
@@ -391,8 +393,10 @@ def handle_plan_approval_and_changes(
     agents: dict[str, AgentCLI],
     auto_switch: bool = False,
     planner_flags: list[str] | None = None,
-    reviewer_flags: list[str] | None = None
+    reviewer_flags: list[str] | None = None,
 ) -> tuple[bool, Path, AgentCLI, AgentCLI, list[str], list[str]]:
+    """Plan zur Freigabe zeigen: freigeben, ändern lassen (mit erneuter Prüfung) oder abbrechen.
+    Rückgabe wie bei run_adversarial_plan."""
     planner_flags = list(planner_flags or [])
     reviewer_flags = list(reviewer_flags or [])
     while not SETTINGS.stop_requested:
@@ -518,7 +522,7 @@ def handle_plan_approval_and_changes(
                         state=state,
                         auto_switch=auto_switch,
                         role="planner",
-                        exclude={reviewer.binary}
+                        exclude={reviewer.binary},
                     )
                     new_v_file = next_plan_file(session_dir)
                     new_v_file.write_text(new_plan, encoding="utf-8")

@@ -79,8 +79,7 @@ class CheckTest(unittest.TestCase):
         metrics = loop.SessionMetrics()
         agent.metrics_tracker = metrics
         agent.role = "🔨 Bauleiter"
-        with tempfile.TemporaryDirectory() as tmp, \
-                unittest.mock.patch.object(loop.SETTINGS, "budget", loop.Budget(max_total="1k")):
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(loop.SETTINGS, "budget", loop.Budget(max_total="1k")):
             loop.safe_agent_run(agent, "p", Path(tmp), [], {}, Path(tmp), {}, False, role="builder", metrics_tracker=metrics)
             with self.assertRaises(loop.BudgetExceeded):
                 loop.safe_agent_run(agent, "p", Path(tmp), [], {}, Path(tmp), {}, False, role="builder", metrics_tracker=metrics)
@@ -98,8 +97,9 @@ class BudgetRunTest(unittest.TestCase):
                 (project / "tests").mkdir(parents=True)
                 (tmp / "leer").mkdir()
                 cmd = run_smoke.smoke_command(project, url, "local-free") + ["--budget-max", "300"]
-                res = subprocess.run(cmd, input="", capture_output=True, text=True, encoding="utf-8",
-                                     timeout=120, env=run_smoke.smoke_env(tmp))
+                res = subprocess.run(
+                    cmd, input="", capture_output=True, text=True, encoding="utf-8", timeout=120, env=run_smoke.smoke_env(tmp)
+                )
                 self.assertEqual(res.returncode, 3, res.stdout[-2000:] + res.stderr)
                 self.assertIn("[CG-1404]", res.stderr)
                 session = next((project / ".dual-loop" / "sessions").iterdir())
@@ -108,9 +108,15 @@ class BudgetRunTest(unittest.TestCase):
                 audit = (session / "AUDIT.md").read_text(encoding="utf-8")
                 self.assertIn("Abbruchgrund:** Budget", audit)
                 self.assertFalse((session / ".done").exists())
-                bad = subprocess.run(run_smoke.smoke_command(project, url, "balanced") + ["--budget-max", "viel"],
-                                     input="", capture_output=True, text=True, encoding="utf-8", timeout=60,
-                                     env=run_smoke.smoke_env(tmp))
+                bad = subprocess.run(
+                    run_smoke.smoke_command(project, url, "balanced") + ["--budget-max", "viel"],
+                    input="",
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    timeout=60,
+                    env=run_smoke.smoke_env(tmp),
+                )
                 self.assertEqual(bad.returncode, 1)
                 self.assertIn("[CG-1103]", bad.stderr)
         finally:

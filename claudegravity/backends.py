@@ -29,6 +29,8 @@ from .metrics import SessionMetrics
 
 
 class AgentCLI:
+    """Ein Backend in einer Rolle: Name, Programm oder Endpunkt, Aufruffunktion, Modell, Effort und Verbrauch."""
+
     def __init__(
         self,
         name: str,
@@ -38,7 +40,7 @@ class AgentCLI:
         role: str = "Architekt",
         model: str | None = None,
         effort: str | None = None,
-        local: bool = False
+        local: bool = False,
     ):
         self.name = name
         self.binary = binary
@@ -53,6 +55,7 @@ class AgentCLI:
         self.requested_model: str | None = None
 
     def run(self, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
+        """Prompt senden (bei Cloud-Backends mit Datenschutzschild), Antwort liefern und Verbrauch in die Kennzahlen buchen."""
         if self.requested_model is None:
             self.requested_model = extract_flag_value(extra_flags, "--model") or self.model or DEFAULT_MODEL_LABEL
         if SETTINGS.shield and not self.local:
@@ -80,7 +83,7 @@ class AgentCLI:
                     cost_usd=metrics.get("cost_usd", 0.0),
                     role=self.role,
                     model=used_model,
-                    effort=used_effort
+                    effort=used_effort,
                 )
         elif self.metrics_tracker:
             # Kein Verbrauch gemeldet: Aufruf trotzdem zählen (Runden-Kennzahlen)
@@ -94,8 +97,9 @@ def create_agent(
     role: str = "Architekt",
     model: str | None = None,
     effort: str | None = None,
-    metrics_tracker: SessionMetrics | None = None
+    metrics_tracker: SessionMetrics | None = None,
 ) -> AgentCLI:
+    """Neue Instanz eines erkannten Backends für eine Rolle; wirft ValueError, wenn es nicht verfügbar ist."""
     base = agents.get(binary)
     if not base:
         raise ValueError(f"Agent-CLI '{binary}' ist nicht verfügbar.")
@@ -107,7 +111,7 @@ def create_agent(
         role=role,
         model=model,
         effort=effort,
-        local=base.local
+        local=base.local,
     )
 
 
@@ -185,6 +189,7 @@ CLI_TIMEOUT_DEFAULT = 3600  # Sekunden je CLI-Aufruf; ein Bau-Lauf darf lange da
 
 
 def cli_timeout() -> int | None:
+    """Zeitlimit für CLI-Aufrufe in Sekunden aus CLAUDEGRAVITY_CLI_TIMEOUT; 0 bedeutet ohne Limit (None)."""
     raw = os.environ.get("CLAUDEGRAVITY_CLI_TIMEOUT", "")
     value = int(raw) if raw.strip().isdigit() else CLI_TIMEOUT_DEFAULT
     return value or None
@@ -196,13 +201,18 @@ def _exec_cli(binary: str, args: list[str], cwd: Path | None = None, stdin: str 
     try:
         cmd, use_shell = build_cli_command(binary, args)
     except ValueError as ex:
-        raise RuntimeError(
-            f"{binary}: {ex} Installiere die native Version (z.B. {binary}.exe) statt eines .bat-Wrappers."
-        ) from ex
+        raise RuntimeError(f"{binary}: {ex} Installiere die native Version (z.B. {binary}.exe) statt eines .bat-Wrappers.") from ex
     try:
         res = subprocess.run(
-            cmd, cwd=str(cwd) if cwd else None, input=stdin, capture_output=True,
-            text=True, encoding="utf-8", errors="replace", shell=use_shell, timeout=cli_timeout()
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=use_shell,
+            timeout=cli_timeout(),
         )
     except subprocess.TimeoutExpired:
         # Kein automatischer Neuversuch: Ein hängender Bau-Lauf würde sonst stundenlang wiederholt.
@@ -241,7 +251,9 @@ def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags:
 
         text = data.get("result") or ""
         usage = data.get("usage") or {}
-        inp = (usage.get("input_tokens") or 0) + (usage.get("cache_creation_input_tokens") or 0) + (usage.get("cache_read_input_tokens") or 0)
+        inp = (
+            (usage.get("input_tokens") or 0) + (usage.get("cache_creation_input_tokens") or 0) + (usage.get("cache_read_input_tokens") or 0)
+        )
         out = usage.get("output_tokens") or 0
         tot = inp + out
         cost = float(data.get("total_cost_usd") or 0.0)
@@ -262,7 +274,7 @@ def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags:
             "model": model_name,
             "effort": effort_val,
             "reported_model": next(iter(model_usage), None) if model_usage else None,
-            "session_id": data.get("session_id")
+            "session_id": data.get("session_id"),
         }
         return text, metrics
     except json.JSONDecodeError:
@@ -272,7 +284,7 @@ def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags:
             "total_tokens": (len(prompt) + len(raw)) // 4,
             "cost_usd": 0.0,
             "model": extract_flag_value(extra_flags, "--model"),
-            "effort": extract_flag_value(extra_flags, "--effort")
+            "effort": extract_flag_value(extra_flags, "--effort"),
         }
 
 
@@ -312,7 +324,7 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
             "total_tokens": tot,
             "cost_usd": 0.0,
             "model": model_name,
-            "effort": effort_val
+            "effort": effort_val,
         }
         return text, metrics
     except json.JSONDecodeError:
@@ -322,7 +334,7 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
             "total_tokens": (len(prompt) + len(raw)) // 4,
             "cost_usd": 0.0,
             "model": extract_flag_value(extra_flags, "--model"),
-            "effort": extract_flag_value(extra_flags, "--effort")
+            "effort": extract_flag_value(extra_flags, "--effort"),
         }
 
 
@@ -334,7 +346,7 @@ def _exec_gemini(binary: str, prompt: str, cwd: Path | None = None, extra_flags:
         "input_tokens": len(prompt) // 4,
         "output_tokens": len(raw) // 4,
         "total_tokens": (len(prompt) + len(raw)) // 4,
-        "cost_usd": 0.0
+        "cost_usd": 0.0,
     }
 
 
@@ -396,7 +408,7 @@ def _exec_codex(binary: str, prompt: str, cwd: Path | None = None, extra_flags: 
         "total_tokens": inp + out,
         "cost_usd": 0.0,
         "model": extract_flag_value(extra_flags, "--model"),
-        "effort": extract_flag_value(extra_flags, "--effort")
+        "effort": extract_flag_value(extra_flags, "--effort"),
     }
 
 
@@ -411,7 +423,7 @@ def _exec_copilot(binary: str, prompt: str, cwd: Path | None = None, extra_flags
         "total_tokens": (len(prompt) + len(raw)) // 4,
         "cost_usd": 0.0,
         "model": "copilot",
-        "effort": "CLI"
+        "effort": "CLI",
     }
 
 
@@ -424,11 +436,12 @@ def _exec_ollama_cli(binary: str, prompt: str, cwd: Path | None = None, extra_fl
         "total_tokens": (len(prompt) + len(raw)) // 4,
         "cost_usd": 0.0,
         "model": model,
-        "effort": "local"
+        "effort": "local",
     }
 
 
 def normalize_endpoint_url(raw_url: str) -> str:
+    """Basis-URL eines OpenAI-kompatiblen Servers auf den Pfad /v1/chat/completions ergänzen."""
     url = raw_url.strip().rstrip("/")
     if url.endswith("/chat/completions"):
         return url
@@ -492,7 +505,7 @@ OLLAMA_ROLE_PREFERENCES = {
     "planner": ("qwen3:", "gpt-oss", "qwen3", "deepseek-r1", "qwen2.5-coder", "gemma3", "llama3"),
 }
 # Größere Modelle passen auf typischen Rechnern (bis ~48 GB) nicht mehr neben ein zweites
-OLLAMA_MAX_AUTO_BYTES = 25 * 1024 ** 3
+OLLAMA_MAX_AUTO_BYTES = 25 * 1024**3
 
 
 def list_ollama_models(base_url: str, timeout: float = 2.0) -> list[dict]:
@@ -532,6 +545,7 @@ def pick_ollama_model(models: list[dict], role: str, exclude: set[str] | tuple =
 
 
 def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
+    """Kurzer GET-Test; auch 401/403/404/405 zählen als erreichbar, weil dort ein Server antwortet."""
     try:
         req = urllib.request.Request(url, method="GET", headers={"User-Agent": "ClaudeGravity/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -541,18 +555,11 @@ def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
 
 
 def _exec_openai_api(
-    endpoint_url: str,
-    model: str,
-    prompt: str,
-    api_key: str | None = None,
-    extra_flags: list[str] | None = None
+    endpoint_url: str, model: str, prompt: str, api_key: str | None = None, extra_flags: list[str] | None = None
 ) -> tuple[str, dict]:
     full_url = normalize_endpoint_url(endpoint_url)
     key = api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("CLAUDEGRAVITY_API_KEY") or ""
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "ClaudeGravity/1.0"
-    }
+    headers = {"Content-Type": "application/json", "User-Agent": "ClaudeGravity/1.0"}
     if key:
         headers["Authorization"] = f"Bearer {key}"
 
@@ -562,14 +569,11 @@ def _exec_openai_api(
         "messages": [
             {
                 "role": "system",
-                "content": "Du bist ein erfahrener Software-Architekt und Senior Developer. Antworte präzise und befolge alle Anweisungen strikt."
+                "content": "Du bist ein erfahrener Software-Architekt und Senior Developer. Antworte präzise und befolge alle Anweisungen strikt.",
             },
-            {
-                "role": "user",
-                "content": prompt
-            }
+            {"role": "user", "content": prompt},
         ],
-        "temperature": 0.2
+        "temperature": 0.2,
     }
 
     data_bytes = json.dumps(payload).encode("utf-8")
@@ -604,7 +608,7 @@ def _exec_openai_api(
                 "total_tokens": tot,
                 "cost_usd": cost,
                 "model": chosen_model,
-                "effort": extract_flag_value(extra_flags, "--effort") or ("0€ Lokal/Intranet" if is_local_or_private else "API")
+                "effort": extract_flag_value(extra_flags, "--effort") or ("0€ Lokal/Intranet" if is_local_or_private else "API"),
             }
             return text, metrics
 
@@ -633,14 +637,14 @@ def _exec_endpoint_runner(endpoint_url: str, default_model: str, api_key: str | 
     def runner(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
         model = extract_flag_value(extra_flags, "--model") or default_model
         return _exec_openai_api(endpoint_url, model, prompt, api_key=api_key, extra_flags=extra_flags)
+
     return runner
 
 
 def detect_installed_agents(
-    custom_endpoint: str | None = None,
-    api_key: str | None = None,
-    default_model: str | None = None
+    custom_endpoint: str | None = None, api_key: str | None = None, default_model: str | None = None
 ) -> dict[str, AgentCLI]:
+    """Installierte CLIs im PATH und erreichbare Endpunkte (eigener, Umgebung, localhost) als Backends erkennen."""
     agents = {}
 
     # 1. Standard-CLIs
@@ -666,22 +670,19 @@ def detect_installed_agents(
             f"Ollama ({'Lokal' if 'localhost' in ollama_url else 'Netzwerk'}: {ollama_url})",
             "ollama",
             _exec_endpoint_runner(ollama_url, default_model or "qwen2.5-coder:latest", api_key),
-            local=True
+            local=True,
         )
     if is_endpoint_reachable("http://localhost:1234"):
         agents["lmstudio"] = AgentCLI(
             "LM Studio (Lokal: http://localhost:1234)",
             "lmstudio",
             _exec_endpoint_runner("http://localhost:1234", default_model or "default", api_key),
-            local=True
+            local=True,
         )
 
     # 3. Benutzerdefiniertes Netzwerk / Firmen-Server / Env-Var
     env_endpoint = (
-        custom_endpoint or
-        os.environ.get("CLAUDEGRAVITY_ENDPOINT") or
-        os.environ.get("OPENAI_BASE_URL") or
-        os.environ.get("AI_ENDPOINT")
+        custom_endpoint or os.environ.get("CLAUDEGRAVITY_ENDPOINT") or os.environ.get("OPENAI_BASE_URL") or os.environ.get("AI_ENDPOINT")
     )
     if env_endpoint:
         is_local = is_private_endpoint(env_endpoint)
@@ -690,7 +691,7 @@ def detect_installed_agents(
             f"{label} ({env_endpoint})",
             "endpoint",
             _exec_endpoint_runner(env_endpoint, default_model or "qwen2.5-coder:32b", api_key),
-            local=is_local
+            local=is_local,
         )
 
     return agents

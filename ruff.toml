@@ -1,6 +1,8 @@
 # Nur für Entwicklung und CI; zur Laufzeit braucht der Loop weiterhin nur die Standardbibliothek.
 target-version = "py310"
 line-length = 140
+# Aufgaben des Benchmark-Packs sind Testdaten für Modelle und bleiben, wie sie sind.
+extend-exclude = ["tools/benchmark/tasks"]
 
 [lint]
 select = ["E9", "F", "B", "SIM"]
