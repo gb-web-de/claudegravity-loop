@@ -21,6 +21,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--yolo` | `--auto-approve` | Full write and tool permissions for the **Builder** without asking. Architect, Reviewer and Acceptance check stay read-only. | off |
 | `--max-rounds` | | Maximum review rounds for the plan. | `2` |
 | `--auto-switch` | `--fallback` | Automatically switch to the alternative AI when a limit is hit. | off |
+| `--retries <n>` | `--neuversuche` | Automatic retries on transient errors (overload, HTTP 5xx, dropped connection) with exponential backoff and jitter. `0` turns them off. See [Troubleshooting](fehlerbehebung.md#automatic-retries). | `3` |
 | `--swap` | `--swap-roles`, `--reverse` | Swap the default roles: Antigravity/Gemini plans, Claude reviews. | off |
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). See [Strategies](strategien.md). | `balanced` |
 | `--dry-run` | | Show the assignment, cost analysis and start command without running or creating anything. | off |

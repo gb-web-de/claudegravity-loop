@@ -19,6 +19,17 @@
 | Endpoint Builder doesn't change any files | Response contains no `filepath:` blocks | Choose a bigger/better model; for the format see [Backends](backends.md#how-endpoint-builders-write-files). |
 | Hanging prompt in the background (MCP `background: true`) | Interactive menu without a terminal | Start the run in a terminal or use `--yolo` and review the plan beforehand. |
 
+## Automatic retries
+
+The loop retries transient errors itself before asking you: overload (`overloaded`, `529`), HTTP 500/502/503/504/408, dropped or refused connections and, for cloud providers, timeouts. The wait doubles with each attempt; half of it is random (jitter) so parallel runs do not come back at the same moment.
+
+| Provider | Attempts | Wait (without jitter) |
+| :--- | :--- | :--- |
+| Local (Ollama, LM Studio, home network) | 3 | 2 s, 4 s, 8 s (at most 20 s) |
+| Cloud (CLIs, public endpoints) | 3 | 5 s, 10 s, 20 s (at most 60 s) |
+
+A timeout on a local model is not retried, because a second attempt takes just as long; use `--timeout` there. A real rate limit with a reset time goes straight to the limit menu. If the last retry fails too, the same menu appears (switch, wait, quit); with `--auto-switch` the loop switches right away. Every retry is written to `LOG.md`, the total to the audit block in `.done`. `--retries <n>` changes the number of attempts, `--retries 0` turns them off.
+
 ## Cancelling
 
 `Ctrl+C` cleanly ends the current round; the state is preserved. Resume with `claudegravity -c`.

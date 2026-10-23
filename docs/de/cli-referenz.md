@@ -21,6 +21,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--yolo` | `--auto-approve` | Volle Schreib- und Tool-Rechte für den **Bauleiter** ohne Nachfrage. Architekt, Prüfstatiker und Abnahme bleiben lesend. | aus |
 | `--max-rounds` | | Maximale Review-Runden für den Plan. | `2` |
 | `--auto-switch` | `--fallback` | Bei Limit automatisch zur alternativen KI wechseln. | aus |
+| `--retries <n>` | `--neuversuche` | Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, HTTP 5xx, Verbindungsabbruch) mit exponentiellem Backoff und Jitter. `0` schaltet ab. Siehe [Fehlerbehebung](fehlerbehebung.md#automatische-neuversuche). | `3` |
 | `--swap` | `--swap-roles`, `--reverse` | Standardrollen tauschen: Antigravity/Gemini plant, Claude prüft. | aus |
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). Siehe [Strategien](strategien.md). | `balanced` |
 | `--dry-run` | | Belegung, Kostenanalyse und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |

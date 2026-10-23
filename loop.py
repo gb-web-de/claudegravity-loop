@@ -19,6 +19,7 @@ import ipaddress
 import json
 import os
 import platform
+import random
 import re
 import shlex
 import signal
@@ -84,12 +85,14 @@ if hasattr(signal, "SIGTERM"):
 
 
 class RateLimitError(Exception):
-    def __init__(self, binary: str, message: str, reset_time: str | None = None, reset_seconds: int | None = None):
+    def __init__(self, binary: str, message: str, reset_time: str | None = None, reset_seconds: int | None = None, transient: bool = False):
         super().__init__(f"{binary} Limit erreicht: {message}")
         self.binary = binary
         self.message = message
         self.reset_time = reset_time
         self.reset_seconds = reset_seconds
+        # True: vorübergehende Störung, deren automatische Wiederholungen aufgebraucht sind
+        self.transient = transient
 
 
 RATE_LIMIT_PATTERNS = [
@@ -115,6 +118,66 @@ TIME_PATTERNS = [
 
 def is_rate_limit(text: str) -> bool:
     return any(re.search(p, text, re.IGNORECASE) for p in RATE_LIMIT_PATTERNS)
+
+
+# Vorübergehende Störungen: Überlastung, Serverfehler, abgerissene Verbindungen
+TRANSIENT_PATTERNS = [
+    r"overloaded",
+    r"\bcapacity\b",
+    r"HTTP 5(?:00|02|03|04|29)\b",
+    r"\b(?:502|503|504|529)\b",
+    r"HTTP 408\b",
+    r"internal server error",
+    r"bad gateway",
+    r"service unavailable",
+    r"gateway time-?out",
+    r"temporarily unavailable",
+    r"econnreset",
+    r"etimedout",
+    r"socket hang up",
+    r"connection (?:reset|aborted|refused)",
+    r"Verbindungsfehler zu",
+    r"Zeitüberschreitung nach",
+    r"network error",
+]
+
+# Wiederholungen je Anbieterart: lokale Server starten schnell neu, Cloud-Dienste brauchen länger
+RETRY_POLICIES = {
+    "local": {"attempts": 3, "base": 2.0, "cap": 20.0},
+    "cloud": {"attempts": 3, "base": 5.0, "cap": 60.0},
+}
+RETRY_OVERRIDE: int | None = None  # --retries
+
+
+def is_transient_error(text: str, local: bool = False) -> bool:
+    """Lohnt ein automatischer Neuversuch? Zeitüberschreitungen nur bei Cloud-Anbietern:
+    ein lokales Modell, das 15 Minuten rechnet, wird durch einen Neuversuch nicht schneller."""
+    if local and re.search(r"Zeitüberschreitung nach", text):
+        return False
+    return any(re.search(p, text, re.IGNORECASE) for p in TRANSIENT_PATTERNS)
+
+
+def retry_policy(local: bool) -> dict:
+    policy = dict(RETRY_POLICIES["local" if local else "cloud"])
+    if RETRY_OVERRIDE is not None:
+        policy["attempts"] = max(0, RETRY_OVERRIDE)
+    return policy
+
+
+def backoff_delay(attempt: int, base: float, cap: float, rng=random.random) -> float:
+    """Exponentieller Backoff mit Jitter: halbe Wartezeit fest, halbe zufällig (attempt ab 1)."""
+    delay = min(cap, base * (2 ** (attempt - 1)))
+    return delay / 2 + rng() * delay / 2
+
+
+def interruptible_sleep(seconds: float) -> bool:
+    """Schläft in kleinen Schritten; False, wenn währenddessen abgebrochen wurde."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if STOP_REQUESTED:
+            return False
+        time.sleep(min(0.5, max(0.0, end - time.monotonic())))
+    return not STOP_REQUESTED
 
 
 def extract_reset_time(text: str) -> str | None:
@@ -198,6 +261,11 @@ class SessionMetrics:
         self.total_tokens = 0
         self.cost_usd = 0.0
         self.by_agent: dict[str, dict] = {}
+        self.retries = {"attempts": 0, "recovered": 0, "exhausted": 0}
+
+    def note_retry(self, outcome: str):
+        """outcome: attempts (Neuversuch gestartet), recovered (danach erfolgreich), exhausted (aufgegeben)."""
+        self.retries[outcome] = self.retries.get(outcome, 0) + 1
 
     def add(
         self,
@@ -248,7 +316,8 @@ class SessionMetrics:
             "output_tokens": self.output_tokens,
             "total_tokens": self.total_tokens,
             "cost_usd": round(self.cost_usd, 4),
-            "by_agent": self.by_agent
+            "by_agent": self.by_agent,
+            "retries": self.retries,
         }
 
     @classmethod
@@ -261,6 +330,7 @@ class SessionMetrics:
         m.total_tokens = data.get("total_tokens", 0)
         m.cost_usd = data.get("cost_usd", 0.0)
         m.by_agent = data.get("by_agent", {})
+        m.retries.update(data.get("retries") or {})
         return m
 
 
@@ -290,6 +360,9 @@ def format_metrics_report(metrics: SessionMetrics) -> str:
             lines.append(f"    * **Kosten:** {cost_str}")
     else:
         lines.append("  * Keine detaillierte Modell-Aufschlüsselung verfügbar.")
+    if metrics.retries.get("attempts"):
+        r = metrics.retries
+        lines.append(f"* **Automatische Neuversuche:** {r['attempts']} (danach erfolgreich: {r.get('recovered', 0)}, aufgegeben: {r.get('exhausted', 0)})")
     lines.append(f"* **Audit-Zeitstempel:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
     return "\n".join(lines)
@@ -1503,7 +1576,10 @@ def handle_rate_limit(
         return "switch", alt_agent
 
     print("\n" + "=" * 65)
-    print(f"🚨 AI-LIMIT ERREICHT: {describe_agent(current_agent)} meldet Sitzungs- / Ratenlimit!")
+    if err.transient:
+        print(f"🚨 STÖRUNG: {describe_agent(current_agent)} antwortet auch nach automatischen Neuversuchen nicht!")
+    else:
+        print(f"🚨 AI-LIMIT ERREICHT: {describe_agent(current_agent)} meldet Sitzungs- / Ratenlimit!")
     print(f"   Grund: {err.message}")
     if err.reset_time:
         print(f"   Reset erwartet: {err.reset_time}")
@@ -1559,12 +1635,47 @@ def safe_agent_run(
     metrics_tracker: SessionMetrics | None = None,
     exclude: set[str] | None = None
 ) -> tuple[str, AgentCLI, list[str]]:
-    """Führt einen Prompt aus und fängt Raten- und Sitzungslimits mit Wiederholungs-Logik ab."""
+    """Führt einen Prompt aus und fängt Raten- und Sitzungslimits mit Wiederholungs-Logik ab.
+
+    Vorübergehende Störungen (Überlastung, 5xx, abgerissene Verbindung) werden zuerst automatisch
+    mit exponentiellem Backoff und Jitter wiederholt; erst danach erscheint das Limit-Menü.
+    """
+    attempt = 0
     while not STOP_REQUESTED:
         try:
             res = agent.run(prompt, cwd=cwd, extra_flags=flags)
+            if attempt and metrics_tracker:
+                metrics_tracker.note_retry("recovered")
+            if attempt:
+                append_log(session_dir, f"Neuversuch {attempt} bei {agent.name} erfolgreich")
             return res, agent, flags
-        except RateLimitError as err:
+        except (RateLimitError, RuntimeError) as exc:
+            message = exc.message if isinstance(exc, RateLimitError) else str(exc)
+            hard_limit = isinstance(exc, RateLimitError) and bool(exc.reset_time)
+            if hard_limit or not is_transient_error(message, local=agent.local):
+                if isinstance(exc, RateLimitError):
+                    err = exc
+                else:
+                    raise
+            else:
+                policy = retry_policy(agent.local)
+                if attempt < policy["attempts"]:
+                    attempt += 1
+                    wait = backoff_delay(attempt, policy["base"], policy["cap"])
+                    short = message.strip().splitlines()[0][:160] if message.strip() else type(exc).__name__
+                    print(f"🔁 Vorübergehender Fehler bei {describe_agent(agent)}: {short}")
+                    print(f"   Neuversuch {attempt}/{policy['attempts']} in {wait:.0f} s ...")
+                    append_log(session_dir, f"Vorübergehender Fehler bei {agent.name} ({short}); Neuversuch {attempt}/{policy['attempts']} in {wait:.0f} s")
+                    if metrics_tracker:
+                        metrics_tracker.note_retry("attempts")
+                    if not interruptible_sleep(wait):
+                        break
+                    continue
+                if metrics_tracker:
+                    metrics_tracker.note_retry("exhausted")
+                append_log(session_dir, f"{agent.name}: {attempt} Neuversuche ohne Erfolg, Auswahl Wechseln/Warten/Beenden")
+                err = RateLimitError(agent.binary, message, transient=True)
+            attempt = 0
             action, new_agent = handle_rate_limit(
                 agent, agents, err, session_dir, state, auto_switch=auto_switch, exclude=exclude
             )
@@ -2728,6 +2839,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plan-auto", "--approve-plan", dest="approve_plan", action="store_true", help="Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (sonst kein Bau); für Läufe ohne Terminal")
     parser.add_argument("--etappen", "--stages", default="auto", choices=["auto", "an", "aus", "on", "off"], help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)")
 
+    parser.add_argument("--retries", "--neuversuche", type=int, default=None, help="Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, 5xx, Verbindungsabbruch) mit Backoff und Jitter (Standard: 3, 0 schaltet ab)")
     parser.add_argument("--print-effective-config", "--config", dest="print_effective_config", action="store_true", help="Wirksame Konfiguration mit Quelle je Einstellung (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden")
     return parser
 
@@ -2750,7 +2862,8 @@ def main():
     for conflict in config_report["conflicts"]:
         print(f"⚠️  Konfigurationskonflikt: {conflict}")
 
-    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING
+    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING, RETRY_OVERRIDE
+    RETRY_OVERRIDE = args.retries
     env_timeout = os.environ.get("CLAUDEGRAVITY_TIMEOUT", "")
     ENDPOINT_TIMEOUT = args.timeout or (int(env_timeout) if env_timeout.isdigit() else None)
     SHIELD_ENABLED = not args.no_shield and os.environ.get("CLAUDEGRAVITY_SHIELD", "").lower() != "off"
