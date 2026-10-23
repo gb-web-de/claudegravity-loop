@@ -47,6 +47,7 @@ python3 -m unittest discover -s tests
 | `test_benchmark.py` | Benchmark pack: tasks red at first, reference solution green, flow in fake mode |
 | `test_events.py` | Structured event log `events.jsonl` |
 | `test_builder_resume.py` | Continuing the Builder session: short prompt, `codex exec resume`, fallback to a fresh session, Builder switch |
+| `test_edit_blocks.py` | Search/replace blocks from endpoints: several pairs, not found/ambiguous, blocked paths, feedback |
 | `test_escalation.py` | Escalation from a local Builder to the cloud: target choice, write access, end to end |
 
 ### Smoke matrix

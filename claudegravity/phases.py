@@ -46,8 +46,10 @@ from .build import (
     builder_resume_flags,
     collect_build_changes,
     compose_build_prompt,
+    edit_errors_note,
     git_head,
     parse_stages,
+    plan_excerpt,
     run_build_call,
     run_inspection,
     run_proof_check,
@@ -826,7 +828,7 @@ def run_build_phase(run: "RunContext") -> None:
                 proof_cmd,
                 pending_feedback,
                 is_endpoint_builder,
-                plan_text=plan_text_now,
+                plan_text=plan_excerpt(plan_text_now, stage_text + "\n" + pending_feedback),
                 file_ctx=file_ctx,
                 stage=(stage_label, stage_text, done_list),
             )
@@ -893,6 +895,8 @@ def run_build_phase(run: "RunContext") -> None:
                     if proof_cmd
                     else f"Fehler: {output}"
                 )
+                if build_ctx.edit_errors:
+                    pending_feedback += "\n\n" + edit_errors_note(build_ctx.edit_errors)
                 state["pending_feedback"] = pending_feedback
                 say(f"❌ {stage_label} noch nicht fertig (Versuch {stage_tries}/{STAGE_MAX_TRIES}).")
                 note_build_round(False, f"{stage_label} " + ("Prüfbefehl rot" if proof_cmd else "fehlgeschlagen"))
@@ -970,8 +974,8 @@ def run_build_phase(run: "RunContext") -> None:
                 log_header=log_header,
                 full_prompt=prompt_build if resuming else None,
             )
-            pending_feedback = ""
-            state["pending_feedback"] = ""
+            pending_feedback = edit_errors_note(build_ctx.edit_errors)
+            state["pending_feedback"] = pending_feedback
         except Exception as exc:
             say(f"[!] Fehler bei Iteration {iteration}: {exc}")
             call_failed = f"Fehler: {str(exc)[:120]}"
@@ -990,7 +994,9 @@ def run_build_phase(run: "RunContext") -> None:
         elif proof_cmd and not SETTINGS.stop_requested:
             ok, output = run_proof_check(build_ctx, proof_cmd)
             if not ok:
-                pending_feedback = f"Der Prüfbefehl `{proof_cmd}` schlägt noch fehl:\n```\n{output}\n```"
+                pending_feedback = "\n\n".join(
+                    p for p in (f"Der Prüfbefehl `{proof_cmd}` schlägt noch fehl:\n```\n{output}\n```", pending_feedback) if p
+                )
                 state["pending_feedback"] = pending_feedback
                 save_session_state(session_dir, state)
             note_build_round(ok, call_failed or "Prüfbefehl rot")

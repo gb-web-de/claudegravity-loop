@@ -132,13 +132,27 @@ To make it permanent, use `export CLAUDEGRAVITY_ENDPOINT="http://<server>:11434/
 
 ### How endpoint builders write files
 
-Endpoints have no file access. ClaudeGravity asks them to output each file like this:
+Endpoints have no file access. ClaudeGravity asks them to output new files completely:
 
 ````
 ```filepath: src/app.py
 <complete file content>
 ```
 ````
+
+Existing files can be changed more cheaply with search/replace blocks. This saves output tokens; local models in particular are slow at output and hit their output limit on large files:
+
+````
+```edit: src/app.py
+<<<<<<< SUCHEN
+    return a - b
+=======
+    return a + b
+>>>>>>> ERSETZEN
+```
+````
+
+A block may hold several pairs; `SEARCH`/`REPLACE` works too. Each search text must occur exactly once in the file. If a pair doesn't fit (not found, ambiguous, file missing), the whole file stays unchanged and the Builder gets the error back in the next round together with the current file content.
 
 Headings such as `### Datei: src/app.py` directly before a code block are recognized as well. The blocks are written relative to the project folder. Paths outside the project (`../`, absolute paths, `~`) and secret files (`.env`, `.ssh/`, `.git/`, `*.key`, `*.pem`, `credentials.json` …) are blocked and reported with `[!] Blockiert`. Endpoint Builders receive the approved plan as text, because they cannot open the plan file themselves. They report completion the same way, via a block with the `.done` path.
 

@@ -310,7 +310,41 @@ class BuildPromptTest(unittest.TestCase):
             "CSV-Export", Path("PLAN_v1.md"), "make test", "", endpoint=True, plan_text="# Plan", rel_done_path=Path("sess/.done")
         )
         self.assertIn("--- GENEHMIGTER PLAN ---\n# Plan", prompt)
-        self.assertTrue(prompt.endswith(f"```filepath: {Path('sess/.done')}\n# Aufgabe abgeschlossen\n```"))
+        self.assertIn(f"```filepath: {Path('sess/.done')}\n# Aufgabe abgeschlossen\n```", prompt)
+        self.assertIn("```edit: ", prompt)
+
+    def test_changing_parts_come_last_for_prompt_caching(self):
+        prompt = loop.compose_build_prompt(
+            "CSV-Export",
+            Path("PLAN_v1.md"),
+            "make test",
+            "Test x rot",
+            endpoint=True,
+            plan_text="# Plan",
+            file_ctx="```filepath: a.py\n```",
+            rel_done_path=Path("sess/.done"),
+        )
+        self.assertLess(prompt.index("GENEHMIGTER PLAN"), prompt.index("BISHER GESCHRIEBENEN DATEIEN"))
+        self.assertTrue(prompt.endswith("Test x rot"))
+
+
+class PlanExcerptTest(unittest.TestCase):
+    PLAN = (
+        "# Plan: Export\nKurzer Kopf.\n\n## Ziel\nCSV ausgeben.\n\n## Parser\n"
+        + "Details zu `src/parser.py`.\n" * 200
+        + "\n## Export\nSchreibt `src/export.py`.\n\n## Abnahmekriterien\n- Test grün\n\n## Etappen\n1. Parser\n2. Export\n"
+    )
+
+    def test_short_plan_stays_complete(self):
+        self.assertEqual(loop.plan_excerpt("# Plan\nkurz", "Etappe"), "# Plan\nkurz")
+
+    def test_long_plan_keeps_head_criteria_and_stage_files(self):
+        text = loop.plan_excerpt(self.PLAN, "Export in `src/export.py` schreiben", limit=500)
+        for part in ("# Plan: Export", "## Ziel", "## Export", "## Abnahmekriterien"):
+            self.assertIn(part, text)
+        self.assertNotIn("src/parser.py", text)
+        self.assertNotIn("## Etappen", text)
+        self.assertIn("Plan gekürzt: 2 Abschnitt(e)", text)
 
 
 class StageLoopEndToEndTest(unittest.TestCase):

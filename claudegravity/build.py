@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .common import say
-from .safety import apply_code_blocks, mask_secrets, resolve_project_target
+from .safety import apply_code_blocks, apply_edit_blocks, mask_secrets, resolve_project_target
 from .backends import AgentCLI, build_cli_command
 from .session import (
     REVIEW_FORMAT,
@@ -117,7 +117,40 @@ def stage_file_context(work_path: Path, text: str, extra: list[str] | None = Non
     return "\n".join(parts)
 
 
-ENDPOINT_FORMAT_HINT = "```filepath: relativer/pfad/zur/datei.ext\n<vollständiger neuer Dateiinhalt>\n```\n"
+ENDPOINT_FORMAT_HINT = (
+    "Neue Dateien gibst du vollständig aus als\n"
+    "```filepath: relativer/pfad/zur/datei.ext\n<vollständiger neuer Dateiinhalt>\n```\n"
+    "Bestehende Dateien änderst du sparsamer mit Suchen/Ersetzen-Blöcken (mehrere Paare je Block möglich):\n"
+    "```edit: relativer/pfad/zur/datei.ext\n"
+    "<<<<<<< SUCHEN\n<exakter bisheriger Text, kommt in der Datei genau einmal vor>\n=======\n<neuer Text>\n>>>>>>> ERSETZEN\n"
+    "```\n"
+)
+PLAN_EXCERPT_LIMIT = 6000
+PLAN_KEEP_HEADING = re.compile(r"ziel|goal|abnahme|akzeptanz|kriteri|acceptance|test|risik|risk|schnittstelle|interface", re.IGNORECASE)
+
+
+def plan_excerpt(plan_text: str, stage_text: str, limit: int = PLAN_EXCERPT_LIMIT) -> str:
+    """Für eine Etappe relevante Teile eines langen Plans: Kopf, Ziele/Abnahmekriterien/Tests und Abschnitte,
+    die eine Datei der Etappe nennen. Der Abschnitt `## Etappen` fällt weg, weil die Etappe extra mitgeht.
+    Kurze Pläne (bis `limit` Zeichen) bleiben vollständig."""
+    if len(plan_text) <= limit:
+        return plan_text
+    sections = re.split(r"(?m)^(?=#{1,3}\s)", plan_text)
+    files = {name.strip("`") for name in FILE_MENTION.findall(stage_text)}
+    kept, dropped = [], 0
+    for i, section in enumerate(sections):
+        heading = section.split("\n", 1)[0]
+        if STAGE_HEADING.match(heading):
+            dropped += 1
+            continue
+        first = i == 0 or (i == 1 and heading.startswith("# "))
+        if first or PLAN_KEEP_HEADING.search(heading) or any(f in section for f in files):
+            kept.append(section.rstrip())
+        elif section.strip():
+            dropped += 1
+    if not dropped:
+        return plan_text
+    return "\n\n".join(kept) + f"\n\n[Plan gekürzt: {dropped} Abschnitt(e) ohne Bezug zu dieser Etappe ausgelassen.]"
 
 
 def compose_build_prompt(
@@ -135,58 +168,53 @@ def compose_build_prompt(
     """Prompt für eine Bau-Runde. `stage` = (Bezeichnung, Etappentext, Liste erledigter Etappen) im Etappen-Modus;
     sonst baut der Bauleiter den ganzen Plan und legt selbst die Fertigmeldung unter `rel_done_path` an.
     Endpunkte bekommen Plan und Dateistand als Text, weil sie keine Dateien öffnen können.
-    `resumed`: Der Bauleiter setzt seine Sitzung fort und kennt Aufgabe und Plan schon; er bekommt nur den neuen Teil."""
+    `resumed`: Der Bauleiter setzt seine Sitzung fort und kennt Aufgabe und Plan schon; er bekommt nur den neuen Teil.
+    Aufbau für Prompt-Caching der Anbieter: gleichbleibender Teil (Aufgabe, Plan, Format) vorn, wechselnder
+    Teil (Etappe, Dateistand, Rückmeldung) hinten."""
     if resumed and not endpoint:
         return compose_resume_prompt(plan_ref, proof_cmd, feedback, stage, rel_done_path)
+    feedback_part = f"RÜCKMELDUNG AUS DER LETZTEN RUNDE (zuerst beheben):\n{feedback}\n\n" if feedback else ""
     if stage is not None:
         label, text, done_list = stage
-        prompt = (
-            f"Gesamtaufgabe: {task}\n\n"
-            f"Du setzt den genehmigten Plan ({plan_ref}) Etappe für Etappe um. Bereits erledigt:\n{done_list}\n\n"
+        prompt = f"Gesamtaufgabe: {task}\n\nDu setzt den genehmigten Plan ({plan_ref}) Etappe für Etappe um.\n\n"
+        if endpoint:
+            if plan_text:
+                prompt += f"--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---\n\n"
+            prompt += "FORMAT FÜR DATEI-ÄNDERUNGEN:\n" + ENDPOINT_FORMAT_HINT + "\n"
+        prompt += (
+            f"Bereits erledigt:\n{done_list}\n\n"
             f"JETZT NUR {label.upper()}: {text}\n\n"
             f"Ändere nur, was diese Etappe braucht, und lass erledigte Etappen funktionsfähig. "
             f"Lege KEINE Fertigmeldung (.done) an: Der Loop prüft jede Etappe selbst und schließt nach der letzten ab.\n\n"
         )
         if proof_cmd:
             prompt += f"Nach dieser Etappe führt der Loop `{proof_cmd}` aus; er muss grün sein.\n\n"
-        if feedback:
-            prompt += f"RÜCKMELDUNG AUS DER LETZTEN RUNDE (zuerst beheben):\n{feedback}\n\n"
-        if endpoint:
-            if plan_text:
-                prompt += f"--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---\n\n"
-            if file_ctx:
-                prompt += f"--- AKTUELLER STAND DER BETROFFENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---\n\n"
-            prompt += "FORMAT FÜR DATEI-ÄNDERUNGEN: Gib jede geänderte oder neue Datei vollständig aus als\n" + ENDPOINT_FORMAT_HINT
-        return prompt
+        if endpoint and file_ctx:
+            prompt += f"--- AKTUELLER STAND DER BETROFFENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---\n\n"
+        return prompt + feedback_part
 
     prompt = (
         f"Führe den genehmigten Plan ({plan_ref}) für folgende Aufgabe aus:\n{task}\n\n"
         f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch.\n\n"
     )
-    if proof_cmd:
-        prompt += f"Vereinbarter Prüfbefehl (der Loop führt ihn danach selbst aus): `{proof_cmd}`\n\n"
-    if feedback:
-        prompt += f"RÜCKMELDUNG AUS DER LETZTEN RUNDE (zuerst beheben):\n{feedback}\n\n"
+    if endpoint and plan_text:
+        prompt += f"--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---\n\n"
     prompt += (
         f"WICHTIG ZUM ABSCHLUSS: Wenn alle Anforderungen vollständig erfüllt und getestet sind, "
         f"erstelle die Fertigmeldungs-Datei genau im Session-Ordner unter: '{rel_done_path}' (NICHT im Projekt-Hauptverzeichnis). "
-        f"Danach prüft ein anderes Modell deine Änderungen."
+        f"Danach prüft ein anderes Modell deine Änderungen.\n\n"
     )
     if endpoint:
-        if plan_text:
-            prompt += f"\n\n--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---"
-        if file_ctx:
-            prompt += f"\n\n--- AKTUELLER STAND DER BISHER GESCHRIEBENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---"
         prompt += (
-            "\n\nFORMATIERUNGS-HINWEIS FÜR DATEI-ÄNDERUNGEN:\n"
-            "Gib alle zu erstellenden oder zu ändernden Dateien im Format an:\n"
+            "FORMATIERUNGS-HINWEIS FÜR DATEI-ÄNDERUNGEN:\n"
             + ENDPOINT_FORMAT_HINT
-            + "Sobald alles fertig und getestet ist, erstelle die Fertigmeldung mit:\n"
-            f"```filepath: {rel_done_path}\n"
-            "# Aufgabe abgeschlossen\n"
-            "```"
+            + f"Sobald alles fertig und getestet ist, erstelle die Fertigmeldung mit:\n```filepath: {rel_done_path}\n# Aufgabe abgeschlossen\n```\n\n"
         )
-    return prompt
+    if proof_cmd:
+        prompt += f"Vereinbarter Prüfbefehl (der Loop führt ihn danach selbst aus): `{proof_cmd}`\n\n"
+    if endpoint and file_ctx:
+        prompt += f"--- AKTUELLER STAND DER BISHER GESCHRIEBENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---\n\n"
+    return (prompt + feedback_part).rstrip()
 
 
 def compose_resume_prompt(
@@ -242,6 +270,18 @@ class BuildContext:
     inspector: "AgentCLI | None"
     written_so_far: list[str]
     resume_builder: bool = True
+    edit_errors: list[str] = dataclasses.field(default_factory=list)
+
+
+def edit_errors_note(errors: list[str]) -> str:
+    """Rückmeldung für den Bauleiter, wenn Suchen/Ersetzen-Blöcke nicht gepasst haben."""
+    if not errors:
+        return ""
+    lines = "\n".join(f"- {e}" for e in errors)
+    return (
+        f"Diese Suchen/Ersetzen-Blöcke wurden NICHT angewendet:\n{lines}\n"
+        f"Nimm den Suchtext exakt aus dem aktuellen Dateistand oder gib die Datei vollständig als filepath-Block aus."
+    )
 
 
 def run_build_call(
@@ -260,6 +300,7 @@ def run_build_call(
     oder wechselt der Bauleiter wegen eines Limits, geht `full_prompt` an eine frische Sitzung.
     Liefert (Antwort, Bauleiter, Flags, geschriebene Dateien); Bauleiter und Flags können nach einem Limit-Wechsel neu sein."""
     say(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) ({wait_note})...", flush=True)
+    ctx.edit_errors = []
     resume = builder_resume_flags(builder, ctx.resume_builder) if full_prompt is not None else []
 
     def call(agent: "AgentCLI", text: str, flags: list[str]):
@@ -299,11 +340,15 @@ def run_build_call(
     written: list[str] = []
     if endpoint:
         name = builder.name
-        written = apply_code_blocks(
-            ctx.work_path,
-            res,
-            on_blocked=lambda rel: record_audit_event(ctx.session_dir, "blocked_write", f"{name} wollte {rel} schreiben", ctx.metrics),
-        )
+
+        def on_blocked(rel: str) -> None:
+            record_audit_event(ctx.session_dir, "blocked_write", f"{name} wollte {rel} schreiben", ctx.metrics)
+
+        written = apply_code_blocks(ctx.work_path, res, on_blocked=on_blocked)
+        edited, ctx.edit_errors = apply_edit_blocks(ctx.work_path, res, on_blocked=on_blocked)
+        written += [e for e in edited if e not in written]
+        for err in ctx.edit_errors:
+            say(f"[!] Suchen/Ersetzen nicht angewendet: {err}")
         for w in written:
             if w not in ctx.written_so_far:
                 ctx.written_so_far.append(w)

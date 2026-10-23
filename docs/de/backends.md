@@ -132,13 +132,27 @@ Dauerhaft geht es mit `export CLAUDEGRAVITY_ENDPOINT="http://<server>:11434/v1"`
 
 ### Wie Endpunkt-Bauleiter Dateien schreiben
 
-Endpunkte haben keinen Dateizugriff. ClaudeGravity fordert sie auf, jede Datei so auszugeben:
+Endpunkte haben keinen Dateizugriff. ClaudeGravity fordert sie auf, neue Dateien vollständig auszugeben:
 
 ````
 ```filepath: src/app.py
 <vollständiger Dateiinhalt>
 ```
 ````
+
+Bestehende Dateien dürfen sie sparsamer mit Suchen/Ersetzen-Blöcken ändern. Das spart Ausgabe-Tokens, und gerade lokale Modelle sind bei der Ausgabe langsam und stoßen bei großen Dateien an ihr Ausgabelimit:
+
+````
+```edit: src/app.py
+<<<<<<< SUCHEN
+    return a - b
+=======
+    return a + b
+>>>>>>> ERSETZEN
+```
+````
+
+Ein Block darf mehrere Paare enthalten; `SEARCH`/`REPLACE` geht auch. Jeder Suchtext muss in der Datei genau einmal vorkommen. Passt ein Paar nicht (nicht gefunden, mehrdeutig, Datei fehlt), bleibt die ganze Datei unverändert, und der Bauleiter bekommt den Fehler in der nächsten Runde zusammen mit dem aktuellen Dateistand zurück.
 
 Auch Überschriften wie `### Datei: src/app.py` direkt vor einem Codeblock werden erkannt. Die Blöcke werden relativ zum Projektordner geschrieben. Pfade außerhalb des Projekts (`../`, absolute Pfade, `~`) und Geheimnis-Dateien (`.env`, `.ssh/`, `.git/`, `*.key`, `*.pem`, `credentials.json` …) werden blockiert und mit `[!] Blockiert` gemeldet. Den genehmigten Plan bekommen Endpunkt-Bauleiter als Text mit, weil sie die Plan-Datei nicht selbst öffnen können. Die Fertigmeldung erfolgt genauso über einen Block mit dem `.done`-Pfad.
 

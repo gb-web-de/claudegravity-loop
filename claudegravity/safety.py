@@ -153,6 +153,58 @@ def apply_code_blocks(project_path: Path, text: str, on_blocked=None) -> list[st
     return written_files
 
 
+EDIT_BLOCK = re.compile(r"```edit:\s*([^\s`]+)\r?\n(.*?)\n?```", re.DOTALL)
+EDIT_PAIR = re.compile(
+    r"^<{5,9} ?(?:SUCHEN|SEARCH)\s*\r?\n(.*?)^={5,9}\s*\r?\n(.*?)^>{5,9} ?(?:ERSETZEN|REPLACE)\s*$", re.DOTALL | re.MULTILINE
+)
+
+
+def apply_edit_blocks(project_path: Path, text: str, on_blocked=None) -> tuple[list[str], list[str]]:
+    """Wendet Suchen/Ersetzen-Blöcke (```edit: pfad) aus Modell-Antworten auf bestehende Dateien an.
+
+    Jeder Suchtext muss genau einmal vorkommen; sonst bleibt die ganze Datei unverändert und der Fehler
+    geht als Rückmeldung zurück. Pfade laufen wie bei `apply_code_blocks()` über `resolve_project_target()`.
+    Liefert (geänderte Dateien, Fehlermeldungen)."""
+    changed: list[str] = []
+    errors: list[str] = []
+    for match in EDIT_BLOCK.finditer(text):
+        rel_path = match.group(1).strip().strip("\"'")
+        target = resolve_project_target(project_path, rel_path)
+        if target is None:
+            say(f"[!] Blockiert: {rel_path} liegt außerhalb des Projektordners oder ist eine Geheimnis-Datei und wird nicht geändert.")
+            if on_blocked:
+                on_blocked(rel_path)
+            continue
+        pairs = EDIT_PAIR.findall(match.group(2))
+        if not pairs:
+            errors.append(f"{rel_path}: Block ohne gültiges SUCHEN/=======/ERSETZEN-Paar")
+            continue
+        try:
+            content = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            errors.append(f"{rel_path}: Datei existiert nicht oder ist nicht lesbar; neue Dateien vollständig als filepath-Block ausgeben")
+            continue
+        failed = ""
+        for search, replace in pairs:
+            hits = content.count(search) if search else 0
+            if hits != 1:
+                snippet = search.strip().splitlines()[0][:80] if search.strip() else "(leer)"
+                failed = f"{rel_path}: Suchtext {'nicht gefunden' if hits == 0 else f'{hits}-mal gefunden'}: {snippet!r}"
+                break
+            content = content.replace(search, replace, 1)
+        if failed:
+            errors.append(failed)
+            continue
+        try:
+            target.write_text(content, encoding="utf-8")
+        except OSError as ex:
+            errors.append(f"{rel_path}: Schreiben fehlgeschlagen ({ex})")
+            continue
+        if rel_path not in changed:
+            changed.append(rel_path)
+    return changed, errors
+
+
 def mask_secrets(text: str) -> str:
     """Schwärzt Zugangsdaten für Logs und Berichte (unabhängig vom Datenschutzschild)."""
     return redact_secrets(text)[0]
