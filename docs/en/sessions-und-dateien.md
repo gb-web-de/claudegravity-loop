@@ -6,7 +6,8 @@
 
 ```text
 <projekt>/
-├── .dual-loop/                      # git-ignored, contains only sessions/
+├── .dual-loop/                      # git-ignored
+│   ├── profile.json                 # optional project profile (see CLI reference)
 │   └── sessions/
 │       └── 20261017_153000_Baue_ein_Kundenportal/
 │           ├── state.json           # progress, roles, models, metrics
@@ -15,7 +16,8 @@
 │           ├── PLAN_v2.md           # revised version
 │           ├── PLAN_v3_manual.md    # version edited in the editor
 │           ├── INSPECTION_round1.md # the acceptance check's verdict on the finished code
-│           ├── LOG.md               # history of plan, review, acceptance check, limit switches
+│           ├── LOG.md               # history of plan, review, acceptance check, limit switches, retries
+│           ├── audit-events.jsonl   # security events (see permission audit)
 │           ├── workspace/           # the session's Git worktree (branch loop/<session>)
 │           ├── AUDIT.md             # audit report if the run ends without a completion signal
 │           └── .done                # completion signal + audit report
@@ -103,6 +105,26 @@ This context goes only to the Architect. That keeps the prompt small.
 Before a prompt goes to a cloud model (Claude, Antigravity, Gemini, Codex, Copilot or an endpoint outside the home network), ClaudeGravity replaces any credentials found in it with `[GESCHWÄRZT: …]` and reports this with 🛡️. Detected are private keys, API keys and tokens (Anthropic, OpenAI, GitHub, Google, AWS, Slack, Stripe, JWT), assignments like `PASSWORD=…` or `token: …`, passwords in URLs, valid IBANs and credit card numbers. Prompts to Ollama, LM Studio and servers on the home network stay unchanged.
 
 The shield only protects the prompt that ClaudeGravity sends itself. If a CLI like Claude Code reads files on its own during the build loop, its own rules apply. Turn it off with `--no-shield` or `CLAUDEGRAVITY_SHIELD=off`.
+
+### Logs, warnings and safe environment variables
+
+Independently of the shield, ClaudeGravity masks the same patterns in `LOG.md`, `audit-events.jsonl` and the build logs under `logs/`. Plans, reviews and acceptance checks in the session folder stay unchanged, because the next steps reuse them verbatim; the session folder is git-ignored.
+
+If the task itself contains credentials, the loop says so at start; with the shield off it also names the cloud models that receive them in plain text. If a model answer contains credentials, an audit event is raised (see below).
+
+Credentials do not belong in the task, a profile or the repository, but in environment variables: `CLAUDEGRAVITY_API_KEY` for your own endpoints, and your project's own variables for the project (e.g. `.env`, which endpoint builders may not write). In the task, the variable name is enough, for example "read the key from `STRIPE_KEY`".
+
+## Permission audit
+
+Architect, reviewer and acceptance check run with read-only flags (Claude: only the Read, Glob and Grep tools, Codex: `-s read-only`). Since not every CLI has such a flag (Antigravity, Gemini, Copilot), the loop also checks: it compares the Git state of the working folder before and after every call of a read-only role. If a file changes, it reports this with 🛑 and records it. It does not undo anything, because you might have been working in the project at the same time.
+
+| Event | When |
+| :--- | :--- |
+| Blocked write attempt | An endpoint builder tries to write outside the project, into `.git/`, into secret files or into `.dual-loop/profile.json`. |
+| Change by read-only role | The working folder changed during plan, review or acceptance check (Git projects only). |
+| Possible credentials in model answer | An answer contains patterns such as API keys, tokens or passwords. |
+
+Every event is written to `LOG.md` and as a JSON line to `audit-events.jsonl` in the session folder; the count per kind appears in the audit block of `.done`.
 
 ## Mirrored projects (`projects/`)
 

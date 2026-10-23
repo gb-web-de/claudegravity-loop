@@ -6,7 +6,8 @@
 
 ```text
 <projekt>/
-├── .dual-loop/                      # git-ignoriert, enthält nur sessions/
+├── .dual-loop/                      # git-ignoriert
+│   ├── profile.json                 # optionales Projekt-Profil (siehe CLI-Referenz)
 │   └── sessions/
 │       └── 20261017_153000_Baue_ein_Kundenportal/
 │           ├── state.json           # Fortschritt, Rollen, Modelle, Metriken
@@ -15,7 +16,8 @@
 │           ├── PLAN_v2.md           # überarbeitete Version
 │           ├── PLAN_v3_manual.md    # im Editor geänderte Version
 │           ├── INSPECTION_round1.md # Urteil der Abnahme über den fertigen Code
-│           ├── LOG.md               # Verlauf von Plan, Review, Abnahme, Limit-Wechseln
+│           ├── LOG.md               # Verlauf von Plan, Review, Abnahme, Limit-Wechseln, Neuversuchen
+│           ├── audit-events.jsonl   # Sicherheitsereignisse (siehe Rechte-Audit)
 │           ├── workspace/           # Git-Worktree der Session (Branch loop/<session>)
 │           ├── AUDIT.md             # Audit-Bericht, wenn der Lauf ohne Fertigmeldung endet
 │           └── .done                # Fertigmeldung + Audit-Bericht
@@ -103,6 +105,26 @@ Dieser Kontext geht nur an den Architekten. So bleibt der Prompt klein.
 Bevor ein Prompt an ein Cloud-Modell geht (Claude, Antigravity, Gemini, Codex, Copilot oder ein Endpunkt außerhalb des Heimnetzes), ersetzt ClaudeGravity darin gefundene Zugangsdaten durch `[GESCHWÄRZT: …]` und meldet das mit 🛡️. Erkannt werden private Schlüssel, API-Keys und Tokens (Anthropic, OpenAI, GitHub, Google, AWS, Slack, Stripe, JWT), Zuweisungen wie `PASSWORD=…` oder `token: …`, Passwörter in URLs, gültige IBANs und Kreditkartennummern. Prompts an Ollama, LM Studio und Server im Heimnetz bleiben unverändert.
 
 Der Schild schützt nur den Prompt, den ClaudeGravity selbst verschickt. Liest eine CLI wie Claude Code im Bau-Loop selbst Dateien, gelten deren eigene Regeln. Ausschalten mit `--no-shield` oder `CLAUDEGRAVITY_SHIELD=off`.
+
+### Logs, Warnungen und sichere Umgebungsvariablen
+
+Unabhängig vom Schild schwärzt ClaudeGravity dieselben Muster in `LOG.md`, `audit-events.jsonl` und den Bau-Logs unter `logs/`. Pläne, Reviews und Abnahmen im Session-Ordner bleiben unverändert, weil die nächsten Schritte sie wörtlich weiterverwenden; der Session-Ordner ist git-ignoriert.
+
+Enthält die Aufgabe selbst Zugangsdaten, meldet der Loop das beim Start; bei ausgeschaltetem Schild mit dem Hinweis, an welche Cloud-Modelle sie im Klartext gehen. Enthält eine Modellantwort Zugangsdaten, gibt es eine Audit-Meldung (siehe unten).
+
+Zugangsdaten gehören nicht in Aufgabe, Profil oder Repository, sondern in Umgebungsvariablen: `CLAUDEGRAVITY_API_KEY` für eigene Endpunkte, für dein Projekt dessen eigene Variablen (z. B. `.env`, das Endpunkt-Bauleiter nicht schreiben dürfen). In der Aufgabe reicht der Name der Variablen, etwa „lies den Schlüssel aus `STRIPE_KEY`“.
+
+## Rechte-Audit
+
+Architekt, Prüfstatiker und Abnahme laufen mit Lese-Flags (Claude: nur die Werkzeuge Read, Glob und Grep, Codex: `-s read-only`). Weil nicht jede CLI so ein Flag hat (Antigravity, Gemini, Copilot), prüft der Loop zusätzlich: Er vergleicht vor und nach jedem Aufruf einer lesenden Rolle den Git-Stand des Arbeitsordners. Ändert sich eine Datei, meldet er das mit 🛑 und hält es fest. Rückgängig macht er nichts, weil auch du gerade im Projekt gearbeitet haben könntest.
+
+| Ereignis | Wann |
+| :--- | :--- |
+| Blockierter Schreibversuch | Ein Endpunkt-Bauleiter will außerhalb des Projekts, in `.git/`, in Geheimnis-Dateien oder in `.dual-loop/profile.json` schreiben. |
+| Änderung durch lesende Rolle | Der Arbeitsordner hat sich während Plan, Review oder Abnahme geändert (nur in Git-Projekten). |
+| Mögliche Zugangsdaten in Modellantwort | Eine Antwort enthält Muster wie API-Keys, Tokens oder Passwörter. |
+
+Jedes Ereignis steht in `LOG.md` und als JSON-Zeile in `audit-events.jsonl` im Session-Ordner; die Anzahl je Art erscheint im Audit-Block der `.done`.
 
 ## Gespiegelte Projekte (`projects/`)
 

@@ -262,6 +262,10 @@ class SessionMetrics:
         self.cost_usd = 0.0
         self.by_agent: dict[str, dict] = {}
         self.retries = {"attempts": 0, "recovered": 0, "exhausted": 0}
+        self.audit_events: dict[str, int] = {}
+
+    def note_audit(self, kind: str):
+        self.audit_events[kind] = self.audit_events.get(kind, 0) + 1
 
     def note_retry(self, outcome: str):
         """outcome: attempts (Neuversuch gestartet), recovered (danach erfolgreich), exhausted (aufgegeben)."""
@@ -318,6 +322,7 @@ class SessionMetrics:
             "cost_usd": round(self.cost_usd, 4),
             "by_agent": self.by_agent,
             "retries": self.retries,
+            "audit_events": self.audit_events,
         }
 
     @classmethod
@@ -331,6 +336,7 @@ class SessionMetrics:
         m.cost_usd = data.get("cost_usd", 0.0)
         m.by_agent = data.get("by_agent", {})
         m.retries.update(data.get("retries") or {})
+        m.audit_events.update(data.get("audit_events") or {})
         return m
 
 
@@ -363,6 +369,10 @@ def format_metrics_report(metrics: SessionMetrics) -> str:
     if metrics.retries.get("attempts"):
         r = metrics.retries
         lines.append(f"* **Automatische Neuversuche:** {r['attempts']} (danach erfolgreich: {r.get('recovered', 0)}, aufgegeben: {r.get('exhausted', 0)})")
+    if metrics.audit_events:
+        lines.append("* **Sicherheitsereignisse** (Details in `LOG.md` und `audit-events.jsonl`):")
+        for kind, count in sorted(metrics.audit_events.items()):
+            lines.append(f"  * {AUDIT_EVENT_LABELS.get(kind, kind)}: {count}")
     lines.append(f"* **Audit-Zeitstempel:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
     return "\n".join(lines)
@@ -1077,7 +1087,7 @@ def resolve_project_target(project_path: Path, rel_path: str) -> Path | None:
     return target
 
 
-def apply_code_blocks(project_path: Path, text: str) -> list[str]:
+def apply_code_blocks(project_path: Path, text: str, on_blocked=None) -> list[str]:
     """Extrahiert Code-Blöcke mit Dateipfaden aus Modell-Antworten und schreibt sie auf die Festplatte.
 
     Es wird ausschließlich innerhalb des Projektordners geschrieben: absolute Pfade, `..`-Ausbrüche,
@@ -1092,6 +1102,8 @@ def apply_code_blocks(project_path: Path, text: str) -> list[str]:
         target = resolve_project_target(project_path, rel_path)
         if target is None:
             print(f"[!] Blockiert: {rel_path} liegt außerhalb des Projektordners oder ist eine Geheimnis-Datei und wird nicht geschrieben.")
+            if on_blocked:
+                on_blocked(rel_path)
             return
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1498,12 +1510,74 @@ def plan_diff(old: str, new: str) -> str:
     ))
 
 
+def mask_secrets(text: str) -> str:
+    """Schwärzt Zugangsdaten für Logs und Berichte (unabhängig vom Datenschutzschild)."""
+    return redact_secrets(text)[0]
+
+
 def append_log(session_dir: Path, line: str) -> None:
+    line = mask_secrets(line)
     try:
         with open(session_dir / "LOG.md", "a", encoding="utf-8") as f:
             f.write(f"- [{datetime.datetime.now().strftime('%H:%M:%S')}] {line}\n")
     except OSError:
         pass
+
+
+AUDIT_EVENT_LABELS = {
+    "blocked_write": "Blockierter Schreibversuch",
+    "readonly_changed": "Änderung durch lesende Rolle",
+    "secret_in_output": "Mögliche Zugangsdaten in Modellantwort",
+}
+
+
+def record_audit_event(session_dir: Path | None, kind: str, detail: str, metrics: "SessionMetrics | None" = None) -> None:
+    """Hält Sicherheitsereignisse fest: LOG.md, audit-events.jsonl im Session-Ordner und Zähler im .done-Audit."""
+    detail = mask_secrets(detail)
+    label = AUDIT_EVENT_LABELS.get(kind, kind)
+    print(f"🛑 Audit: {label}: {detail}")
+    if metrics is not None:
+        metrics.note_audit(kind)
+    if session_dir is None:
+        return
+    append_log(session_dir, f"🛑 Audit: {label}: {detail}")
+    try:
+        with open(session_dir / "audit-events.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"time": datetime.datetime.now().isoformat(timespec="seconds"), "kind": kind, "detail": detail}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def workspace_fingerprint(path: Path) -> dict | None:
+    """Stand des Arbeitsverzeichnisses (geänderte und neue Dateien mit Größe und Zeitstempel); None ohne Git."""
+    try:
+        res = subprocess.run(
+            ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+            cwd=str(path), capture_output=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0:
+        return None
+    state: dict = {}
+    for entry in res.stdout.decode("utf-8", "replace").split("\0"):
+        if len(entry) < 4:
+            continue
+        rel = entry[3:]
+        if rel.startswith(".dual-loop/") or rel == ".dual-loop":
+            continue  # Arbeitsordner des Loops selbst
+        try:
+            st = (path / rel).stat()
+            state[rel] = (entry[:2], st.st_size, st.st_mtime_ns)
+        except OSError:
+            state[rel] = (entry[:2], None, None)
+    return state
+
+
+def fingerprint_changes(before: dict | None, after: dict | None) -> list[str]:
+    if before is None or after is None:
+        return []
+    return sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
 
 
 def model_report(agent: "AgentCLI") -> str:
@@ -1643,7 +1717,18 @@ def safe_agent_run(
     attempt = 0
     while not STOP_REQUESTED:
         try:
+            watch = role != "builder"
+            before = workspace_fingerprint(cwd) if watch else None
             res = agent.run(prompt, cwd=cwd, extra_flags=flags)
+            tracker = metrics_tracker or agent.metrics_tracker
+            if watch:
+                changed = fingerprint_changes(before, workspace_fingerprint(cwd))
+                if changed:
+                    shown = ", ".join(changed[:5]) + (f" (+{len(changed) - 5})" if len(changed) > 5 else "")
+                    record_audit_event(session_dir, "readonly_changed", f"{agent.name} als {role}: {shown}", tracker)
+            found = redact_secrets(res)[1] if isinstance(res, str) else []
+            if found:
+                record_audit_event(session_dir, "secret_in_output", f"{agent.name} ({role}): {', '.join(found)}", tracker)
             if attempt and metrics_tracker:
                 metrics_tracker.note_retry("recovered")
             if attempt:
@@ -3417,6 +3502,16 @@ def main():
         print(f"[*] Rollen-Status     : 🔄 Rollen getauscht (--swap)")
     if use_worktree:
         print(f"[*] Git-Workspace     : 🌿 eigener Worktree pro Session" + (" (Merge nach .done)" if merge_worktree else ""))
+    task_secrets = redact_secrets(task)[1]
+    if task_secrets:
+        cloud_roles = [a.name for a in (planner, reviewer, builder) if not a.local]
+        if SHIELD_ENABLED:
+            print(f"🛡️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}); sie werden vor dem Versand an Cloud-Modelle geschwärzt.")
+        elif cloud_roles:
+            print(f"⚠️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}) und der Datenschutzschild ist aus: "
+                  f"sie gehen im Klartext an {', '.join(dict.fromkeys(cloud_roles))}. Besser als Umgebungsvariable übergeben.")
+        append_log(session_dir, f"Aufgabe enthält mögliche Zugangsdaten: {', '.join(task_secrets)}")
+
     # Etappen-Modus: hängt vom Bauleiter ab, der in Phase 3 tatsächlich baut
     expected_builder = builder.binary if (args.builder or strat == "local-free") else planner.binary
     stage_pref = (state.get("stage_mode") if args.resume else None) or args.etappen
@@ -3738,7 +3833,10 @@ def main():
                 print(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [{stage_label}]:")
                 print(res)
                 if is_endpoint_builder:
-                    written = apply_code_blocks(work_path, res)
+                    written = apply_code_blocks(
+                        work_path, res,
+                        on_blocked=lambda rel: record_audit_event(session_dir, "blocked_write", f"{builder.name} wollte {rel} schreiben", session_metrics),
+                    )
                     for w in written:
                         if w not in written_so_far:
                             written_so_far.append(w)
@@ -3746,7 +3844,7 @@ def main():
                         print(f"\n📝 {len(written)} Datei(en) geschrieben: {', '.join(written)}")
                     state["written_files"] = written_so_far
                 with open(session_log, "a", encoding="utf-8") as f_log:
-                    f_log.write(f"\n{'='*20} Iteration {iteration} · {stage_label} {'='*20}\n{res}\n")
+                    f_log.write(f"\n{'='*20} Iteration {iteration} · {stage_label} {'='*20}\n{mask_secrets(res)}\n")
                 if proof_cmd:
                     ok, output = run_proof(proof_cmd, work_path)
                 else:
@@ -3879,7 +3977,10 @@ def main():
             state["pending_feedback"] = ""
 
             if is_endpoint_builder:
-                written = apply_code_blocks(work_path, res)
+                written = apply_code_blocks(
+                    work_path, res,
+                    on_blocked=lambda rel: record_audit_event(session_dir, "blocked_write", f"{builder.name} wollte {rel} schreiben", session_metrics),
+                )
                 for w in written:
                     if w not in written_so_far:
                         written_so_far.append(w)
@@ -3891,7 +3992,7 @@ def main():
 
             with open(session_log, "a", encoding="utf-8") as f_log:
                 f_log.write(log_header)
-                f_log.write(res + "\n")
+                f_log.write(mask_secrets(res) + "\n")
 
         except Exception as exc:
             print(f"[!] Fehler bei Iteration {iteration}: {exc}")

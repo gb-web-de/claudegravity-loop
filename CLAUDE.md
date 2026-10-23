@@ -27,6 +27,7 @@ Er basiert auf dem Prinzip des [claudex-loop](https://github.com/chaseai-yt/clau
 - Token-Schonung hat oberste Priorität: Übergib nur den Plan oder relevante Diffs, keine aufgeblähten Chat-Historien.
 - Sicherheit:
   - Modell-Ausgaben sind nicht vertrauenswürdig. Dateien aus Antworten werden nur über `resolve_project_target()` innerhalb des Projektordners geschrieben (keine absoluten Pfade, kein `..`, kein `.git/`, keine Geheimnis-Dateien wie `.env`, `.ssh/` oder `*.key`).
+  - Lesende Rollen werden zusätzlich überwacht: Ändert sich der Git-Stand während Plan, Review oder Abnahme, oder blockiert `resolve_project_target()` einen Schreibversuch, landet das über `record_audit_event()` in `LOG.md`, `audit-events.jsonl` und im `.done`-Audit. Logs werden mit `mask_secrets()` geschwärzt.
   - Prozesse immer mit Argumentlisten und ohne `shell=True` starten. Unter Windows löst `build_cli_command()` npm-`.cmd`-Shims direkt auf; Aufgabentexte dürfen nie in einen Shell-String gelangen.
 - Tests vor jedem Commit: `python -m unittest discover -s tests`. Neue Funktionen bekommen einen Test in `tests/`.
 - Sobald eine autonome Aufgabe erfolgreich abgeschlossen ist, erstelle die Datei `.done` im jeweiligen Session-Ordner (`.dual-loop/sessions/<session>/.done`) und NICHT im Projekt-Hauptverzeichnis.
