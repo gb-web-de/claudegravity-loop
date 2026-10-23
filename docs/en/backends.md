@@ -127,6 +127,8 @@ To make it permanent, use `export CLAUDEGRAVITY_ENDPOINT="http://<server>:11434/
 
 > [!NOTE]
 > Small models on weak hardware (e.g. 7B on a CPU) take several minutes for a longer file. Endpoints on the home network therefore get 900 seconds per round, cloud endpoints 180. If that is not enough: `--timeout 1800` or `CLAUDEGRAVITY_TIMEOUT=1800`. `localhost`, private IPs and hostnames without a dot or ending in `.local`, `.lan`, `.fritz.box`, `.home.arpa`, `.internal` count as home network; they appear in the audit at €0.
+>
+> CLIs (`claude`, `codex`, `agy` …) have their own time limit of 3600 seconds per call, so a hung process cannot block the loop forever. Change it with `CLAUDEGRAVITY_CLI_TIMEOUT=<seconds>`, `0` turns it off. An exceeded CLI time limit is not retried automatically.
 
 ### How endpoint builders write files
 

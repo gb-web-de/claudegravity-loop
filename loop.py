@@ -651,6 +651,15 @@ def build_cli_command(binary: str, args: list[str]) -> tuple[list[str] | str, bo
     return " ".join([quote_cmd_arg(str(resolved))] + [quote_cmd_arg(a) for a in args]), True
 
 
+CLI_TIMEOUT_DEFAULT = 3600  # Sekunden je CLI-Aufruf; ein Bau-Lauf darf lange dauern, aber nicht ewig hängen
+
+
+def cli_timeout() -> int | None:
+    raw = os.environ.get("CLAUDEGRAVITY_CLI_TIMEOUT", "")
+    value = int(raw) if raw.strip().isdigit() else CLI_TIMEOUT_DEFAULT
+    return value or None
+
+
 def _exec_cli(binary: str, args: list[str], cwd: Path | None = None, stdin: str | None = None) -> str:
     """Startet eine CLI. Prompts gehen über stdin, damit sie weder in der Prozessliste
     auftauchen noch an der Windows-Längengrenze (~32 KB) abgeschnitten werden."""
@@ -660,10 +669,17 @@ def _exec_cli(binary: str, args: list[str], cwd: Path | None = None, stdin: str 
         raise RuntimeError(
             f"{binary}: {ex} Installiere die native Version (z.B. {binary}.exe) statt eines .bat-Wrappers."
         ) from ex
-    res = subprocess.run(
-        cmd, cwd=str(cwd) if cwd else None, input=stdin, capture_output=True,
-        text=True, encoding="utf-8", errors="replace", shell=use_shell
-    )
+    try:
+        res = subprocess.run(
+            cmd, cwd=str(cwd) if cwd else None, input=stdin, capture_output=True,
+            text=True, encoding="utf-8", errors="replace", shell=use_shell, timeout=cli_timeout()
+        )
+    except subprocess.TimeoutExpired:
+        # Kein automatischer Neuversuch: Ein hängender Bau-Lauf würde sonst stundenlang wiederholt.
+        raise RuntimeError(
+            f"{binary}: CLI-Zeitlimit von {cli_timeout()} s überschritten. "
+            f"Mehr Zeit mit CLAUDEGRAVITY_CLI_TIMEOUT=<Sekunden> (0 = ohne Limit)."
+        )
     if res.returncode != 0:
         err_msg = res.stderr.strip() or res.stdout.strip() or f"Fehlercode {res.returncode}"
         if is_rate_limit(err_msg):
@@ -683,6 +699,8 @@ def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags:
     raw = _exec_cli(binary, args, cwd, stdin=prompt)
     try:
         data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise json.JSONDecodeError("kein Objekt", raw, 0)
         if data.get("is_error"):
             err_msg = data.get("result") or data.get("api_error_status") or "Unbekannter Fehler"
             if is_rate_limit(str(err_msg)):
@@ -691,15 +709,15 @@ def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags:
                 raise RateLimitError(binary, str(err_msg), r_time, r_secs)
             raise RuntimeError(f"Claude Fehler: {err_msg}")
 
-        text = data.get("result", "")
-        usage = data.get("usage", {})
-        inp = usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
-        out = usage.get("output_tokens", 0)
+        text = data.get("result") or ""
+        usage = data.get("usage") or {}
+        inp = (usage.get("input_tokens") or 0) + (usage.get("cache_creation_input_tokens") or 0) + (usage.get("cache_read_input_tokens") or 0)
+        out = usage.get("output_tokens") or 0
         tot = inp + out
-        cost = float(data.get("total_cost_usd", 0.0))
+        cost = float(data.get("total_cost_usd") or 0.0)
 
         model_name = None
-        model_usage = data.get("modelUsage", {})
+        model_usage = data.get("modelUsage") or {}
         if model_usage:
             model_name = list(model_usage.keys())[0]
         if not model_name:
@@ -737,6 +755,8 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
     raw = _exec_cli(binary, args, cwd)
     try:
         data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise json.JSONDecodeError("kein Objekt", raw, 0)
         if data.get("status") == "ERROR":
             err_msg = data.get("response") or "Unbekannter Fehler"
             if is_rate_limit(str(err_msg)):
@@ -745,15 +765,15 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
                 raise RateLimitError(binary, str(err_msg), r_time, r_secs)
             raise RuntimeError(f"Antigravity Fehler: {err_msg}")
 
-        text = data.get("response", "")
-        usage = data.get("usage", {})
-        inp = usage.get("input_tokens", 0)
-        out = usage.get("output_tokens", 0)
-        tot = usage.get("total_tokens", inp + out)
+        text = data.get("response") or ""
+        usage = data.get("usage") or {}
+        inp = usage.get("input_tokens") or 0
+        out = usage.get("output_tokens") or 0
+        tot = usage.get("total_tokens") or (inp + out)
 
         model_name = extract_flag_value(extra_flags, "--model")
         effort_val = extract_flag_value(extra_flags, "--effort")
-        if not effort_val and usage.get("thinking_tokens", 0) > 0:
+        if not effort_val and (usage.get("thinking_tokens") or 0) > 0:
             effort_val = f"high ({usage['thinking_tokens']} thinking tokens)"
 
         metrics = {
@@ -1120,15 +1140,20 @@ def _exec_openai_api(
 
     try:
         with urllib.request.urlopen(req, timeout=endpoint_timeout(endpoint_url)) as resp:
-            resp_body = resp.read().decode("utf-8")
-            data = json.loads(resp_body)
+            resp_body = resp.read().decode("utf-8", errors="replace")
+            try:
+                data = json.loads(resp_body)
+            except json.JSONDecodeError:
+                raise RuntimeError(f"Leere Antwort vom Endpunkt {endpoint_url} (kein JSON): {resp_body[:200]}")
+            if not isinstance(data, dict):
+                raise RuntimeError(f"Leere Antwort vom Endpunkt {endpoint_url}: {resp_body[:200]}")
 
             choices = data.get("choices", [])
             if not choices:
                 raise RuntimeError(f"Leere Antwort vom Endpunkt {endpoint_url}: {resp_body[:200]}")
 
-            text = choices[0].get("message", {}).get("content", "")
-            usage = data.get("usage", {})
+            text = ((choices[0] or {}).get("message") or {}).get("content") or ""
+            usage = data.get("usage") or {}
             inp = usage.get("prompt_tokens") or len(prompt) // 4
             out = usage.get("completion_tokens") or len(text) // 4
             tot = usage.get("total_tokens") or (inp + out)
@@ -1160,6 +1185,8 @@ def _exec_openai_api(
         raise RuntimeError(f"API-Fehler an {endpoint_url}: {err_msg}")
     except urllib.error.URLError as url_err:
         raise RuntimeError(f"Verbindungsfehler zu {endpoint_url}: {url_err.reason}")
+    except ConnectionError as conn_err:
+        raise RuntimeError(f"Verbindungsfehler zu {endpoint_url}: {conn_err}")
     except TimeoutError:
         raise RuntimeError(
             f"Zeitüberschreitung nach {endpoint_timeout(endpoint_url)} s bei {endpoint_url}. "
@@ -2754,7 +2781,7 @@ ERROR_PATTERNS = [
     ("CG-1002", r"Agent-CLI '.*' ist nicht verfügbar"),
     ("CG-1203", r"HTTP 40[13]\b|unauthori[sz]ed|not logged in|nicht angemeldet|please (?:log ?in|login)|authentication"),
     ("CG-1204", r"HTTP 404\b|model .*not found|Modell .*nicht gefunden"),
-    ("CG-1202", r"Zeitüberschreitung|timed? ?out"),
+    ("CG-1202", r"Zeitüberschreitung|Zeitlimit|timed? ?out"),
     ("CG-1201", r"Verbindungsfehler|connection (?:refused|reset)|Name or service not known|getaddrinfo"),
     ("CG-1205", r"Leere Antwort|JSONDecodeError|Expecting value"),
     ("CG-1206", r"Fehler \(Code \d+\)|(?:Claude|Antigravity|Codex) Fehler"),

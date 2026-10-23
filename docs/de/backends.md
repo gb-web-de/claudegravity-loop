@@ -127,6 +127,8 @@ Dauerhaft geht es mit `export CLAUDEGRAVITY_ENDPOINT="http://<server>:11434/v1"`
 
 > [!NOTE]
 > Kleine Modelle auf schwacher Hardware (z. B. 7B auf einer CPU) brauchen für eine längere Datei mehrere Minuten. Endpunkte im Heimnetz bekommen deshalb 900 Sekunden pro Runde, Cloud-Endpunkte 180. Reicht das nicht: `--timeout 1800` oder `CLAUDEGRAVITY_TIMEOUT=1800`. Als Heimnetz gelten `localhost`, private IPs und Rechnernamen ohne Punkt oder mit `.local`, `.lan`, `.fritz.box`, `.home.arpa`, `.internal`; sie stehen im Audit mit 0 €.
+>
+> CLIs (`claude`, `codex`, `agy` …) haben ein eigenes Zeitlimit von 3600 Sekunden je Aufruf, damit ein hängender Prozess den Loop nicht ewig blockiert. Ändern mit `CLAUDEGRAVITY_CLI_TIMEOUT=<Sekunden>`, `0` schaltet es ab. Ein überschrittenes CLI-Zeitlimit wird nicht automatisch wiederholt.
 
 ### Wie Endpunkt-Bauleiter Dateien schreiben
 
