@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "claudegravity": {
+      "command": "python3",
+      "args": ["${PLUGIN_ROOT}/mcp_server.py"],
+      "env": { "PYTHONIOENCODING": "utf-8", "CLAUDEGRAVITY_HOST": "agy" }
+    }
+  }
+}

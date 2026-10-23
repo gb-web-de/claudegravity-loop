@@ -6,6 +6,8 @@
 
 ## Registering
 
+**Even simpler:** as a [plugin](plugins.md), Claude Code, Codex, Antigravity, Copilot CLI, Cursor and Gemini CLI get the server plus skill and commands with one command.
+
 ### Easiest: the installer
 
 ```bash

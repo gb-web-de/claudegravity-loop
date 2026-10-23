@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "claudegravity",
+  "description": "Plan, Review, Bau und Abnahme mit getrennten KI-Anbietern (Claude, Antigravity, Codex, Ollama, eigene Server): kein Modell benotet sich selbst."
+}

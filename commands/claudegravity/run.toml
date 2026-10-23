@@ -1,0 +1,12 @@
+description = "Aufgabe mit ClaudeGravity bauen lassen (Plan, Review, Bau, Abnahme mit getrennten Anbietern)"
+prompt = """
+Baue diese Aufgabe mit ClaudeGravity: {{args}}
+
+1. Ermittle den absoluten Pfad des aktuellen Projekts und den Prüfbefehl des Repos (Tests, z. B. aus README, `package.json`, `pyproject.toml` oder `Makefile`). Ohne Prüfbefehl frag einmal nach.
+2. Rufe das MCP-Tool `claudegravity_optimize` mit `task`, `project_path` (absolut) und `proof` auf. Vorgaben des Nutzers zu Rollen, Modellen oder `priority` übernimmst du unverändert.
+3. Zeige die Rollen (Architekt, Prüfstatiker, Bauleiter, Abnahme) und den Befehl und frag, ob gestartet werden soll.
+4. Nach dem OK startest du mit `claudegravity_run` und denselben Parametern sowie `background: true`. `yolo` setzt du nur, wenn der Nutzer es ausdrücklich will.
+5. Sieh mit `claudegravity_status` nach und berichte Rollen, Prüfergebnis, Urteil der Abnahme und offene Punkte. Fertig ist die Aufgabe erst, wenn die Session eine `.done` hat.
+
+Ist das MCP-Tool nicht verfügbar, folge dem Skill `claudegravity` und starte `claudegravity` im Terminal.
+"""

@@ -1,0 +1,11 @@
+{
+  "name": "claudegravity",
+  "version": "1.0.0",
+  "description": "Plan, Review, Bau und Abnahme mit getrennten KI-Anbietern (Claude, Antigravity, Codex, Ollama, eigene Server): kein Modell benotet sich selbst.",
+  "author": { "name": "gb-web-de", "url": "https://github.com/gb-web-de" },
+  "license": "MIT",
+  "keywords": ["loop", "multi-model", "code-review", "ollama", "mcp"],
+  "skills": "./skills/",
+  "commands": "./commands/",
+  "mcpServers": "./.cursor-plugin/mcp.json"
+}

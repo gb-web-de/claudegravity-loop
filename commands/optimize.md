@@ -1,0 +1,8 @@
+---
+description: Beste Rollenverteilung und den fertigen claudegravity-Befehl für eine Aufgabe ermitteln, ohne zu starten
+argument-hint: <Aufgabe>
+---
+
+Ermittle mit ClaudeGravity die beste Rollenverteilung für: $ARGUMENTS
+
+Rufe das MCP-Tool `claudegravity_optimize` mit `task`, dem absoluten Pfad des aktuellen Projekts als `project_path` und, falls bekannt, dem Prüfbefehl des Repos als `proof` auf. Vorgaben des Nutzers zu Rollen, Modellen oder `priority` (`auto`, `best-code`, `lowest-cost`, `local-free`, `hybrid`, `balanced`) gibst du unverändert weiter. Zeige danach die Rollen mit Modellen und den Befehl zum Kopieren. Starte nichts.

@@ -54,6 +54,7 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 * **Token- & Kosten-Audit** pro Rolle, Modell und Effort in der `.done`-Datei, mit Kennzahlen (Kosten je Aufgabe, Runden bis Erfolg, Nacharbeitsquote) zum Vergleichen von Sessions.
 * **Robust & nachvollziehbar:** automatische Neuversuche mit Backoff bei Überlastung und Netzfehlern; geschwärzte Logs und ein Audit, wenn eine lesende Rolle doch schreibt.
 * **MCP-Server** (`mcp_server.py`), mit dem Claude Code & Co. den optimalen Befehl berechnen und starten. → [MCP-Server](docs/de/mcp-server.md)
+* **Plugins** für Claude Code, Codex, Antigravity, Copilot CLI, Cursor und Gemini CLI: ein Befehl, z. B. `/plugin marketplace add gb-web-de/claudegravity-loop`, bringt MCP-Server, Skill und `/claudegravity:run`. → [Plugins](docs/de/plugins.md)
 
 ## Dokumentation
 
@@ -69,6 +70,7 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 | [Ollama & Codex](docs/de/ollama-und-codex.md) | Rollenbeispiele mit lokalem Ollama und Codex, Modelle für Mac M4 48 GB |
 | [CLI-Referenz](docs/de/cli-referenz.md) | Alle Flags |
 | [MCP-Server](docs/de/mcp-server.md) | Registrierung, Tools, Optimizer |
+| [Plugins](docs/de/plugins.md) | Claude Code, Codex, Antigravity, Copilot CLI, Cursor, Gemini CLI |
 | [Sessions & Dateien](docs/de/sessions-und-dateien.md) | `.dual-loop/`, `state.json`, `.done`, Projektkontext |
 | [Sicherheit](docs/de/sicherheit.md) | Bedrohungsmodell, Schutzmaßnahmen, Empfehlungen |
 | [Fehlerbehebung](docs/de/fehlerbehebung.md) | Entscheidungsbaum, Fehlercodes CG-xxxx, häufige Probleme, bekannte Einschränkungen |
@@ -96,7 +98,14 @@ Not sure? `claudegravity init` asks three questions and saves a profile; `--dry-
 
 Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md). Threat model: [Security](docs/en/sicherheit.md).
 
-MCP server for Claude Code:
+Plugins for Claude Code, Codex, Antigravity, Copilot CLI, Cursor and Gemini CLI bundle the MCP server, the skill and `run`/`optimize`/`status` commands: [Plugins](docs/en/plugins.md). In Claude Code:
+
+```bash
+/plugin marketplace add gb-web-de/claudegravity-loop
+/plugin install claudegravity@claudegravity
+```
+
+MCP server for Claude Code without the plugin:
 
 ```bash
 claude mcp add claudegravity -- python3 /path/to/claudegravity-loop/mcp_server.py

@@ -6,6 +6,8 @@
 
 ## Registrieren
 
+**Noch einfacher:** Als [Plugin](plugins.md) bringen Claude Code, Codex, Antigravity, Copilot CLI, Cursor und Gemini CLI den Server samt Skill und Befehlen mit einem Befehl mit.
+
 ### Am einfachsten: Installer
 
 ```bash

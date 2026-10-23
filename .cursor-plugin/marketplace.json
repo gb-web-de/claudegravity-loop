@@ -1,0 +1,5 @@
+{
+  "name": "claudegravity",
+  "owner": { "name": "gb-web-de", "url": "https://github.com/gb-web-de" },
+  "plugins": [{ "name": "claudegravity", "source": "." }]
+}
