@@ -130,10 +130,14 @@ def compose_build_prompt(
     file_ctx: str = "",
     stage: tuple[str, str, str] | None = None,
     rel_done_path: Path | None = None,
+    resumed: bool = False,
 ) -> str:
     """Prompt für eine Bau-Runde. `stage` = (Bezeichnung, Etappentext, Liste erledigter Etappen) im Etappen-Modus;
     sonst baut der Bauleiter den ganzen Plan und legt selbst die Fertigmeldung unter `rel_done_path` an.
-    Endpunkte bekommen Plan und Dateistand als Text, weil sie keine Dateien öffnen können."""
+    Endpunkte bekommen Plan und Dateistand als Text, weil sie keine Dateien öffnen können.
+    `resumed`: Der Bauleiter setzt seine Sitzung fort und kennt Aufgabe und Plan schon; er bekommt nur den neuen Teil."""
+    if resumed and not endpoint:
+        return compose_resume_prompt(plan_ref, proof_cmd, feedback, stage, rel_done_path)
     if stage is not None:
         label, text, done_list = stage
         prompt = (
@@ -185,6 +189,45 @@ def compose_build_prompt(
     return prompt
 
 
+def compose_resume_prompt(
+    plan_ref: Path,
+    proof_cmd: str | None,
+    feedback: str,
+    stage: tuple[str, str, str] | None,
+    rel_done_path: Path | None,
+) -> str:
+    """Kurzer Prompt für eine fortgesetzte Bauleiter-Sitzung: Rückmeldung und nächster Schritt, ohne Aufgabe und Plan."""
+    prompt = f"Weiter in deiner Bau-Sitzung für den genehmigten Plan ({plan_ref}). Aufgabe und Plan kennst du aus dieser Sitzung.\n\n"
+    if feedback:
+        prompt += f"RÜCKMELDUNG AUS DER LETZTEN RUNDE (zuerst beheben):\n{feedback}\n\n"
+    if stage is not None:
+        label, text, done_list = stage
+        prompt += (
+            f"Bereits erledigt:\n{done_list}\n\nJETZT NUR {label.upper()}: {text}\n\n"
+            f"Lass erledigte Etappen funktionsfähig und lege KEINE Fertigmeldung (.done) an.\n"
+        )
+        if proof_cmd:
+            prompt += f"Danach führt der Loop `{proof_cmd}` aus; er muss grün sein.\n"
+        return prompt
+    if not feedback:
+        prompt += "Setze die noch offenen Punkte des Plans um und teste sie.\n\n"
+    if proof_cmd:
+        prompt += f"Der Loop führt danach `{proof_cmd}` selbst aus.\n"
+    prompt += f"Wenn alles erfüllt und getestet ist, lege die Fertigmeldung unter '{rel_done_path}' an (nicht im Projekt-Hauptverzeichnis)."
+    return prompt
+
+
+# Bauleiter-CLIs, deren Sitzung der Loop über Bau-Runden fortsetzen kann (spart das erneute Einlesen des Projekts)
+RESUMABLE_BUILDERS = {"claude", "codex"}
+
+
+def builder_resume_flags(builder: "AgentCLI", enabled: bool = True) -> list[str]:
+    """Flags zum Fortsetzen der letzten Bauleiter-Sitzung, oder [] wenn das nicht geht oder abgeschaltet ist."""
+    if not enabled or builder.binary not in RESUMABLE_BUILDERS or not builder.session_id:
+        return []
+    return ["--resume", builder.session_id]
+
+
 @dataclasses.dataclass
 class BuildContext:
     """Was jede Bau-Runde braucht und sich im Bau-Loop nicht ändert (außer der Liste geschriebener Dateien)."""
@@ -198,6 +241,7 @@ class BuildContext:
     auto_switch: bool
     inspector: "AgentCLI | None"
     written_so_far: list[str]
+    resume_builder: bool = True
 
 
 def run_build_call(
@@ -209,23 +253,47 @@ def run_build_call(
     wait_note: str,
     label: str,
     log_header: str,
+    full_prompt: str | None = None,
 ) -> tuple[str, "AgentCLI", list[str], list[str]]:
     """Ein Aufruf des Bauleiters: Antwort zeigen, bei Endpunkten Dateien schreiben, Antwort ins Session-Log.
+    Mit `full_prompt` ist `prompt` die Kurzfassung für die fortgesetzte Sitzung; scheitert das Fortsetzen
+    oder wechselt der Bauleiter wegen eines Limits, geht `full_prompt` an eine frische Sitzung.
     Liefert (Antwort, Bauleiter, Flags, geschriebene Dateien); Bauleiter und Flags können nach einem Limit-Wechsel neu sein."""
     say(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) ({wait_note})...", flush=True)
-    res, builder, builder_flags = safe_agent_run(
-        agent=builder,
-        prompt=prompt,
-        cwd=ctx.work_path,
-        flags=builder_flags,
-        agents=ctx.agents,
-        session_dir=ctx.session_dir,
-        state=ctx.state,
-        auto_switch=ctx.auto_switch,
-        role="builder",
-        metrics_tracker=ctx.metrics,
-        exclude={ctx.inspector.binary} if ctx.inspector is not None else None,
-    )
+    resume = builder_resume_flags(builder, ctx.resume_builder) if full_prompt is not None else []
+
+    def call(agent: "AgentCLI", text: str, flags: list[str]):
+        return safe_agent_run(
+            agent=agent,
+            prompt=text,
+            cwd=ctx.work_path,
+            flags=flags,
+            agents=ctx.agents,
+            session_dir=ctx.session_dir,
+            state=ctx.state,
+            auto_switch=ctx.auto_switch,
+            role="builder",
+            metrics_tracker=ctx.metrics,
+            exclude={ctx.inspector.binary} if ctx.inspector is not None else None,
+        )
+
+    if not resume:
+        res, builder, builder_flags = call(builder, full_prompt if full_prompt is not None else prompt, builder_flags)
+    else:
+        resumed_builder, res = builder, None
+        try:
+            res, builder, call_flags = call(builder, prompt, builder_flags + resume)
+        except RuntimeError as exc:
+            say(f"⚠️ Bauleiter-Sitzung ließ sich nicht fortsetzen ({str(exc)[:120]}), starte mit vollem Auftrag neu...")
+            builder.session_id = None
+            call_flags = builder_flags
+        if res is not None and builder is resumed_builder and "--resume" in call_flags:
+            ctx.metrics.count("builder_resumed")
+        else:
+            # Fortsetzen gescheitert oder Bauleiter gewechselt: Die neue Sitzung kennt Aufgabe und Plan nicht.
+            builder.session_id = None
+            res, builder, builder_flags = call(builder, full_prompt, call_flags if builder is not resumed_builder else builder_flags)
+    ctx.state["builder_session"] = {"binary": builder.binary, "id": builder.session_id} if builder.session_id else None
     say(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [{label}]:")
     say(res)
     written: list[str] = []

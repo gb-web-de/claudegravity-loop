@@ -193,9 +193,9 @@ import json, os, pathlib, re, sys
 prompt = sys.stdin.read()
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
     f.write(json.dumps({"bin": "claude", "argv": sys.argv[1:], "prompt": prompt}) + "\n")
-if "Führe den genehmigten Plan" in prompt:
+if "Führe den genehmigten Plan" in prompt or "Weiter in deiner Bau-Sitzung" in prompt:
     pathlib.Path("hallo.txt").write_text("hallo\n", encoding="utf-8")
-    done = pathlib.Path(re.search(r"unter: '([^']+)'", prompt).group(1))
+    done = pathlib.Path(re.search(r"unter:? '([^']+)'", prompt).group(1))
     done.write_text("fertig\n", encoding="utf-8")
     out = "gebaut"
 else:
@@ -286,10 +286,20 @@ class EndToEndTest(unittest.TestCase):
             self.assertEqual((kpi["build_rounds"], kpi["inspection_rounds"], kpi["inspection_rejected"]), (2, 2, 1))
             self.assertEqual((kpi["rework_rounds"], kpi["rework_rate"]), (1, 0.5))
 
-            builds = [c for c in calls if c["bin"] == "claude" and "Führe den genehmigten Plan" in c["prompt"]]
+            builds = [
+                c
+                for c in calls
+                if c["bin"] == "claude" and ("Führe den genehmigten Plan" in c["prompt"] or "Weiter in deiner" in c["prompt"])
+            ]
             self.assertEqual(len(builds), 2)
             self.assertIn("Test fehlt", builds[1]["prompt"])
             self.assertIn("--dangerously-skip-permissions", builds[0]["argv"])
+            # Runde 2 setzt die Bauleiter-Sitzung fort und schickt weder Aufgabe noch Plan erneut
+            self.assertNotIn("--resume", builds[0]["argv"])
+            self.assertEqual(builds[1]["argv"][builds[1]["argv"].index("--resume") + 1], "s1")
+            self.assertIn("--dangerously-skip-permissions", builds[1]["argv"])
+            self.assertNotIn(task, builds[1]["prompt"])
+            self.assertEqual(kpi.get("builder_resumed", state["metrics"]["counters"].get("builder_resumed")), 1)
 
             plan_calls = [c for c in calls if c["bin"] == "claude" and c not in builds]
             self.assertTrue(plan_calls)

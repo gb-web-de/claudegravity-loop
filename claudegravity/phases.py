@@ -43,6 +43,7 @@ from .roles import (
 )
 from .build import (
     BuildContext,
+    builder_resume_flags,
     collect_build_changes,
     compose_build_prompt,
     git_head,
@@ -758,7 +759,11 @@ def run_build_phase(run: "RunContext") -> None:
         auto_switch=auto_switch,
         inspector=inspector,
         written_so_far=list(state.get("written_files", [])),
+        resume_builder=not getattr(args, "builder_fresh", False),
     )
+    # Bauleiter-Sitzung nur fortsetzen, wenn sie aus dieser Session stammt (nicht etwa die des Architekten)
+    saved = state.get("builder_session") or {}
+    builder.session_id = saved.get("id") if args.resume and saved.get("binary") == builder.binary else None
     state["iteration_limit"] = max_iters
     state["stage_mode_active"] = stage_mode
 
@@ -825,6 +830,14 @@ def run_build_phase(run: "RunContext") -> None:
                 file_ctx=file_ctx,
                 stage=(stage_label, stage_text, done_list),
             )
+            resuming = not is_endpoint_builder and bool(builder_resume_flags(builder, build_ctx.resume_builder))
+            prompt_short = (
+                compose_build_prompt(
+                    task, plan_ref, proof_cmd, pending_feedback, False, stage=(stage_label, stage_text, done_list), resumed=True
+                )
+                if resuming
+                else None
+            )
             ok = False
             output = ""
             try:
@@ -832,11 +845,12 @@ def run_build_phase(run: "RunContext") -> None:
                     build_ctx,
                     builder,
                     builder_flags,
-                    prompt_build,
+                    prompt_short or prompt_build,
                     is_endpoint_builder,
-                    wait_note=stage_label,
+                    wait_note=stage_label + (" · Sitzung fortgesetzt" if resuming else ""),
                     label=stage_label,
                     log_header=f"\n{'=' * 20} Iteration {iteration} · {stage_label} {'=' * 20}\n",
+                    full_prompt=prompt_build if resuming else None,
                 )
                 if proof_cmd:
                     ok, output = run_proof_check(build_ctx, proof_cmd)
@@ -935,6 +949,12 @@ def run_build_phase(run: "RunContext") -> None:
             file_ctx=file_ctx,
             rel_done_path=rel_done_path,
         )
+        resuming = not is_endpoint_builder and bool(builder_resume_flags(builder, build_ctx.resume_builder))
+        prompt_short = (
+            compose_build_prompt(task, plan_ref, proof_cmd, pending_feedback, False, rel_done_path=rel_done_path, resumed=True)
+            if resuming
+            else None
+        )
 
         call_failed = ""
         written = []
@@ -943,11 +963,12 @@ def run_build_phase(run: "RunContext") -> None:
                 build_ctx,
                 builder,
                 builder_flags,
-                prompt_build,
+                prompt_short or prompt_build,
                 is_endpoint_builder,
-                wait_note="führt genehmigten Plan aus",
+                wait_note="führt genehmigten Plan aus" + (" · Sitzung fortgesetzt" if resuming else ""),
                 label=f"Iteration {iteration}",
                 log_header=log_header,
+                full_prompt=prompt_build if resuming else None,
             )
             pending_feedback = ""
             state["pending_feedback"] = ""

@@ -46,6 +46,7 @@ python3 -m unittest discover -s tests
 | `test_progress.py` | Status line after every AI call, abort reason at the round limit |
 | `test_benchmark.py` | Benchmark pack: tasks red at first, reference solution green, flow in fake mode |
 | `test_events.py` | Structured event log `events.jsonl` |
+| `test_builder_resume.py` | Continuing the Builder session: short prompt, `codex exec resume`, fallback to a fresh session, Builder switch |
 | `test_escalation.py` | Escalation from a local Builder to the cloud: target choice, write access, end to end |
 
 ### Smoke matrix

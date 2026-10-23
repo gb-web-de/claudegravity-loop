@@ -291,6 +291,13 @@ def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
         help="Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (sonst kein Bau); für Läufe ohne Terminal",
     )
     add(
+        "--builder-fresh",
+        "--bauer-neu",
+        dest="builder_fresh",
+        action="store_true",
+        help="Bauleiter jede Runde in neuer Sitzung starten; Standard: claude und codex setzen ihre Sitzung fort und bekommen nur Rückmeldung und nächsten Schritt",
+    )
+    add(
         "--etappen",
         "--stages",
         default="auto",

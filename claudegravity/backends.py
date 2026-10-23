@@ -354,7 +354,8 @@ CODEX_EFFORTS = {"low": "low", "medium": "medium", "high": "high", "xhigh": "xhi
 
 
 def build_codex_args(extra_flags: list[str] | None) -> list[str]:
-    """Baut `codex exec`-Argumente: Sandbox aus `-s`, Modell und Effort, Prompt über stdin (`-`)."""
+    """Baut `codex exec`-Argumente: Sandbox aus `-s`, Modell und Effort, Prompt über stdin (`-`).
+    Mit `--resume <id>` setzt `codex exec resume <id>` eine frühere Sitzung fort."""
     sandbox = extract_flag_value(extra_flags, "-s") or "read-only"
     args = ["exec", "-s", sandbox, "--json"]
     model = extract_flag_value(extra_flags, "--model")
@@ -363,7 +364,25 @@ def build_codex_args(extra_flags: list[str] | None) -> list[str]:
     effort = extract_flag_value(extra_flags, "--effort")
     if effort and effort.split()[0] in CODEX_EFFORTS:
         args += ["-c", f'model_reasoning_effort="{CODEX_EFFORTS[effort.split()[0]]}"']
+    resume_id = extract_flag_value(extra_flags, "--resume")
+    if resume_id:
+        args += ["resume", resume_id]
     return args + ["-"]
+
+
+def codex_thread_id(raw: str) -> str | None:
+    """Sitzungs-ID aus dem Ereignis `thread.started` von `codex exec --json` (für `codex exec resume`)."""
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "thread.started" and event.get("thread_id"):
+            return str(event["thread_id"])
+    return None
 
 
 def parse_codex_events(raw: str) -> tuple[str | None, dict, str | None]:
@@ -409,6 +428,7 @@ def _exec_codex(binary: str, prompt: str, cwd: Path | None = None, extra_flags: 
         "cost_usd": 0.0,
         "model": extract_flag_value(extra_flags, "--model"),
         "effort": extract_flag_value(extra_flags, "--effort"),
+        "session_id": codex_thread_id(raw),
     }
 
 

@@ -15,6 +15,7 @@
   budget_warn            = –                            [Standard]
   builder                = –                            [Standard]
   builder_effort         = –                            [Standard]
+  builder_fresh          = false                        [Standard]
   builder_model          = "qwen2.5-coder:7b"           [Kommandozeile]
   delay                  = 3                            [Standard]
   effort                 = –                            [Standard]

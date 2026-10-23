@@ -32,6 +32,16 @@ Soll 🔨 Bauleiter (Claude Code) volle Schreib-/Tool-Rechte erhalten (--dangero
 
 Ein Fehler in einer Runde (z. B. Absturz der CLI) beendet den Loop nicht: Er wird gemeldet, und die nächste Runde startet.
 
+### Bauleiter-Sitzung fortsetzen
+
+Ist der Bauleiter `claude` oder `codex`, setzt ClaudeGravity ab der zweiten Runde dieselbe Sitzung fort (`claude --resume <id>` bzw. `codex exec resume <id>`). Der Bauleiter hat Aufgabe, Plan und die schon gelesenen Dateien dann noch im Kontext und bekommt nur noch die Rückmeldung der letzten Runde (Ende der Prüfbefehl-Ausgabe oder Befunde der Abnahme) und den nächsten Schritt. Das spart bei mehreren Runden den größten Teil der Eingabe-Tokens und die Zeit zum erneuten Einlesen des Projekts.
+
+* Lässt sich die Sitzung nicht fortsetzen (z. B. gelöscht oder abgelaufen), startet dieselbe Runde in einer frischen Sitzung mit vollem Auftrag.
+* Nach einem Wechsel wegen Limit oder einer Eskalation startet der neue Bauleiter immer frisch.
+* Die Sitzungs-ID steht in `state.json` (`builder_session`), damit auch `claudegravity -c` weitermacht. Fortgesetzte Runden zählt `builder_resumed` in den Kennzahlen.
+* `--builder-fresh` (Alias `--bauer-neu`) schaltet das ab: jede Runde neue Sitzung wie früher.
+* Endpunkt-Bauleiter haben keine Sitzung; sie bekommen weiter Plan und Dateistand in jeder Runde.
+
 ## Etappen-Modus
 
 Kleine lokale Modelle arbeiten schneller und sicherer mit kleinen Stücken. Im Etappen-Modus (`--etappen an`, oder `auto` bei Bauleitern ohne eigenen Dateizugriff wie Ollama, LM Studio und Endpunkten) läuft Phase 3 so:

@@ -32,6 +32,16 @@ Soll 🔨 Bauleiter (Claude Code) volle Schreib-/Tool-Rechte erhalten (--dangero
 
 An error in a round (e.g. a CLI crash) doesn't end the loop: it is reported and the next round starts.
 
+### Continuing the Builder session
+
+If the Builder is `claude` or `codex`, ClaudeGravity continues the same session from the second round on (`claude --resume <id>` or `codex exec resume <id>`). The Builder still has the task, the plan and the files it already read in its context and only receives the feedback from the last round (end of the proof output or the acceptance findings) and the next step. Over several rounds this saves most of the input tokens and the time to read the project again.
+
+* If the session can't be continued (e.g. deleted or expired), the same round starts in a fresh session with the full instructions.
+* After a switch because of a limit or an escalation, the new Builder always starts fresh.
+* The session ID is stored in `state.json` (`builder_session`), so `claudegravity -c` continues it too. Continued rounds are counted as `builder_resumed` in the metrics.
+* `--builder-fresh` (alias `--bauer-neu`) turns this off: a new session every round, as before.
+* Endpoint Builders have no session; they still get the plan and the file contents every round.
+
 ## Stage mode
 
 Small local models work faster and more reliably with small pieces. In stage mode (`--etappen an`, or `auto` for Builders without their own file access such as Ollama, LM Studio and endpoints), phase 3 runs like this:

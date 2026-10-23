@@ -46,6 +46,7 @@ python3 -m unittest discover -s tests
 | `test_progress.py` | Statuszeile nach jedem KI-Aufruf, Abbruchgrund bei Rundenlimit |
 | `test_benchmark.py` | Benchmark-Pack: Aufgaben anfangs rot, Musterlösung grün, Ablauf im Fake-Modus |
 | `test_events.py` | Strukturiertes Ereignis-Log `events.jsonl` |
+| `test_builder_resume.py` | Bauleiter-Sitzung fortsetzen: Kurz-Prompt, `codex exec resume`, Rückfall auf frische Sitzung, Wechsel des Bauleiters |
 | `test_escalation.py` | Eskalation vom lokalen Bauleiter zur Cloud: Zielwahl, Schreibrechte, Ende-zu-Ende |
 
 ### Smoke-Matrix
