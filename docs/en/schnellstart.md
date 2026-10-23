@@ -33,7 +33,9 @@ The output shows the operating system and Python version, all detected CLIs and 
 claudegravity --dry-run "Create a Python script for weather queries with error handling"
 ```
 
-The dry run shows which CLI and which model each role gets, and prints the ready-made start command. **No file** is created.
+The dry run shows which CLI and which model each role gets, estimates the usage and prints the ready-made start command. **No file** is created.
+
+The **cost estimate** gives a best, expected and worst case. It is based on the key figures of the project's last 20 sessions (from `.done` and `AUDIT.md`), preferring the same strategy once there are at least two such sessions. Without history it only shows a rule of thumb for build rounds. USD only appear if providers reported costs; there is no price table. It also adds tips, such as a matching `--budget-max`, a local build strategy or `--proof` when there was a lot of rework.
 
 ## 3. First task
 

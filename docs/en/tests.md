@@ -42,6 +42,7 @@ python3 -m unittest discover -s tests
 | `test_review_safety.py`, `test_stages.py` | End to end with fake CLIs or fake endpoints, acceptance check, stages |
 | `test_config.py`, `test_templates.py`, `test_wizard.py` | Profiles, environment, templates, setup |
 | `test_retry.py`, `test_audit.py`, `test_errors.py`, `test_kpi.py` | Retries, audit, error codes, key figures |
+| `test_budget.py`, `test_estimate.py` | Budget limits, cost estimate from earlier sessions |
 
 ### Smoke matrix
 

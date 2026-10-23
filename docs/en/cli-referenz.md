@@ -24,7 +24,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--retries <n>` | `--neuversuche` | Automatic retries on transient errors (overload, HTTP 5xx, dropped connection) with exponential backoff and jitter. `0` turns them off. See [Troubleshooting](fehlerbehebung.md#automatic-retries). | `3` |
 | `--swap` | `--swap-roles`, `--reverse` | Swap the default roles: Antigravity/Gemini plans, Claude reviews. | off |
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). See [Strategies](strategien.md). | `balanced` |
-| `--dry-run` | | Show the assignment, cost analysis and start command without running or creating anything. | off |
+| `--dry-run` | | Show the assignment, a cost estimate from earlier sessions and the start command without running or creating anything. | off |
 | `--info` | `--check` | Show detected CLIs/endpoints and the default assignment. | off |
 | `--budget-max <value>` | | Hard limit for the session in tokens (`500k`, `1.5m`) or reported costs (`2.50usd`). See [Budget](#budget). | – |
 | `--budget-warn <value>` | | Soft limit, warning only. | 80 % of `--budget-max` |
@@ -156,6 +156,7 @@ After every AI call the loop compares the session's usage with the limits. A sof
 * **Tokens** are counted for all providers (estimated for CLIs that report no usage).
 * **USD** only counts what providers report (Claude Code, API endpoints with `usage.cost`). Subscription CLIs and local models therefore use no USD budget.
 * Like all settings, `budget_max`, `budget_warn` and `budget_roles` can also go into a profile or a template.
+* `--dry-run` suggests a value: its cost estimate shows the worst case of earlier sessions and warns if `--budget-max` is too small for it ([Quick start](schnellstart.md#2-look-first-then-start-dry-run)).
 
 ## Task templates
 

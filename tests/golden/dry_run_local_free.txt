@@ -36,6 +36,11 @@
    • Grund: Phase 1 & 2 planen mit Architekt Endpoint (http://<SERVER>/v1) und Prüfstatiker Endpoint (http://<SERVER>/v1). Der rechenintensive Bau-Loop
      läuft komplett auf Bauleiter Endpoint (http://<SERVER>/v1) (Modell: bauer).
 
+💰 Kostenschätzung vorab:
+   • Bau-Runden    : günstig 1 · erwartet 3 · ungünstig 10 (Faustregel, noch kein Verlauf)
+   • Tokens/Kosten : noch keine Kennzahlen in diesem Projekt. Nach dem ersten Lauf schätzt der
+     Trockenlauf aus deinen eigenen Sessions; USD nur, wenn Anbieter Kosten melden.
+
 🚀 Generierter Shell-Befehl (zum Starten):
    claudegravity 'Addition mit Test' --strategy local-free --architekt-endpoint http://<SERVER>/v1 --pruefstatiker-endpoint http://<SERVER>/v1 --bauer-endpoint http://<SERVER>/v1 --architekt architekt_ep --architekt-model planer --pruefstatiker pruefstatiker_ep --pruefstatiker-model pruefer --bauer bauer_ep --bauer-model bauer --proof 'make test' -p <TMP>
 ====================================================================

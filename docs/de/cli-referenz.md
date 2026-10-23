@@ -24,7 +24,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--retries <n>` | `--neuversuche` | Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, HTTP 5xx, Verbindungsabbruch) mit exponentiellem Backoff und Jitter. `0` schaltet ab. Siehe [Fehlerbehebung](fehlerbehebung.md#automatische-neuversuche). | `3` |
 | `--swap` | `--swap-roles`, `--reverse` | Standardrollen tauschen: Antigravity/Gemini plant, Claude prüft. | aus |
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). Siehe [Strategien](strategien.md). | `balanced` |
-| `--dry-run` | | Belegung, Kostenanalyse und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |
+| `--dry-run` | | Belegung, Kostenschätzung aus früheren Sessions und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |
 | `--info` | `--check` | Erkannte CLIs/Endpunkte und Standard-Belegung anzeigen. | aus |
 | `--budget-max <wert>` | | Harte Grenze für die Session in Tokens (`500k`, `1.5m`) oder gemeldeten Kosten (`2.50usd`). Siehe [Budget](#budget). | – |
 | `--budget-warn <wert>` | | Weiche Grenze, nur Warnung. | 80 % von `--budget-max` |
@@ -156,6 +156,7 @@ Nach jedem KI-Aufruf vergleicht der Loop den Verbrauch der Session mit den Grenz
 * **Tokens** zählt der Loop bei allen Anbietern (bei CLIs ohne Verbrauchsangabe geschätzt).
 * **USD** zählt nur, was Anbieter melden (Claude Code, API-Endpunkte mit `usage.cost`). Abo-CLIs und lokale Modelle verbrauchen damit kein USD-Budget.
 * Wie alle Einstellungen gehen `budget_max`, `budget_warn` und `budget_roles` auch ins Profil oder in eine Vorlage.
+* Einen passenden Wert zeigt `--dry-run`: Die Kostenschätzung vorab nennt den ungünstigsten Fall früherer Sessions und warnt, wenn `--budget-max` dafür nicht reicht ([Schnellstart](schnellstart.md#2-erst-ansehen-dann-starten-trockenlauf)).
 
 ## Aufgaben-Vorlagen
 

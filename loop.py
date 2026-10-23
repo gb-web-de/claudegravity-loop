@@ -3319,6 +3319,136 @@ def handle_budget_exceeded(exc: BudgetExceeded) -> None:
 
 
 # ==========================================
+# Kostenschätzung vorab (aus den Kennzahlen früherer Sessions)
+# ==========================================
+KPI_JSON_RE = re.compile(r"KPI v1\).*?```json\s*\n(\{.*?\})\s*\n```", re.S)
+ESTIMATE_HISTORY_LIMIT = 20
+ESTIMATE_MIN_SAME_STRATEGY = 2
+
+
+def read_session_kpi(session_dir: Path) -> dict | None:
+    """Liest den KPI-JSON-Block aus `.done` oder `AUDIT.md` einer Session."""
+    for name in (".done", "AUDIT.md"):
+        try:
+            text = (session_dir / name).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        found = KPI_JSON_RE.findall(text)
+        if not found:
+            continue
+        try:
+            kpi = json.loads(found[-1])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(kpi, dict) and kpi.get("version") == 1:
+            return kpi
+    return None
+
+
+def collect_kpi_history(project_path: Path, limit: int = ESTIMATE_HISTORY_LIMIT) -> list[dict]:
+    """Kennzahlen der letzten Sessions des Projekts, neueste zuerst."""
+    sessions_dir = project_path / ".dual-loop" / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+    history = []
+    for session in sorted((p for p in sessions_dir.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True):
+        kpi = read_session_kpi(session)
+        if kpi:
+            history.append(kpi)
+            if len(history) >= limit:
+                break
+    return history
+
+
+def spread(values: list[float]) -> tuple[float, float, float] | None:
+    """(günstigster, erwarteter = Median, ungünstigster Fall)"""
+    values = sorted(v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool))
+    if not values:
+        return None
+    mid = len(values) // 2
+    median = values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+    return values[0], median, values[-1]
+
+
+def estimate_run(history: list[dict], strategy: str, max_iterations: int) -> dict:
+    """Schätzt Bau-Runden, Tokens und gemeldete Kosten. Ohne Verlauf nur Runden; Kosten nie aus einer Preistabelle."""
+    same = [k for k in history if k.get("strategy") == strategy]
+    basis = same if len(same) >= ESTIMATE_MIN_SAME_STRATEGY else history
+    if not basis:
+        expected = min(3, max_iterations)
+        return {"source": "heuristik", "sessions": 0, "strategy_match": False,
+                "rounds": (1, expected, max_iterations), "tokens": None, "cost_usd": None,
+                "cost_sessions": 0, "rework_rate": None, "success_rate": None}
+    costed = [k["cost_usd_task"] for k in basis if (k.get("cost_usd_task") or 0) > 0]
+    rounds = spread([k.get("build_rounds") for k in basis if k.get("build_rounds")])
+    if rounds:
+        rounds = tuple(min(int(round(r)), max_iterations) for r in rounds)
+    successes = [k for k in basis if k.get("success")]
+    return {
+        "source": "verlauf",
+        "sessions": len(basis),
+        "strategy_match": basis is same,
+        "rounds": rounds,
+        "tokens": spread([k.get("tokens_total") for k in basis if k.get("tokens_total")]),
+        "cost_usd": spread(costed) if costed else None,
+        "cost_sessions": len(costed),
+        "rework_rate": (spread([k.get("rework_rate") for k in basis]) or (None, None, None))[1],
+        "success_rate": len(successes) / len(basis),
+    }
+
+
+def estimate_hints(est: dict, strategy: str, budget: "Budget | None", has_local: bool,
+                   proof: str | None) -> list[str]:
+    """Spar- und Sicherheitshinweise passend zur Schätzung."""
+    hints = []
+    worst = {"tokens": est["tokens"][2] if est["tokens"] else None,
+             "usd": est["cost_usd"][2] if est["cost_usd"] else None}
+    if budget and budget.max_total:
+        unit, limit = budget.max_total
+        if worst[unit] is not None and worst[unit] >= limit:
+            hints.append(f"Im ungünstigsten Fall reicht --budget-max {format_budget(unit, limit)} nicht "
+                         f"(bisher bis {format_budget(unit, worst[unit])}); der Lauf bricht dann mit gesichertem Stand ab.")
+    elif worst["usd"]:
+        hints.append(f"--budget-max {format_budget('usd', worst['usd'] * 1.2)} begrenzt den ungünstigsten Fall mit etwas Luft.")
+    elif worst["tokens"]:
+        hints.append(f"--budget-max {format_budget('tokens', worst['tokens'] * 1.2)} begrenzt den ungünstigsten Fall mit etwas Luft.")
+    if est["cost_usd"] and strategy not in ("local-free", *HYBRID_STRATEGIES):
+        if has_local:
+            hints.append("Mit --strategy hybrid oder local-free baut ein lokales Modell; Bau-Runden kosten dann 0 USD.")
+        elif strategy != "eco":
+            hints.append("Mit --strategy eco baut ein Spar-Modell; ein lokales Modell (Ollama, LM Studio) spart den Bau ganz.")
+    if est["rework_rate"] is not None and est["rework_rate"] >= 0.5:
+        hints.append(f"Viel Nacharbeit bisher (Median {est['rework_rate']:.0%})"
+                     + (": ein --proof-Befehl gibt dem Bauleiter früh ein klares Signal." if not proof
+                        else ": kleinere Aufgaben oder --etappen an senken die Runden."))
+    return hints
+
+
+def format_estimate(est: dict, hints: list[str]) -> list[str]:
+    def triple(values, fmt) -> str:
+        return " · ".join(f"{name} {fmt(v)}" for name, v in zip(("günstig", "erwartet", "ungünstig"), values))
+    lines = ["\n💰 Kostenschätzung vorab:"]
+    if est["source"] == "heuristik":
+        lines.append(f"   • Bau-Runden    : {triple(est['rounds'], lambda v: str(v))} (Faustregel, noch kein Verlauf)")
+        lines.append("   • Tokens/Kosten : noch keine Kennzahlen in diesem Projekt. Nach dem ersten Lauf schätzt der")
+        lines.append("     Trockenlauf aus deinen eigenen Sessions; USD nur, wenn Anbieter Kosten melden.")
+    else:
+        basis = f"{est['sessions']} frühere Session(s)" + (" mit gleicher Strategie" if est["strategy_match"] else " (alle Strategien)")
+        lines.append(f"   • Grundlage     : {basis}, Erfolgsquote {est['success_rate']:.0%}")
+        if est["rounds"]:
+            lines.append(f"   • Bau-Runden    : {triple(est['rounds'], lambda v: str(v))}")
+        if est["tokens"]:
+            lines.append(f"   • Tokens        : {triple(est['tokens'], lambda v: format_budget('tokens', v))}")
+        if est["cost_usd"]:
+            lines.append(f"   • Kosten        : {triple(est['cost_usd'], lambda v: format_budget('usd', v))}"
+                         f" (gemeldet in {est['cost_sessions']} von {est['sessions']} Sessions)")
+        else:
+            lines.append("   • Kosten        : keine gemeldet (Abo-CLIs und lokale Modelle melden keine; Tokens oben zum Nachrechnen)")
+    lines.extend(f"   • Tipp: {hint}" for hint in hints)
+    return lines
+
+
+# ==========================================
 # Einrichtung (claudegravity init), geführter Erstlauf und Warnungen
 # ==========================================
 WIZARD_GOALS = {
@@ -3861,6 +3991,10 @@ def main():
                 print(f"   • Hinweis: Effort wird nur an agy übergeben; andere CLIs nutzen ihre eigene Voreinstellung.")
         else:
             print(f"   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
+
+        estimate = estimate_run(collect_kpi_history(project_path), strat, args.max_iterations or 10)
+        for line in format_estimate(estimate, estimate_hints(estimate, strat, BUDGET, local_cand is not None, args.proof)):
+            print(line)
 
         print("\n🚀 Generierter Shell-Befehl (zum Starten):")
         print(f"   {shlex.join(dry_run_command(args, dry_task, strat, default_b_model))}")

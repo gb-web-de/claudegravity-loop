@@ -33,7 +33,9 @@ Die Ausgabe zeigt Betriebssystem und Python-Version, alle erkannten CLIs und End
 claudegravity --dry-run "Erstelle ein Python-Skript für Wetterabfragen mit Fehlerbehandlung"
 ```
 
-Der Trockenlauf zeigt, welche CLI und welches Modell jede Rolle bekommt, und gibt den fertigen Startbefehl aus. Es wird **keine Datei** angelegt.
+Der Trockenlauf zeigt, welche CLI und welches Modell jede Rolle bekommt, schätzt den Verbrauch und gibt den fertigen Startbefehl aus. Es wird **keine Datei** angelegt.
+
+Die **Kostenschätzung vorab** nennt einen günstigen, erwarteten und ungünstigen Fall. Grundlage sind die Kennzahlen der letzten 20 Sessions im Projekt (aus `.done` und `AUDIT.md`), bevorzugt mit derselben Strategie, sobald es davon mindestens zwei gibt. Ohne Verlauf zeigt sie nur eine Faustregel für die Bau-Runden. USD erscheinen nur, wenn Anbieter Kosten gemeldet haben; eine Preistabelle gibt es nicht. Dazu kommen Tipps, etwa ein passendes `--budget-max`, eine lokale Bau-Strategie oder `--proof` bei viel Nacharbeit.
 
 ## 3. Erste Aufgabe
 
