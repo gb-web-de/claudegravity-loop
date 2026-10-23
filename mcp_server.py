@@ -11,10 +11,10 @@ Usage:
 """
 
 import argparse
+import datetime
 import json
 import os
 import platform
-import re
 import shlex
 import shutil
 import subprocess
@@ -34,7 +34,7 @@ if sys.platform == "win32":
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "claudegravity-mcp"
-SERVER_VERSION = "1.2.0"
+SERVER_VERSION = "1.3.0"
 
 DEFAULT_MODEL = "CLI-Default"
 AUTO_OLLAMA_MODEL = "automatisch (installierte Ollama-Modelle)"
@@ -136,6 +136,67 @@ def format_shell_command(argv: list[str], shell: str = "bash") -> str:
 def loop_launch_argv(loop_args: list[str]) -> list[str]:
     """Startbefehl für loop.py ohne Shell: Aufgabentext wird nie von einer Shell interpretiert."""
     return [sys.executable, str(Path(__file__).resolve().parent / "loop.py")] + loop_args
+
+
+def background_log_path(project_dir: Path) -> Path:
+    """Log für Hintergrundläufe. Liegt als Datei in sessions/, damit .dual-loop nur diesen Unterordner hat."""
+    sessions = project_dir / ".dual-loop" / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    return sessions / f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_background.log"
+
+
+def tail_lines(path: Path, count: int) -> list[str]:
+    if count <= 0 or not path.is_file():
+        return []
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").splitlines()[-count:]
+    except OSError:
+        return []
+
+
+def format_session_status(project_dir: Path, log_lines: int = 15) -> str:
+    """Stand der letzten Session aus state.json, .done und den Logs, als Markdown."""
+    sessions = project_dir / ".dual-loop" / "sessions"
+    entries = sorted(sessions.iterdir(), key=lambda p: p.name) if sessions.is_dir() else []
+    session = next((p for p in reversed(entries) if p.is_dir()), None)
+    background = next((p for p in reversed(entries) if p.is_file() and p.name.endswith("_background.log")), None)
+    if session is None and background is None:
+        return f"Keine Session in `{project_dir}` gefunden. Start mit `claudegravity_run`."
+    lines = [f"### ClaudeGravity Status: `{project_dir}`", ""]
+    if session is not None:
+        state: dict = {}
+        for name in ("state.json", "state.json.bak"):
+            try:
+                state = json.loads((session / name).read_text(encoding="utf-8"))
+                break
+            except (OSError, ValueError):
+                continue
+        state = state if isinstance(state, dict) else {}
+        done = (session / ".done").exists()
+        metrics = state.get("metrics") or {}
+        step = state.get("last_iteration")
+        if state.get("stages"):
+            step = f"{step} (Etappe {int(state.get('stage_index', 0)) + 1}/{len(state['stages'])})"
+        lines += [
+            f"* **Session:** `{session.name}`",
+            f"* **Aufgabe:** {state.get('task', '?')}",
+            f"* **Phase:** {state.get('phase', '?')}" + (" · Fertigmeldung liegt vor" if done else ""),
+            f"* **Bau-Runde:** {step if step is not None else '–'}",
+            f"* **Tokens:** {metrics.get('total_tokens', 0):,}".replace(",", ".")
+            + (f" · gemeldete Kosten {metrics['cost_usd']:.2f} USD" if metrics.get("cost_usd") else ""),
+            f"* **Zuletzt aktualisiert:** {state.get('updated_at', '?')}",
+        ]
+        if state.get("abort_reason"):
+            lines.append(f"* **Abbruchgrund:** {state['abort_reason']}")
+        log_tail = tail_lines(session / "LOG.md", log_lines)
+        if log_tail:
+            lines += ["", "**LOG.md (Ende):**", "```", *log_tail, "```"]
+    if background is not None:
+        bg_tail = tail_lines(background, log_lines)
+        lines += ["", f"**Hintergrund-Log:** `{background}`"]
+        if bg_tail:
+            lines += ["```", *bg_tail, "```"]
+    return "\n".join(lines)
 
 
 def optimize_claudegravity_command(
@@ -552,6 +613,21 @@ MCP_TOOLS = [
         }
     },
     {
+        "name": "claudegravity_status",
+        "description": (
+            "Zeigt den Stand der letzten Loop-Session eines Projekts: Aufgabe, Phase, Runde/Etappe, Tokens, "
+            "Abbruchgrund, ob die Fertigmeldung vorliegt, und die letzten Zeilen von LOG.md und des Hintergrund-Logs. "
+            "Gedacht zum Nachsehen nach claudegravity_run mit background."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_path": {"type": "string", "default": ".", "description": "Pfad zum Ziel-Projekt (Standard: .)."},
+                "log_lines": {"type": "integer", "default": 15, "description": "Wie viele Zeilen vom Ende der Logs (0 = keine)."}
+            }
+        }
+    },
+    {
         "name": "claudegravity_info",
         "description": "Prüft die installierten AI-CLIs (Claude, Antigravity, Gemini, Codex, Copilot, Ollama, LM Studio, eigene Endpunkte) und gibt Empfehlungen.",
         "inputSchema": {
@@ -628,19 +704,25 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
             }
 
         if background:
-            proc = subprocess.Popen(
-                loop_launch_argv(opt["loop_args"]),
-                cwd=str(p_dir),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
+            log_path = background_log_path(p_dir)
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                proc = subprocess.Popen(
+                    loop_launch_argv(opt["loop_args"]),
+                    cwd=str(p_dir),
+                    stdin=subprocess.DEVNULL,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                    env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                )
             return {
                 "content": [
                     {
                         "type": "text",
-                        "text": f"🚀 ClaudeGravity Loop im Hintergrund gestartet (PID {proc.pid})!\nBefehl: `{cmd_str}`\nProjekt: `{p_dir}`"
+                        "text": (
+                            f"🚀 ClaudeGravity Loop im Hintergrund gestartet (PID {proc.pid})!\nBefehl: `{cmd_str}`\nProjekt: `{p_dir}`\n"
+                            f"Ausgabe: `{log_path}`\nStand abfragen: Tool `claudegravity_status` mit project_path `{p_dir}`"
+                        )
                     }
                 ],
                 "isError": False
@@ -655,6 +737,18 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
                 ],
                 "isError": False
             }
+
+    elif name == "claudegravity_status":
+        p_dir = Path(arguments.get("project_path", ".")).resolve()
+        if not p_dir.exists():
+            return {
+                "content": [{"type": "text", "text": f"Fehler: Projektpfad '{p_dir}' existiert nicht."}],
+                "isError": True
+            }
+        return {
+            "content": [{"type": "text", "text": format_session_status(p_dir, int(arguments.get("log_lines", 15)))}],
+            "isError": False
+        }
 
     elif name == "claudegravity_info":
         agents = detect_installed_agents()

@@ -213,9 +213,9 @@ class McpRolesTest(unittest.TestCase):
         self.assertEqual(opt["roles"]["architekt"]["model"], "CLI-Default")
 
     def test_background_has_no_stdin_and_approves_plan(self):
-        with mock.patch.object(mcp_server.subprocess, "Popen") as popen:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(mcp_server.subprocess, "Popen") as popen:
             popen.return_value.pid = 1
-            mcp_server.handle_tool_call("claudegravity_run", {"task": "CSV", "project_path": str(ROOT), "background": True})
+            mcp_server.handle_tool_call("claudegravity_run", {"task": "CSV", "project_path": tmp, "background": True})
         self.assertIs(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
         self.assertIn("--plan-auto", popen.call_args.args[0])
 

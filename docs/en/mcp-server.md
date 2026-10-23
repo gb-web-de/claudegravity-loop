@@ -68,10 +68,19 @@ Computes the same command and starts it.
 | :--- | :--- | :--- | :--- |
 | `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, roles, `stages`, `approve_plan`, `merge` | | as above | |
 | `yolo` | boolean | `false` | Full permissions for the Builder. Only set this when explicitly requested; without `yolo` a Claude Builder cannot write anything in the background. |
-| `background` | boolean | `false` | `true`: starts the loop as a background process in the project folder and reports the PID; always sets `--plan-auto`. `false`: only returns the command for starting it manually. |
+| `background` | boolean | `false` | `true`: starts the loop as a background process in the project folder and reports the PID and log file; always sets `--plan-auto`. `false`: only returns the command for starting it manually. |
 
 > [!WARNING]
-> There is no terminal in the background: the plan is only built if the Reviewer reports `APPROVED` (`--plan-auto`), and the permission prompt before phase 3 is skipped. A CLI Builder such as Claude or Codex can then only write with `yolo: true`; local Builders (Ollama, endpoints) do not need that, because ClaudeGravity writes their files itself. Results are in the project's `.dual-loop/sessions/` and `logs/`. `loop.py` is started directly with the MCP server's Python.
+> There is no terminal in the background: the plan is only built if the Reviewer reports `APPROVED` (`--plan-auto`), and the permission prompt before phase 3 is skipped. A CLI Builder such as Claude or Codex can then only write with `yolo: true`; local Builders (Ollama, endpoints) do not need that, because ClaudeGravity writes their files itself. Results are in the project's `.dual-loop/sessions/`; the run's terminal output goes to `.dual-loop/sessions/<time>_background.log`. `loop.py` is started directly with the MCP server's Python.
+
+### `claudegravity_status`
+
+Shows the state of a project's latest session, meant for checking on a background run: task, phase, build round (with stage), tokens, reported cost, abort reason, whether the completion file exists, and the end of `LOG.md` and of the background log. Read-only, starts nothing.
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `project_path` | string | `.` | Target project |
+| `log_lines` | integer | `15` | Lines from the end of the logs (`0` = none) |
 
 ### `claudegravity_info`
 

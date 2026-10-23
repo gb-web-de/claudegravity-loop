@@ -68,10 +68,19 @@ Berechnet denselben Befehl und startet ihn.
 | :--- | :--- | :--- | :--- |
 | `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, Rollen, `stages`, `approve_plan`, `merge` | | wie oben | |
 | `yolo` | boolean | `false` | Volle Rechte für den Bauleiter. Nur auf ausdrücklichen Wunsch setzen; ohne `yolo` kann ein Claude-Bauleiter im Hintergrund nichts schreiben. |
-| `background` | boolean | `false` | `true`: startet den Loop als Hintergrundprozess im Projektordner und meldet die PID; setzt dabei immer `--plan-auto`. `false`: gibt nur den Befehl zum manuellen Start zurück. |
+| `background` | boolean | `false` | `true`: startet den Loop als Hintergrundprozess im Projektordner und meldet PID und Log-Datei; setzt dabei immer `--plan-auto`. `false`: gibt nur den Befehl zum manuellen Start zurück. |
 
 > [!WARNING]
-> Im Hintergrund gibt es kein Terminal: Der Plan wird nur gebaut, wenn der Prüfstatiker `APPROVED` meldet (`--plan-auto`), und die Rechte-Abfrage vor Phase 3 entfällt. Ein CLI-Bauleiter wie Claude oder Codex darf dann nur mit `yolo: true` schreiben; lokale Bauleiter (Ollama, Endpunkte) brauchen das nicht, weil ClaudeGravity ihre Dateien selbst schreibt. Ergebnisse stehen in `.dual-loop/sessions/` und `logs/` des Projekts. Gestartet wird `loop.py` direkt mit dem Python des MCP-Servers.
+> Im Hintergrund gibt es kein Terminal: Der Plan wird nur gebaut, wenn der Prüfstatiker `APPROVED` meldet (`--plan-auto`), und die Rechte-Abfrage vor Phase 3 entfällt. Ein CLI-Bauleiter wie Claude oder Codex darf dann nur mit `yolo: true` schreiben; lokale Bauleiter (Ollama, Endpunkte) brauchen das nicht, weil ClaudeGravity ihre Dateien selbst schreibt. Ergebnisse stehen in `.dual-loop/sessions/` des Projekts; die Terminal-Ausgabe des Laufs landet in `.dual-loop/sessions/<zeit>_background.log`. Gestartet wird `loop.py` direkt mit dem Python des MCP-Servers.
+
+### `claudegravity_status`
+
+Zeigt den Stand der letzten Session eines Projekts, gedacht zum Nachsehen nach einem Hintergrundlauf: Aufgabe, Phase, Bau-Runde (mit Etappe), Tokens, gemeldete Kosten, Abbruchgrund, ob die Fertigmeldung vorliegt, sowie das Ende von `LOG.md` und des Hintergrund-Logs. Liest nur, startet nichts.
+
+| Parameter | Typ | Standard | Beschreibung |
+| :--- | :--- | :--- | :--- |
+| `project_path` | string | `.` | Zielprojekt |
+| `log_lines` | integer | `15` | Zeilen vom Ende der Logs (`0` = keine) |
 
 ### `claudegravity_info`
 

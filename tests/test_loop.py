@@ -188,6 +188,30 @@ class CliSmokeTest(unittest.TestCase):
         res = self.run_loop("--help")
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("--strategy", res.stdout)
+        # Kurze Hilfe: Gruppen, nur Hauptnamen, Aliase und Expertenoptionen erst in --help-all.
+        self.assertIn("Rollen und Modelle:", res.stdout)
+        self.assertNotIn("--architekt", res.stdout)
+        self.assertNotIn("--budget-roles", res.stdout)
+        self.assertNotIn("economy,cost", res.stdout)
+
+    def test_help_all_shows_aliases_and_every_option(self):
+        res = self.run_loop("--help-all")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        for opt in ("--architekt", "--budget-roles", "--no-shield", "--log-format", "--etappen"):
+            self.assertIn(opt, res.stdout)
+
+    def test_hidden_options_still_parse(self):
+        args = loop.build_parser().parse_args(["--bauer", "ollama", "--strategy", "economy", "--budget-roles", "bauleiter=1k", "x"])
+        self.assertEqual((args.builder, args.strategy, args.budget_roles), ("ollama", "economy", "bauleiter=1k"))
+
+    def test_no_task_shows_welcome_instead_of_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = self.run_loop("-p", tmp, "--endpoint", "http://127.0.0.1:9/v1")
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertIn("claudegravity init", res.stdout)
+            self.assertNotIn("usage:", res.stdout)
+            self.assertNotIn("Kein --proof", res.stdout)
+            self.assertFalse((Path(tmp) / ".dual-loop").exists())
 
     def test_dry_run_prints_roles_without_executing(self):
         # Ein (nicht erreichbarer) Endpunkt reicht als Agent, damit der Test ohne installierte CLIs läuft.

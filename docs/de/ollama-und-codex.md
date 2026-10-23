@@ -341,7 +341,7 @@ Weitere Parameter: `abnahme_model`, `approve_plan` (`--plan-auto`) und `merge` (
 
 Mit dem Skill [`skills/claudegravity`](../../skills/claudegravity/SKILL.md) kennt der Assistent die Rollen-Flags bereits.
 
-**4. `claudegravity_run`**: dieselben Parameter. Mit `background: false` liefert das Tool den Befehl mit `cd` zum Kopieren. Mit `background: true` startet der Loop ohne Terminal und mit `--plan-auto`: Gebaut wird nur, wenn der Prüfstatiker `APPROVED` meldet. Ollama-Bauleiter brauchen dafür kein `yolo`; ein Codex-Bauleiter (Variante D) schon.
+**4. `claudegravity_run`**: dieselben Parameter. Mit `background: false` liefert das Tool den Befehl mit `cd` zum Kopieren. Mit `background: true` startet der Loop ohne Terminal und mit `--plan-auto`: Gebaut wird nur, wenn der Prüfstatiker `APPROVED` meldet. Ollama-Bauleiter brauchen dafür kein `yolo`; ein Codex-Bauleiter (Variante D) schon. Den Stand zeigt danach `claudegravity_status`.
 
 **Zum Testen ohne Client** (eine JSON-RPC-Zeile über stdin):
 

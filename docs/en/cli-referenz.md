@@ -8,11 +8,13 @@ claudegravity [AUFGABE] [OPTIONEN]
 
 All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--builder`).
 
+`claudegravity --help` shows the most important options in groups (start, strategy and cost, roles and models, flow, permissions and workspace), with only the main name of each option. `claudegravity --help-all` shows every option with all aliases. Hidden options always work, in profiles too.
+
 ## General
 
 | Flag | Aliases | Description | Default |
 | :--- | :--- | :--- | :--- |
-| `AUFGABE` | *(positional argument)* | The coding task in quotes. Without a task, an interrupted session is offered; otherwise the help is shown. | – |
+| `AUFGABE` | *(positional argument)* | The coding task in quotes. Without a task, an interrupted session is offered; otherwise a short guide (`init`, start, dry run, `--resume`, `--help`). | – |
 | `-p`, `--project` | | Target project (absolute or relative). | `.` |
 | `-m`, `--max-iterations` | | Maximum rounds in the build loop (phase 3). | `10`, in stage mode 2 per stage + 2 |
 | `-d`, `--delay` | | Pause between build rounds in seconds. | `3` |
@@ -24,7 +26,9 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--retries <n>` | `--neuversuche` | Automatic retries on transient errors (overload, HTTP 5xx, dropped connection) with exponential backoff and jitter. `0` turns them off. See [Troubleshooting](fehlerbehebung.md#automatic-retries). | `3` |
 | `--swap` | `--swap-roles`, `--reverse` | Swap the default roles: Antigravity/Gemini plans, Claude reviews. | off |
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). See [Strategies](strategien.md). | `balanced` |
-| `--dry-run` | | Show the assignment, a cost estimate from earlier sessions and the start command without running or creating anything. | off |
+| `--dry-run` | | Show the assignment, a cost estimate from earlier sessions, notes (e.g. missing `--proof`) and the start command without running or creating anything. | off |
+| `-h`, `--help` | | Most important options in groups. | – |
+| `--help-all` | | Every option with aliases. | – |
 | `--info` | `--check` | Show detected CLIs/endpoints and the default assignment. | off |
 | `--budget-max <value>` | | Hard limit for the session in tokens (`500k`, `1.5m`) or reported costs (`2.50usd`). See [Budget](#budget). | – |
 | `--budget-warn <value>` | | Soft limit, warning only. | 80 % of `--budget-max` |

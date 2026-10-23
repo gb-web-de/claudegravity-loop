@@ -341,7 +341,7 @@ More parameters: `abnahme_model`, `approve_plan` (`--plan-auto`) and `merge` (`-
 
 With the skill [`skills/claudegravity`](../../skills/claudegravity/SKILL.md) the assistant already knows the role flags.
 
-**4. `claudegravity_run`**: the same parameters. With `background: false` the tool returns the command with `cd` to copy. With `background: true` the loop starts without a terminal and with `--plan-auto`: it only builds if the Reviewer reports `APPROVED`. Ollama Builders do not need `yolo` for that; a Codex Builder (Variant D) does.
+**4. `claudegravity_run`**: the same parameters. With `background: false` the tool returns the command with `cd` to copy. With `background: true` the loop starts without a terminal and with `--plan-auto`: it only builds if the Reviewer reports `APPROVED`. Ollama Builders do not need `yolo` for that; a Codex Builder (Variant D) does. `claudegravity_status` shows the progress afterwards.
 
 **Testing without a client** (one JSON-RPC line via stdin):
 

@@ -8,11 +8,13 @@ claudegravity [AUFGABE] [OPTIONEN]
 
 Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B. `--bauer` = `--builder`).
 
+`claudegravity --help` zeigt die wichtigsten Optionen in Gruppen (Start, Strategie und Kosten, Rollen und Modelle, Ablauf, Rechte und Arbeitsbereich), je Option nur den Hauptnamen. `claudegravity --help-all` zeigt alle Optionen mit allen Aliasen. Ausgeblendete Optionen funktionieren immer, auch in Profilen.
+
 ## Allgemein
 
 | Flag | Aliase | Beschreibung | Standard |
 | :--- | :--- | :--- | :--- |
-| `AUFGABE` | *(Positionsargument)* | Die Programmieraufgabe in Anführungszeichen. Ohne Aufgabe wird eine unterbrochene Sitzung angeboten, sonst die Hilfe gezeigt. | – |
+| `AUFGABE` | *(Positionsargument)* | Die Programmieraufgabe in Anführungszeichen. Ohne Aufgabe wird eine unterbrochene Sitzung angeboten, sonst ein kurzer Wegweiser (`init`, Start, Trockenlauf, `--resume`, `--help`). | – |
 | `-p`, `--project` | | Zielprojekt (absolut oder relativ). | `.` |
 | `-m`, `--max-iterations` | | Maximale Runden im Bau-Loop (Phase 3). | `10`, im Etappen-Modus 2 pro Etappe + 2 |
 | `-d`, `--delay` | | Pause zwischen Bau-Runden in Sekunden. | `3` |
@@ -24,7 +26,9 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--retries <n>` | `--neuversuche` | Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, HTTP 5xx, Verbindungsabbruch) mit exponentiellem Backoff und Jitter. `0` schaltet ab. Siehe [Fehlerbehebung](fehlerbehebung.md#automatische-neuversuche). | `3` |
 | `--swap` | `--swap-roles`, `--reverse` | Standardrollen tauschen: Antigravity/Gemini plant, Claude prüft. | aus |
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). Siehe [Strategien](strategien.md). | `balanced` |
-| `--dry-run` | | Belegung, Kostenschätzung aus früheren Sessions und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |
+| `--dry-run` | | Belegung, Kostenschätzung aus früheren Sessions, Hinweise (z. B. fehlendes `--proof`) und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |
+| `-h`, `--help` | | Wichtigste Optionen in Gruppen. | – |
+| `--help-all` | | Alle Optionen mit Aliasen. | – |
 | `--info` | `--check` | Erkannte CLIs/Endpunkte und Standard-Belegung anzeigen. | aus |
 | `--budget-max <wert>` | | Harte Grenze für die Session in Tokens (`500k`, `1.5m`) oder gemeldeten Kosten (`2.50usd`). Siehe [Budget](#budget). | – |
 | `--budget-warn <wert>` | | Weiche Grenze, nur Warnung. | 80 % von `--budget-max` |

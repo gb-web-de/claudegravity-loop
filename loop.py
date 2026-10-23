@@ -2966,7 +2966,7 @@ def fail(code: str, detail: str | None = None, exit_code: int = 1):
 CONFIG_ENV_PREFIX = "CLAUDEGRAVITY_"
 PROFILE_FILE = "profile.json"
 # Nicht über Umgebung oder Profil setzbar: Aufgabe/Ziel, einmalige Aktionen und Geheimnisse
-CONFIG_EXCLUDED = {"help", "task", "project", "resume", "check", "dry_run", "print_effective_config", "api_key", "no_shield", "init"}
+CONFIG_EXCLUDED = {"help", "help_all", "task", "project", "resume", "check", "dry_run", "print_effective_config", "api_key", "no_shield", "init"}
 # Das Projekt-Profil liegt im Projektordner, in den ein Bauleiter schreiben kann: keine Rechte daraus
 PROJECT_PROFILE_FORBIDDEN = {"yolo"}
 # Standardwerte, die erst später im Lauf gesetzt werden (für --print-effective-config)
@@ -3731,71 +3731,142 @@ def first_run_guide(args, input_fn=input) -> str:
     return {"1": "dry-run", "2": "init", "3": "run", "4": "quiet"}.get(choice, "dry-run")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop")
-    parser.add_argument("task", nargs="?", default="", help="Die Aufgabe für den Loop")
-    parser.add_argument("-p", "--project", default=".", help="Pfad zum Ziel-Projekt (absolut oder relativ, Standard: .)")
-    parser.add_argument("-m", "--max-iterations", type=int, default=None, help="Maximale autonome Iterationen (Standard: 10, im Etappen-Modus 2 pro Etappe + 2)")
-    parser.add_argument("-c", "--resume", "--continue", dest="resume", action="store_true", help="Unterbrochene Sitzung fortsetzen")
-    parser.add_argument("-i", "--ask", "--interview", "--clarify", action="store_true", help="Fragen-Modus: Beide Agenten stellen bei Unklarheiten gezielte Fragen an dich, bevor der Plan finalisiert wird")
-    parser.add_argument("--planner", "--architekt", default=None, help="Explizite CLI für Architekt / Planung (z.B. claude oder agy)")
-    parser.add_argument("--reviewer", "--pruefstatiker", default=None, help="Explizite CLI für Prüfstatiker / Review (z.B. agy oder claude)")
-    parser.add_argument("--builder", "--bauer", default=None, help="Explizite CLI für Bauleiter / Umsetzung (Phase 3, z.B. claude oder agy, Standard: folgt Architekt)")
-    parser.add_argument("--swap", "--swap-roles", "--reverse", action="store_true", help="Rollen tauschen: Antigravity wird Architekt (Planung), Claude wird Prüfstatiker (Review)")
-    parser.add_argument("--planner-model", "--architekt-model", default=None, help="Modell für den Architekten (z.B. sonnet, opus, gemini-2.5-pro)")
-    parser.add_argument("--reviewer-model", "--pruefstatiker-model", default=None, help="Modell für den Prüfstatiker (z.B. gemini-2.5-pro, sonnet, opus)")
-    parser.add_argument("--builder-model", "--bauer-model", default=None, help="Modell für den Bauleiter in Phase 3 (z.B. claude-3-5-haiku, gemini-2.5-flash, sonnet)")
-    parser.add_argument("--effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität / Thinking Effort (für agy)")
-    parser.add_argument("--reviewer-effort", "--pruefstatiker-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Prüfstatiker (für agy)")
-    parser.add_argument("--planner-effort", "--architekt-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Spezifische Reasoning-Intensität für den Architekten (falls agy)")
-    parser.add_argument("--builder-effort", "--bauer-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität für den Bauleiter in Phase 3 (für agy)")
-    parser.add_argument("--endpoint", "--api-base", default=None, help="OpenAI-kompatibler Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
-    parser.add_argument("--api-key", default=None, help="Optionaler API-Key für geschützte KI-Endpunkte")
-    parser.add_argument("--timeout", type=int, default=None, help=f"Sekunden pro Runde für Endpunkte (Standard: {LOCAL_TIMEOUT} im Heimnetz, {CLOUD_TIMEOUT} sonst; auch CLAUDEGRAVITY_TIMEOUT)")
-    parser.add_argument("--no-shield", action="store_true", help="Datenschutzschild aus: Zugangsdaten in Prompts an Cloud-Modelle nicht schwärzen")
-    parser.add_argument("--architekt-endpoint", default=None, help="Spezifischer Endpunkt für den Architekten")
-    parser.add_argument("--pruefstatiker-endpoint", default=None, help="Spezifischer Endpunkt für den Prüfstatiker")
-    parser.add_argument("--bauer-endpoint", default=None, help="Spezifischer Endpunkt für den Bauleiter (Phase 3)")
-    parser.add_argument("--strategy", "--preset", default=None, choices=["best-code", "quality", "eco", "economy", "cost", "local-free", "free", "local", "hybrid", "mixed", "balanced"], help="Optimierungs-Strategie: best-code (beste Qualität), eco (bis zu 70%% Ersparnis), local-free (0€ Kosten in Phase 3 via Lokal/Intranet-Modell), hybrid (Cloud-CLI plant und nimmt ab, lokales Modell prüft und baut in Etappen), balanced (Standard)")
-    parser.add_argument("--dry-run", action="store_true", help="Trockenlauf: Zeigt Rollen, Modelle, Kosten-Analyse und generierten Befehl ohne Ausführung")
-    parser.add_argument("--auto-switch", "--fallback", action="store_true", help="Bei Erreichen eines AI-Limits automatisch zum alternativen Modell wechseln")
-    parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
-    parser.add_argument("--check", "--info", action="store_true", help="Installierte AI-CLIs, Standard-Modelle und Rollenkonfiguration anzeigen")
-    parser.add_argument("--no-worktree", "--no-workspace", dest="worktree", action="store_false", help="Keinen eigenen Git-Workspace pro Session anlegen, sondern direkt im Projektverzeichnis bauen")
-    parser.add_argument("--merge", "--worktree-merge", action="store_true", help="Session-Branch nach erfolgreichem Abschluss (.done) in den Ausgangs-Branch mergen")
-    parser.add_argument("-d", "--delay", type=int, default=3, help="Pause zwischen Runden in Sekunden")
-    parser.add_argument("--max-rounds", type=int, default=2, help="Maximale Review-Runden für den Plan (Standard: 2)")
-    parser.add_argument("--proof", "--pruefbefehl", default=None, help="Prüfbefehl, den der Loop nach jeder Bau-Runde selbst ausführt (z.B. \"python -m unittest discover -s tests\")")
-    parser.add_argument("--inspector", "--abnahme", default=None, help="CLI für die Abnahme des fertigen Codes (Standard: Prüfstatiker, nie der Bauleiter)")
-    parser.add_argument("--inspector-model", "--abnahme-model", default=None, help="Modell für die Abnahme")
-    parser.add_argument("--inspector-effort", "--abnahme-effort", default=None, choices=["low", "medium", "high", "xhigh", "max"], help="Reasoning-Intensität für die Abnahme")
-    parser.add_argument("--max-inspections", type=int, default=2, help="Maximale Abnahme-Runden pro Lauf (Standard: 2)")
-    parser.add_argument("--no-inspect", "--ohne-abnahme", dest="inspect", action="store_false", help="Abnahme durch einen anderen Anbieter auslassen (wird im LOG.md vermerkt)")
-    parser.add_argument("--plan-auto", "--approve-plan", dest="approve_plan", action="store_true", help="Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (sonst kein Bau); für Läufe ohne Terminal")
-    parser.add_argument("--etappen", "--stages", default="auto", choices=["auto", "an", "aus", "on", "off"], help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)")
+EFFORT_CHOICES = ["low", "medium", "high", "xhigh", "max"]
+STRATEGY_CHOICES = ["best-code", "quality", "eco", "economy", "cost", "local-free", "free", "local", "hybrid", "mixed", "balanced"]
+STRATEGY_METAVAR = "{balanced,best-code,eco,local-free,hybrid}"
+HELP_EPILOG = (
+    "Erste Schritte: claudegravity init · Trockenlauf: claudegravity --dry-run \"Aufgabe\" · "
+    "Alle Optionen mit Aliasen: claudegravity --help-all"
+)
 
-    parser.add_argument("--retries", "--neuversuche", type=int, default=None, help="Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, 5xx, Verbindungsabbruch) mit Backoff und Jitter (Standard: 3, 0 schaltet ab)")
-    parser.add_argument("--escalate", "--eskalation", default=None, metavar="ZIEL",
-                        help="Lokaler Bauleiter scheitert wiederholt: auf eine Cloud-CLI wechseln (auto oder z. B. claude, codex); einmal pro Session, steht in .done")
-    parser.add_argument("--escalate-after", "--eskalation-nach", type=int, default=None, metavar="N",
-                        help=f"Erfolglose Bau-Runden in Folge bis zur Eskalation (Standard: {ESCALATE_AFTER_DEFAULT})")
-    parser.add_argument("--budget-max", default=None, help="Harte Grenze für die Session: Tokens (500k, 1.5m) oder gemeldete Kosten (2.50usd); der Lauf endet nach dem Aufruf, der sie erreicht")
-    parser.add_argument("--budget-warn", default=None, help="Weiche Grenze: nur Warnung (Standard: 80 %% von --budget-max)")
-    parser.add_argument("--budget-roles", "--budget-rollen", default=None, help="Harte Grenzen je Rolle, z. B. \"bauleiter=300k,abnahme=0.50usd\"")
-    parser.add_argument("--template", "--vorlage", default=None, help="Aufgaben-Vorlage: bugfix, feature, refactor oder eigene aus dem Profil (\"templates\"); einzelne Flags überschreiben sie")
-    parser.add_argument("--init", "--einrichten", action="store_true", help="Einrichtung: erkennt System und KI-CLIs, fragt Ziel und Prüfbefehl, speichert ein Profil (auch: claudegravity init)")
-    parser.add_argument("--log-format", choices=LOG_FORMATS, default="text",
-                        help="json: zusätzlich events.jsonl im Session-Ordner, eine JSON-Zeile pro Ereignis (Aufruf, Prüfbefehl, Audit, Eskalation, Ende)")
-    parser.add_argument("--no-progress", dest="progress", action="store_false", help="Keine Statuszeile nach jedem KI-Aufruf (im Profil: \"progress\": false)")
-    parser.add_argument("--no-guide", dest="guide", action="store_false", help="Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil: \"guide\": false)")
-    parser.add_argument("--print-effective-config", "--config", dest="print_effective_config", action="store_true", help="Wirksame Konfiguration mit Quelle je Einstellung (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden")
+
+class LoopHelpFormatter(argparse.HelpFormatter):
+    """Zeigt je Option nur den Hauptnamen (plus Kurzform); Aliase stehen nur in --help-all."""
+
+    show_aliases = False
+
+    def __init__(self, prog: str) -> None:
+        super().__init__(prog, max_help_position=30, width=min(shutil.get_terminal_size((100, 20)).columns, 110))
+
+    def _format_action_invocation(self, action: argparse.Action) -> str:
+        if not action.option_strings or self.show_aliases:
+            return super()._format_action_invocation(action)
+        shorts = [o for o in action.option_strings if not o.startswith("--")]
+        names = shorts[:1] + [o for o in action.option_strings if o.startswith("--")][:1]
+        if action.nargs == 0:
+            return ", ".join(names)
+        return ", ".join(names) + " " + self._format_args(action, self._get_default_metavar_for_optional(action))
+
+
+class LoopFullHelpFormatter(LoopHelpFormatter):
+    show_aliases = True
+
+
+def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
+    """Kommandozeile in Gruppen. Ohne `full_help` zeigt --help nur die wichtigsten Optionen;
+    alle übrigen bleiben gültig und erscheinen mit --help-all."""
+    parser = argparse.ArgumentParser(
+        prog="claudegravity",
+        usage="claudegravity [Optionen] \"Aufgabe\"" if not full_help else None,
+        description="ClaudeGravity Loop: Ein Modell plant, ein anderes prüft, eines baut, ein anderer Anbieter nimmt ab.",
+        epilog=HELP_EPILOG,
+        formatter_class=LoopFullHelpFormatter if full_help else LoopHelpFormatter,
+        add_help=False,
+    )
+
+    def group(title: str):
+        g = parser.add_argument_group(title)
+
+        def add(*flags, core: bool = False, **kw):
+            if not (core or full_help):
+                kw["help"] = argparse.SUPPRESS
+            return g.add_argument(*flags, **kw)
+        return add
+
+    add = group("Start")
+    add("task", nargs="?", default="", core=True, help="Die Aufgabe für den Loop")
+    add("-p", "--project", default=".", core=True, help="Pfad zum Ziel-Projekt (absolut oder relativ, Standard: .)")
+    add("--init", "--einrichten", action="store_true", core=True, help="Einrichtung: erkennt System und KI-CLIs, fragt Ziel und Prüfbefehl, speichert ein Profil (auch: claudegravity init)")
+    add("--dry-run", action="store_true", core=True, help="Trockenlauf: Zeigt Rollen, Modelle, Kosten-Analyse und generierten Befehl ohne Ausführung")
+    add("-c", "--resume", "--continue", dest="resume", action="store_true", core=True, help="Unterbrochene Sitzung fortsetzen")
+    add("--template", "--vorlage", default=None, core=True, help="Aufgaben-Vorlage: bugfix, feature, refactor oder eigene aus dem Profil (\"templates\"); einzelne Flags überschreiben sie")
+    add("--check", "--info", action="store_true", core=True, help="Installierte AI-CLIs, Standard-Modelle und Rollenkonfiguration anzeigen")
+    add("--print-effective-config", "--config", dest="print_effective_config", action="store_true", core=True, help="Wirksame Konfiguration mit Quelle je Einstellung (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden")
+    add("-h", "--help", action="help", core=True, help="Diese Hilfe (wichtigste Optionen)")
+    add("--help-all", action="help", core=True, help="Alle Optionen mit Aliasen zeigen")
+
+    add = group("Strategie und Kosten")
+    add("--strategy", "--preset", default=None, choices=STRATEGY_CHOICES, metavar=STRATEGY_METAVAR, core=True, help="Optimierungs-Strategie: best-code (beste Qualität), eco (bis zu 70%% Ersparnis), local-free (0€ Kosten in Phase 3 via Lokal/Intranet-Modell), hybrid (Cloud-CLI plant und nimmt ab, lokales Modell prüft und baut in Etappen), balanced (Standard). Aliase: quality, economy, cost, free, local, mixed")
+    add("--budget-max", default=None, core=True, help="Harte Grenze für die Session: Tokens (500k, 1.5m) oder gemeldete Kosten (2.50usd); der Lauf endet nach dem Aufruf, der sie erreicht")
+    add("--budget-warn", default=None, help="Weiche Grenze: nur Warnung (Standard: 80 %% von --budget-max)")
+    add("--budget-roles", "--budget-rollen", default=None, help="Harte Grenzen je Rolle, z. B. \"bauleiter=300k,abnahme=0.50usd\"")
+    add("--escalate", "--eskalation", default=None, metavar="ZIEL",
+        help="Lokaler Bauleiter scheitert wiederholt: auf eine Cloud-CLI wechseln (auto oder z. B. claude, codex); einmal pro Session, steht in .done")
+    add("--escalate-after", "--eskalation-nach", type=int, default=None, metavar="N",
+        help=f"Erfolglose Bau-Runden in Folge bis zur Eskalation (Standard: {ESCALATE_AFTER_DEFAULT})")
+
+    add = group("Rollen und Modelle")
+    add("--planner", "--architekt", default=None, core=True, help="Explizite CLI für Architekt / Planung (z.B. claude oder agy)")
+    add("--reviewer", "--pruefstatiker", default=None, core=True, help="Explizite CLI für Prüfstatiker / Review (z.B. agy oder claude)")
+    add("--builder", "--bauer", default=None, core=True, help="Explizite CLI für Bauleiter / Umsetzung (Phase 3, z.B. claude oder agy, Standard: folgt Architekt)")
+    add("--inspector", "--abnahme", default=None, core=True, help="CLI für die Abnahme des fertigen Codes (Standard: Prüfstatiker, nie der Bauleiter)")
+    add("--endpoint", "--api-base", default=None, core=True, help="OpenAI-kompatibler Endpunkt (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
+    add("--swap", "--swap-roles", "--reverse", action="store_true", help="Rollen tauschen: Antigravity wird Architekt (Planung), Claude wird Prüfstatiker (Review)")
+    add("--planner-model", "--architekt-model", default=None, help="Modell für den Architekten (z.B. sonnet, opus, gemini-2.5-pro)")
+    add("--reviewer-model", "--pruefstatiker-model", default=None, help="Modell für den Prüfstatiker (z.B. gemini-2.5-pro, sonnet, opus)")
+    add("--builder-model", "--bauer-model", default=None, help="Modell für den Bauleiter in Phase 3 (z.B. claude-3-5-haiku, gemini-2.5-flash, sonnet)")
+    add("--inspector-model", "--abnahme-model", default=None, help="Modell für die Abnahme")
+    add("--effort", default=None, choices=EFFORT_CHOICES, help="Reasoning-Intensität / Thinking Effort (für agy)")
+    add("--planner-effort", "--architekt-effort", default=None, choices=EFFORT_CHOICES, help="Spezifische Reasoning-Intensität für den Architekten (falls agy)")
+    add("--reviewer-effort", "--pruefstatiker-effort", default=None, choices=EFFORT_CHOICES, help="Spezifische Reasoning-Intensität für den Prüfstatiker (für agy)")
+    add("--builder-effort", "--bauer-effort", default=None, choices=EFFORT_CHOICES, help="Reasoning-Intensität für den Bauleiter in Phase 3 (für agy)")
+    add("--inspector-effort", "--abnahme-effort", default=None, choices=EFFORT_CHOICES, help="Reasoning-Intensität für die Abnahme")
+    add("--architekt-endpoint", default=None, help="Spezifischer Endpunkt für den Architekten")
+    add("--pruefstatiker-endpoint", default=None, help="Spezifischer Endpunkt für den Prüfstatiker")
+    add("--bauer-endpoint", default=None, help="Spezifischer Endpunkt für den Bauleiter (Phase 3)")
+    add("--api-key", default=None, help="Optionaler API-Key für geschützte KI-Endpunkte")
+    add("--timeout", type=int, default=None, help=f"Sekunden pro Runde für Endpunkte (Standard: {LOCAL_TIMEOUT} im Heimnetz, {CLOUD_TIMEOUT} sonst; auch CLAUDEGRAVITY_TIMEOUT)")
+
+    add = group("Ablauf")
+    add("--proof", "--pruefbefehl", default=None, core=True, help="Prüfbefehl, den der Loop nach jeder Bau-Runde selbst ausführt (z.B. \"python -m unittest discover -s tests\")")
+    add("-i", "--ask", "--interview", "--clarify", action="store_true", core=True, help="Fragen-Modus: Beide Agenten stellen bei Unklarheiten gezielte Fragen an dich, bevor der Plan finalisiert wird")
+    add("--plan-auto", "--approve-plan", dest="approve_plan", action="store_true", core=True, help="Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (sonst kein Bau); für Läufe ohne Terminal")
+    add("--etappen", "--stages", default="auto", choices=["auto", "an", "aus", "on", "off"], help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)")
+    add("-m", "--max-iterations", type=int, default=None, help="Maximale autonome Iterationen (Standard: 10, im Etappen-Modus 2 pro Etappe + 2)")
+    add("--max-rounds", type=int, default=2, help="Maximale Review-Runden für den Plan (Standard: 2)")
+    add("--max-inspections", type=int, default=2, help="Maximale Abnahme-Runden pro Lauf (Standard: 2)")
+    add("--no-inspect", "--ohne-abnahme", dest="inspect", action="store_false", help="Abnahme durch einen anderen Anbieter auslassen (wird im LOG.md vermerkt)")
+    add("--auto-switch", "--fallback", action="store_true", help="Bei Erreichen eines AI-Limits automatisch zum alternativen Modell wechseln")
+    add("--retries", "--neuversuche", type=int, default=None, help="Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, 5xx, Verbindungsabbruch) mit Backoff und Jitter (Standard: 3, 0 schaltet ab)")
+    add("-d", "--delay", type=int, default=3, help="Pause zwischen Runden in Sekunden")
+
+    add = group("Rechte und Arbeitsbereich")
+    add("--yolo", "--auto-approve", action="store_true", core=True, help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
+    add("--no-worktree", "--no-workspace", dest="worktree", action="store_false", help="Keinen eigenen Git-Workspace pro Session anlegen, sondern direkt im Projektverzeichnis bauen")
+    add("--merge", "--worktree-merge", action="store_true", help="Session-Branch nach erfolgreichem Abschluss (.done) in den Ausgangs-Branch mergen")
+    add("--no-shield", action="store_true", help="Datenschutzschild aus: Zugangsdaten in Prompts an Cloud-Modelle nicht schwärzen")
+
+    add = group("Ausgabe")
+    add("--log-format", choices=LOG_FORMATS, default="text",
+        help="json: zusätzlich events.jsonl im Session-Ordner, eine JSON-Zeile pro Ereignis (Aufruf, Prüfbefehl, Audit, Eskalation, Ende)")
+    add("--no-progress", dest="progress", action="store_false", help="Keine Statuszeile nach jedem KI-Aufruf (im Profil: \"progress\": false)")
+    add("--no-guide", dest="guide", action="store_false", help="Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil: \"guide\": false)")
     return parser
 
 
-def main():
-    parser = build_parser()
+def print_welcome() -> None:
+    """Start ohne Aufgabe: kurzer Wegweiser statt der vollen Hilfe."""
+    print("ClaudeGravity Loop: Ein Modell plant, ein anderes prüft, eines baut, ein anderer Anbieter nimmt ab.\n")
+    print("  claudegravity init                       Einrichtung (erkennt KIs, speichert ein Profil)")
+    print('  claudegravity "Deine Aufgabe"            Loop starten')
+    print('  claudegravity --dry-run "Deine Aufgabe"  Nur zeigen, wer welche Rolle bekommt')
+    print("  claudegravity --resume                   Unterbrochene Sitzung fortsetzen")
+    print("  claudegravity --help                     Wichtigste Optionen (alle: --help-all)")
 
+
+def main():
     argv = sys.argv[1:]
+    parser = build_parser(full_help="--help-all" in argv)
     args = parser.parse_args(argv)
     config_report = apply_config_layers(parser, args, argv)
     if args.print_effective_config:
@@ -3959,8 +4030,10 @@ def main():
             except (OSError, ValueError) as exc:
                 print(f"   Konnte das globale Profil nicht schreiben: {exc}")
 
-    for warning in unsafe_config_warnings(args, project_path, is_git_repo(project_path)):
-        print(warning)
+    config_warnings = unsafe_config_warnings(args, project_path, is_git_repo(project_path))
+    if not args.dry_run and (args.task or args.resume):
+        for warning in config_warnings:
+            print(warning)
 
     if args.dry_run:
         dry_task = args.task or "Refaktoriere das Modul und erstelle Unit-Tests"
@@ -4130,6 +4203,11 @@ def main():
         for line in format_estimate(estimate, estimate_hints(estimate, strat, BUDGET, local_cand is not None, args.proof)):
             print(line)
 
+        if config_warnings:
+            print("\n🔔 Hinweise:")
+            for warning in config_warnings:
+                print(f"   {warning}")
+
         print("\n🚀 Generierter Shell-Befehl (zum Starten):")
         print(f"   {shlex.join(dry_run_command(args, dry_task, strat, default_b_model))}")
         print("=" * 68)
@@ -4143,6 +4221,10 @@ def main():
             print("Nichts ausgeführt. Tipp: `claudegravity init` speichert deine Wahl als Profil.")
             return
         args.dry_run = False
+
+    if not args.task and not args.resume and find_latest_session(project_path / ".dual-loop") is None:
+        print_welcome()
+        return
 
     loop_dir = project_path / ".dual-loop"
     loop_dir.mkdir(exist_ok=True)
@@ -4184,13 +4266,13 @@ def main():
                 state = state_candidate
                 task = state.get("task")
             else:
-                parser.print_help()
+                print_welcome()
                 sys.exit(1)
         else:
-            parser.print_help()
+            print_welcome()
             sys.exit(1)
     elif not args.task:
-        parser.print_help()
+        print_welcome()
         sys.exit(1)
     else:
         task = args.task
