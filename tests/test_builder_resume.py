@@ -64,7 +64,7 @@ class ResumePromptTest(unittest.TestCase):
         self.assertIn("GEHEIME AUFGABE", full)
         self.assertNotIn("GEHEIME AUFGABE", short)
         self.assertIn("Test rot", short)
-        self.assertIn("s/.done", short)
+        self.assertIn(str(Path("s/.done")), short)
         self.assertLess(len(short), len(full))
 
     def test_short_stage_prompt(self):
