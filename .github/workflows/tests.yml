@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Syntax check
-        run: python -m py_compile loop.py mcp_server.py
+        run: python -m py_compile loop.py mcp_server.py && python -m compileall -q claudegravity
       - name: Unit tests
         env:
           PYTHONIOENCODING: utf-8

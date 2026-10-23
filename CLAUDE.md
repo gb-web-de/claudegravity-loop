@@ -5,7 +5,9 @@
 Er basiert auf dem Prinzip des [claudex-loop](https://github.com/chaseai-yt/claudex-loop): **Das Modell, das den Plan entwirft oder baut, benotet sich niemals selbst.**
 
 ## Architektur
-- `loop.py`: Haupt-CLI-Runner (benötigt nur Python 3.10+ Standardbibliothek).
+- `loop.py`: Einstieg des CLI-Runners (nur Python 3.10+ Standardbibliothek). Der Code liegt im Paket `claudegravity/`; `loop.py` bietet alle Namen weiter als `loop.<name>` an.
+  - Module (Abhängigkeiten nur in dieser Richtung, keine Zyklen): `common` (say, SETTINGS, Ratenlimits) → `safety` → `errors` → `metrics` → `backends` → `session` → `budget` → `runner` → `planning` → `roles` → `build` → `config` → `wizard` → `phases` → `cli`.
+  - Tests, die eine Funktion ersetzen, patchen das Modul, in dem sie nachgeschlagen wird (z. B. `loop.runner.interruptible_sleep`), nicht `loop.<name>`.
   - Ablauf in `main()`: `load_cli_config` → `setup_agents` → `open_session` → `setup_run` (liefert `RunContext`) → `print_run_banner` → `run_plan_phase` → `prepare_build` → `run_build_phase` → `finish_run`. Neue Schritte gehören in die passende Phase, nicht in `main()`. Laufweite Einstellungen stehen in `SETTINGS` (`RuntimeSettings`), Terminal-Ausgaben gehen über `say()`, Ereignisse für `events.jsonl` über `log_event()`.
   - **3 Rollen:** 🏗️ Architekt (Phase 1: Plan), 🧐 Prüfstatiker (Phase 2: Review), 🔨 Bauleiter (Phase 3: Umsetzung). Jede Rolle hat eigene Flags für CLI, Modell, Effort und Endpunkt (`--planner/--architekt`, `--reviewer/--pruefstatiker`, `--builder/--bauer`, jeweils `-model`, `-effort`, `-endpoint`).
   - **Abnahme (Phase 4):** Nach `.done` führt der Loop `--proof` selbst aus und lässt den Diff von einem anderen Anbieter als dem Bauleiter prüfen (`--abnahme`). Architekt, Prüfstatiker und Abnahme laufen immer lesend (`get_readonly_flags`); nur der Bauleiter bekommt Schreibrechte. Urteile werden nur über `parse_review()` gelesen (letzte `VERDICT:`-Zeile).

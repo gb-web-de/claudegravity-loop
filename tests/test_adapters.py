@@ -35,7 +35,7 @@ def completed(stdout="", stderr="", code=0):
 
 class CliContractTest(unittest.TestCase):
     def setUp(self):
-        p = mock.patch.object(loop, "build_cli_command", side_effect=lambda b, a: ([b] + list(a), False))
+        p = mock.patch.object(loop.backends, "build_cli_command", side_effect=lambda b, a: ([b] + list(a), False))
         p.start()
         self.addCleanup(p.stop)
 

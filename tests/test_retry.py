@@ -62,7 +62,7 @@ class SafeAgentRunRetryTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.session = Path(self.tmp.name)
         self.sleeps = []
-        patcher = mock.patch.object(loop, "interruptible_sleep", side_effect=lambda s: self.sleeps.append(s) or True)
+        patcher = mock.patch.object(loop.runner, "interruptible_sleep", side_effect=lambda s: self.sleeps.append(s) or True)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)
@@ -96,7 +96,7 @@ class SafeAgentRunRetryTest(unittest.TestCase):
 
     def test_rate_limit_with_reset_goes_straight_to_menu(self):
         agent, _ = flaky_agent([loop.RateLimitError("claude", "rate limit, resets in 5 minutes", "5 minutes", 300)])
-        with mock.patch.object(loop, "handle_rate_limit", return_value=("wait", agent)) as menu:
+        with mock.patch.object(loop.runner, "handle_rate_limit", return_value=("wait", agent)) as menu:
             text, _, _ = self.run_agent(agent)
         self.assertEqual(text, "ok")
         self.assertFalse(menu.call_args.args[2].transient)
@@ -107,7 +107,7 @@ class SafeAgentRunRetryTest(unittest.TestCase):
         agent, calls = flaky_agent(errors)
         other, _ = flaky_agent([], name="Andere", binary="other")
         metrics = loop.SessionMetrics()
-        with mock.patch.object(loop, "handle_rate_limit", return_value=("switch", other)) as menu:
+        with mock.patch.object(loop.runner, "handle_rate_limit", return_value=("switch", other)) as menu:
             text, used, _ = self.run_agent(agent, metrics)
         self.assertEqual((text, used.name, len(calls)), ("ok", "Andere", 4))
         self.assertTrue(menu.call_args.args[2].transient)
@@ -116,7 +116,7 @@ class SafeAgentRunRetryTest(unittest.TestCase):
     def test_retries_can_be_disabled(self):
         agent, _ = flaky_agent([RuntimeError("HTTP 503")])
         with mock.patch.object(loop.SETTINGS, "retries", 0), \
-                mock.patch.object(loop, "handle_rate_limit", return_value=("wait", agent)) as menu:
+                mock.patch.object(loop.runner, "handle_rate_limit", return_value=("wait", agent)) as menu:
             self.run_agent(agent)
         self.assertEqual(self.sleeps, [])
         self.assertTrue(menu.called)

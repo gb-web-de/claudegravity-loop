@@ -2,7 +2,7 @@
 
 [← Back to overview](../../README.md) · [Documentation index](README.md) · 🇩🇪 [Deutsch](../de/installation.md)
 
-ClaudeGravity consists of two Python files (`loop.py` and `mcp_server.py`) and uses only the standard library. There is **no `pip install`**, no virtual environment and nothing to compile.
+ClaudeGravity consists of two entry scripts (`loop.py` and `mcp_server.py`) and the package folder `claudegravity/`, which `loop.py` loads from its own directory. Keep the folder next to `loop.py`; symlinks to `loop.py` work. Everything uses only the standard library. There is **no `pip install`**, no virtual environment and nothing to compile.
 
 ## Requirements
 

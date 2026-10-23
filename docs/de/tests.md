@@ -72,6 +72,8 @@ und die geänderten Dateien in `tests/golden/` mit committen.
 
 CI prüft den Code mit [Ruff](https://docs.astral.sh/ruff/) (Regeln in `ruff.toml`: Syntax, Pyflakes, Bugbear, Vereinfachungen). Ruff ist nur ein Werkzeug für Entwicklung und CI, der Loop selbst braucht weiterhin nur die Standardbibliothek. Lokal: `pip install ruff` und `ruff check .`.
 
+Der Code liegt im Paket `claudegravity/` (ein Modul je Aufgabe), `loop.py` ist nur der Einstieg. Wer in einem Test eine Funktion ersetzt, patcht das Modul, in dem sie aufgerufen wird, etwa `mock.patch.object(loop.runner, "interruptible_sleep")`; ein Patch auf `loop.<name>` greift dort nicht.
+
 Ohne KI-Aufrufe und ohne Dateien zu ändern:
 
 ```bash
