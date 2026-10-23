@@ -44,6 +44,7 @@ python3 -m unittest discover -s tests
 | `test_retry.py`, `test_audit.py`, `test_errors.py`, `test_kpi.py` | Neuversuche, Audit, Fehlercodes, Kennzahlen |
 | `test_budget.py`, `test_estimate.py` | Budget-Grenzen, Kostenschätzung vorab aus früheren Sessions |
 | `test_progress.py` | Statuszeile nach jedem KI-Aufruf, Abbruchgrund bei Rundenlimit |
+| `test_events.py` | Strukturiertes Ereignis-Log `events.jsonl` |
 | `test_escalation.py` | Eskalation vom lokalen Bauleiter zur Cloud: Zielwahl, Schreibrechte, Ende-zu-Ende |
 
 ### Smoke-Matrix

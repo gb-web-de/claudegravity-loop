@@ -33,6 +33,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--escalate-after <n>` | `--eskalation-nach` | Erfolglose Bau-Runden in Folge bis zur Eskalation. | 2 |
 | `--template <name>` | `--vorlage` | Aufgaben-Vorlage `bugfix`, `feature`, `refactor` oder eine eigene aus dem Profil. Siehe [Aufgaben-Vorlagen](#aufgaben-vorlagen). | – |
 | `init`, `--init` | `--einrichten` | Einrichtung: erkennt System und KI-CLIs, fragt Ziel, Prüfbefehl und Speicherort und schreibt ein Profil. Siehe [Schnellstart](schnellstart.md#1-einrichten). | – |
+| `--log-format text\|json` | | `json` schreibt zusätzlich `events.jsonl` in den Session-Ordner, eine JSON-Zeile pro Ereignis. Siehe [Sessions & Dateien](sessions-und-dateien.md#strukturiertes-ereignis-log). | `text` |
 | `--no-progress` | | Keine Statuszeile nach jedem KI-Aufruf (im Profil `"progress": false`). | aus |
 | `--no-guide` | | Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil `"guide": false`). | aus |
 | `--print-effective-config` | `--config` | Wirksame Einstellungen mit Quelle (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden. Siehe [Vorrang der Einstellungen](#vorrang-der-einstellungen). | aus |

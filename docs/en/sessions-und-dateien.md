@@ -18,6 +18,7 @@
 │           ├── INSPECTION_round1.md # the acceptance check's verdict on the finished code
 │           ├── LOG.md               # history of plan, review, acceptance check, limit switches, retries
 │           ├── audit-events.jsonl   # security events (see permission audit)
+│           ├── events.jsonl         # structured event log (only with --log-format json)
 │           ├── workspace/           # the session's Git worktree (branch loop/<session>)
 │           ├── AUDIT.md             # audit report if the run ends without a completion signal
 │           └── .done                # completion signal + audit report
@@ -147,6 +148,25 @@ Architect, reviewer and acceptance check run with read-only flags (Claude: only 
 | Possible credentials in model answer | An answer contains patterns such as API keys, tokens or passwords. |
 
 Every event is written to `LOG.md` and as a JSON line to `audit-events.jsonl` in the session folder; the count per kind appears in the audit block of `.done`.
+
+## Structured event log
+
+With `--log-format json` (or `"log_format": "json"` in a profile) the loop additionally writes `events.jsonl` to the session folder: one JSON line per event, for scripts, `jq` or a log system. Every line has `time`, `session` and `event`; empty fields are left out.
+
+| `event` | Fields |
+| :--- | :--- |
+| `call` | `role`, `agent`, `model`, `phase`, `iteration` (build), `duration_s`, `tokens` (this call), `tokens_total`, `cost_usd_total`, `retries` |
+| `proof` | `ok`, `command`, `iteration` |
+| `audit` | `level`, `kind`, `code`, `detail` |
+| `escalation` | `from`, `to`, `iteration`, `reason` |
+| `log` | `message`: every line that is also in `LOG.md` |
+| `session_end` | `phase`, `success`, `abort_reason`, `tokens_total`, `cost_usd_total`, `build_rounds` (`code` on a budget abort) |
+
+```bash
+jq -c 'select(.event == "call") | {role, agent, duration_s, tokens}' .dual-loop/sessions/*/events.jsonl
+```
+
+Texts are redacted as in `LOG.md`. Without the option, there is only `LOG.md`, `audit-events.jsonl` and the key figures block.
 
 ## Mirrored projects (`projects/`)
 

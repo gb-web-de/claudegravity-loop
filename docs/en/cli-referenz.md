@@ -33,6 +33,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--escalate-after <n>` | `--eskalation-nach` | Failed build rounds in a row until escalation. | 2 |
 | `--template <name>` | `--vorlage` | Task template `bugfix`, `feature`, `refactor` or your own from a profile. See [Task templates](#task-templates). | – |
 | `init`, `--init` | `--einrichten` | Setup: detects system and AI CLIs, asks for goal, proof command and location, and writes a profile. See [Quick start](schnellstart.md#1-set-up). | – |
+| `--log-format text\|json` | | `json` additionally writes `events.jsonl` to the session folder, one JSON line per event. See [Sessions & files](sessions-und-dateien.md#structured-event-log). | `text` |
 | `--no-progress` | | No status line after every AI call (in a profile: `"progress": false`). | off |
 | `--no-guide` | | Do not show the hint on the first run without a profile (in a profile: `"guide": false`). | off |
 | `--print-effective-config` | `--config` | Show the effective settings with their source (command line, session, environment, profile, default) and exit. See [Settings precedence](#settings-precedence). | off |

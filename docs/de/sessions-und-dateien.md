@@ -18,6 +18,7 @@
 │           ├── INSPECTION_round1.md # Urteil der Abnahme über den fertigen Code
 │           ├── LOG.md               # Verlauf von Plan, Review, Abnahme, Limit-Wechseln, Neuversuchen
 │           ├── audit-events.jsonl   # Sicherheitsereignisse (siehe Rechte-Audit)
+│           ├── events.jsonl         # strukturiertes Ereignis-Log (nur mit --log-format json)
 │           ├── workspace/           # Git-Worktree der Session (Branch loop/<session>)
 │           ├── AUDIT.md             # Audit-Bericht, wenn der Lauf ohne Fertigmeldung endet
 │           └── .done                # Fertigmeldung + Audit-Bericht
@@ -147,6 +148,25 @@ Architekt, Prüfstatiker und Abnahme laufen mit Lese-Flags (Claude: nur die Werk
 | Mögliche Zugangsdaten in Modellantwort | Eine Antwort enthält Muster wie API-Keys, Tokens oder Passwörter. |
 
 Jedes Ereignis steht in `LOG.md` und als JSON-Zeile in `audit-events.jsonl` im Session-Ordner; die Anzahl je Art erscheint im Audit-Block der `.done`.
+
+## Strukturiertes Ereignis-Log
+
+Mit `--log-format json` (oder `"log_format": "json"` im Profil) schreibt der Loop zusätzlich `events.jsonl` in den Session-Ordner: eine JSON-Zeile pro Ereignis, für Skripte, `jq` oder ein Log-System. Jede Zeile hat `time`, `session` und `event`; leere Felder fehlen.
+
+| `event` | Felder |
+| :--- | :--- |
+| `call` | `role`, `agent`, `model`, `phase`, `iteration` (Bau), `duration_s`, `tokens` (dieser Aufruf), `tokens_total`, `cost_usd_total`, `retries` |
+| `proof` | `ok`, `command`, `iteration` |
+| `audit` | `level`, `kind`, `code`, `detail` |
+| `escalation` | `from`, `to`, `iteration`, `reason` |
+| `log` | `message`: jede Zeile, die auch in `LOG.md` steht |
+| `session_end` | `phase`, `success`, `abort_reason`, `tokens_total`, `cost_usd_total`, `build_rounds` (bei Budget-Abbruch `code`) |
+
+```bash
+jq -c 'select(.event == "call") | {role, agent, duration_s, tokens}' .dual-loop/sessions/*/events.jsonl
+```
+
+Texte werden wie in `LOG.md` geschwärzt. Ohne die Option bleibt es bei `LOG.md`, `audit-events.jsonl` und dem Kennzahlen-Block.
 
 ## Gespiegelte Projekte (`projects/`)
 

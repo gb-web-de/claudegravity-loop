@@ -1649,6 +1649,25 @@ def mask_secrets(text: str) -> str:
     return redact_secrets(text)[0]
 
 
+LOG_FORMATS = ("text", "json")
+LOG_FORMAT = "text"  # --log-format: json schreibt zusätzlich events.jsonl
+
+
+def log_event(session_dir: Path | None, event: str, **fields) -> None:
+    """Eine JSON-Zeile pro Ereignis in events.jsonl (nur mit --log-format json); Texte werden geschwärzt."""
+    if LOG_FORMAT != "json" or session_dir is None:
+        return
+    record = {"time": datetime.datetime.now().isoformat(timespec="seconds"), "session": session_dir.name, "event": event}
+    for key, value in fields.items():
+        if value is not None:
+            record[key] = mask_secrets(value) if isinstance(value, str) else value
+    try:
+        with open(session_dir / "events.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+    except OSError:
+        pass
+
+
 def append_log(session_dir: Path, line: str) -> None:
     line = mask_secrets(line)
     try:
@@ -1656,6 +1675,7 @@ def append_log(session_dir: Path, line: str) -> None:
             f.write(f"- [{datetime.datetime.now().strftime('%H:%M:%S')}] {line}\n")
     except OSError:
         pass
+    log_event(session_dir, "log", message=line)
 
 
 AUDIT_EVENT_LABELS = {
@@ -1676,6 +1696,7 @@ def record_audit_event(session_dir: Path | None, kind: str, detail: str, metrics
     if session_dir is None:
         return
     append_log(session_dir, f"🛑 Audit: {label}: {detail}")
+    log_event(session_dir, "audit", level="warning", kind=kind, code=code, detail=detail)
     try:
         with open(session_dir / "audit-events.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps({"time": datetime.datetime.now().isoformat(timespec="seconds"), "kind": kind, "detail": detail}, ensure_ascii=False) + "\n")
@@ -1930,8 +1951,14 @@ def safe_agent_run(
                 for warning in BUDGET.check(tracker):
                     print(f"💶 Budget-Warnung: {warning}")
                     append_log(session_dir, f"Budget-Warnung: {warning}")
+            delta = (tracker.total_tokens if tracker is not None else 0) - tokens_before
+            log_event(session_dir, "call", role=role, agent=agent.name, model=agent.reported_model or agent.model,
+                      phase=state.get("phase"), iteration=state.get("last_iteration") if role == "builder" else None,
+                      duration_s=round(time.monotonic() - started, 1), tokens=delta,
+                      tokens_total=tracker.total_tokens if tracker is not None else None,
+                      cost_usd_total=round(tracker.cost_usd, 4) if tracker is not None else None,
+                      retries=attempt or None)
             if PROGRESS_ENABLED:
-                delta = (tracker.total_tokens if tracker is not None else 0) - tokens_before
                 for line in format_progress(role, agent.name, state, tracker, time.monotonic() - started, delta, BUDGET):
                     print(line, flush=True)
             if attempt and metrics_tracker:
@@ -3402,6 +3429,8 @@ def handle_budget_exceeded(exc: BudgetExceeded) -> None:
             (session_dir / "AUDIT.md").write_text(format_metrics_report(metrics, state), encoding="utf-8")
         save_session_state(session_dir, state)
         append_log(session_dir, f"Abbruch: Budget: {exc}")
+        log_event(session_dir, "session_end", level="error", phase=state.get("phase"), success=False,
+                  abort_reason=state["abort_reason"], code="CG-1404")
     print(f"\n🛑 Hartes Budget erreicht, Lauf beendet. Stand gesichert.")
     fail("CG-1404", str(exc), exit_code=3)
 
@@ -3755,6 +3784,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--budget-roles", "--budget-rollen", default=None, help="Harte Grenzen je Rolle, z. B. \"bauleiter=300k,abnahme=0.50usd\"")
     parser.add_argument("--template", "--vorlage", default=None, help="Aufgaben-Vorlage: bugfix, feature, refactor oder eigene aus dem Profil (\"templates\"); einzelne Flags überschreiben sie")
     parser.add_argument("--init", "--einrichten", action="store_true", help="Einrichtung: erkennt System und KI-CLIs, fragt Ziel und Prüfbefehl, speichert ein Profil (auch: claudegravity init)")
+    parser.add_argument("--log-format", choices=LOG_FORMATS, default="text",
+                        help="json: zusätzlich events.jsonl im Session-Ordner, eine JSON-Zeile pro Ereignis (Aufruf, Prüfbefehl, Audit, Eskalation, Ende)")
     parser.add_argument("--no-progress", dest="progress", action="store_false", help="Keine Statuszeile nach jedem KI-Aufruf (im Profil: \"progress\": false)")
     parser.add_argument("--no-guide", dest="guide", action="store_false", help="Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil: \"guide\": false)")
     parser.add_argument("--print-effective-config", "--config", dest="print_effective_config", action="store_true", help="Wirksame Konfiguration mit Quelle je Einstellung (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden")
@@ -3791,9 +3822,10 @@ def main():
             config_report["sources"]["proof"] = "template"
             print(f"   Prüfbefehl aus dem Projekt geraten: {guessed} (anderer mit --proof)")
 
-    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING, RETRY_OVERRIDE, BUDGET, PROGRESS_ENABLED
+    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING, RETRY_OVERRIDE, BUDGET, PROGRESS_ENABLED, LOG_FORMAT
     RETRY_OVERRIDE = args.retries
     PROGRESS_ENABLED = args.progress
+    LOG_FORMAT = args.log_format
     try:
         BUDGET = Budget(args.budget_max, args.budget_warn, args.budget_roles)
     except ValueError as exc:
@@ -4606,6 +4638,7 @@ def main():
             print(f"🧪 Führe Prüfbefehl aus: {proof_cmd}", flush=True)
             ok, output = run_proof(proof_cmd, work_path)
             session_metrics.count("proof_green" if ok else "proof_red")
+            log_event(session_dir, "proof", ok=ok, command=proof_cmd, iteration=state.get("last_iteration"))
             append_log(session_dir, f"Prüfbefehl `{proof_cmd}`: {'grün' if ok else 'rot'}")
             if not ok:
                 print("❌ Prüfbefehl ist rot. Fertigmeldung zurückgewiesen.")
@@ -4724,6 +4757,7 @@ def main():
         stage_tries = 0
         print(f"⬆️ Eskalation: {previous.name} → {builder.name} nach {detail}.")
         append_log(session_dir, f"Eskalation Bauleiter {previous.name} → {builder.name}: {detail}")
+        log_event(session_dir, "escalation", level="warning", **state["escalation"])
         save_session_state(session_dir, state)
 
     for iteration in range(start_iter, max_iters + 1):
@@ -4793,6 +4827,7 @@ def main():
                 if proof_cmd:
                     ok, output = run_proof(proof_cmd, work_path)
                     session_metrics.count("proof_green" if ok else "proof_red")
+                    log_event(session_dir, "proof", ok=ok, command=proof_cmd, iteration=state.get("last_iteration"))
                 else:
                     ok = True
             except Exception as exc:
@@ -4965,6 +5000,7 @@ def main():
         elif proof_cmd and not STOP_REQUESTED:
             ok, output = run_proof(proof_cmd, work_path)
             session_metrics.count("proof_green" if ok else "proof_red")
+            log_event(session_dir, "proof", ok=ok, command=proof_cmd, iteration=state.get("last_iteration"))
             if not ok:
                 pending_feedback = f"Der Prüfbefehl `{proof_cmd}` schlägt noch fehl:\n```\n{output}\n```"
                 state["pending_feedback"] = pending_feedback
@@ -5008,6 +5044,9 @@ def main():
 
     if state.get("phase") != "completed" and state.get("abort_reason"):
         print(f"\n⏹️ Abbruchgrund: {state['abort_reason']}")
+    log_event(session_dir, "session_end", phase=state.get("phase"), success=state.get("phase") == "completed",
+              abort_reason=state.get("abort_reason"), tokens_total=session_metrics.total_tokens,
+              cost_usd_total=round(session_metrics.cost_usd, 4), build_rounds=state.get("last_iteration"))
     print("\n[*] ClaudeGravity Loop beendet.")
 
 
