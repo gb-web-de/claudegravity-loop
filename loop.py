@@ -3991,14 +3991,102 @@ def print_welcome() -> None:
     print("  claudegravity --help                     Wichtigste Optionen (alle: --help-all)")
 
 
-def main():
-    argv = sys.argv[1:]
+LOCAL_BUILDER_KEYS = ("bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli")
+
+
+def normalize_strategy(name: str) -> str:
+    """Strategie-Aliase auf ihren Hauptnamen abbilden (quality → best-code, economy → eco, free → local-free)."""
+    strat = name.lower()
+    if strat in ["quality", "best"]:
+        return "best-code"
+    if strat in ["economy", "cost"]:
+        return "eco"
+    if strat in ["local-free", "free", "local"]:
+        return "local-free"
+    return strat
+
+
+def pick_plan_roles(
+    agents: dict[str, AgentCLI],
+    architekt_choice: str | None,
+    pruefstatiker_choice: str | None,
+    swap_roles: bool,
+    explicit: bool,
+) -> tuple[AgentCLI, AgentCLI]:
+    """Architekt und Prüfstatiker wählen: ausdrückliche Wahl, sonst plant Claude und ein anderer Anbieter
+    (bevorzugt agy) prüft. --swap tauscht, solange keine Rolle ausdrücklich gesetzt ist (`explicit`)."""
+    if swap_roles:
+        if not architekt_choice and "agy" in agents:
+            architekt_choice = "agy"
+        elif not architekt_choice and "gemini" in agents:
+            architekt_choice = "gemini"
+        if not pruefstatiker_choice and "claude" in agents:
+            pruefstatiker_choice = "claude"
+
+    if architekt_choice and architekt_choice in agents:
+        planner = agents[architekt_choice]
+    elif "claude" in agents and not swap_roles:
+        planner = agents["claude"]
+    else:
+        planner = list(agents.values())[0]
+
+    remaining = [a for a in agents.values() if a.binary != planner.binary]
+    if pruefstatiker_choice and pruefstatiker_choice in agents:
+        reviewer = agents[pruefstatiker_choice]
+    elif remaining:
+        agy_cand = [a for a in remaining if a.binary == "agy"]
+        reviewer = agy_cand[0] if agy_cand else remaining[0]
+    else:
+        reviewer = planner
+
+    if swap_roles and not explicit and planner.binary == "claude" and reviewer.binary == "agy":
+        planner, reviewer = reviewer, planner
+    return planner, reviewer
+
+
+@dataclasses.dataclass
+class RunContext:
+    """Stand eines Laufs zwischen den Phasen: Rollen, Flags, Pfade und Einstellungen."""
+    args: argparse.Namespace
+    agents: dict
+    project_path: Path
+    session_dir: Path
+    state: dict
+    task: str
+    metrics: SessionMetrics
+    strategy: str
+    planner: AgentCLI
+    reviewer: AgentCLI
+    builder: AgentCLI
+    planner_flags: list[str]
+    reviewer_flags: list[str]
+    builder_flags: list[str]
+    builder_model: str | None
+    builder_effort: str | None
+    yolo_active: bool
+    auto_switch: bool
+    swap_roles: bool
+    use_worktree: bool
+    merge_worktree: bool
+    ask_mode: bool
+    plan_file: Path | None = None
+    session_log: Path | None = None
+    work_path: Path | None = None
+    in_worktree: bool = False
+    proof_cmd: str | None = None
+    inspector: AgentCLI | None = None
+    inspector_flags: list[str] = dataclasses.field(default_factory=list)
+    max_iters: int = 0
+
+
+def load_cli_config(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.Namespace, dict] | None:
+    """Kommandozeile lesen und mit Session, Umgebung und Profilen verrechnen. None, wenn nur die Konfiguration gezeigt wurde."""
     parser = build_parser(full_help="--help-all" in argv)
     args = parser.parse_args(argv)
     config_report = apply_config_layers(parser, args, argv)
     if args.print_effective_config:
         print(format_effective_config(config_report))
-        return
+        return None
     for warning in config_report["warnings"]:
         print(warning)
     layered = [d for d, s in config_report["sources"].items() if s in ("env", "project", "global")]
@@ -4019,8 +4107,12 @@ def main():
             args.proof = guessed
             config_report["sources"]["proof"] = "template"
             print(f"   Prüfbefehl aus dem Projekt geraten: {guessed} (anderer mit --proof)")
+    return parser, args, config_report
 
-    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING, RETRY_OVERRIDE, BUDGET, PROGRESS_ENABLED, LOG_FORMAT
+
+def apply_runtime_settings(args: argparse.Namespace) -> None:
+    """Einstellungen, die tief im Code gebraucht werden (Zeitlimits, Schild, Budget, Ausgabe), modulweit setzen."""
+    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, RETRY_OVERRIDE, BUDGET, PROGRESS_ENABLED, LOG_FORMAT
     RETRY_OVERRIDE = args.retries
     PROGRESS_ENABLED = args.progress
     LOG_FORMAT = args.log_format
@@ -4032,6 +4124,9 @@ def main():
     ENDPOINT_TIMEOUT = args.timeout or (int(env_timeout) if env_timeout.isdigit() else None)
     SHIELD_ENABLED = not args.no_shield and os.environ.get("CLAUDEGRAVITY_SHIELD", "").lower() != "off"
 
+
+def setup_agents(args: argparse.Namespace) -> dict[str, AgentCLI]:
+    """Installierte CLIs und Endpunkte erkennen, dazu die ausdrücklich angegebenen Rollen-Endpunkte."""
     custom_ep = args.endpoint or args.bauer_endpoint or args.architekt_endpoint or args.pruefstatiker_endpoint
     agents = detect_installed_agents(custom_endpoint=custom_ep, api_key=args.api_key, default_model=args.builder_model or args.planner_model)
 
@@ -4056,90 +4151,82 @@ def main():
             _exec_endpoint_runner(args.bauer_endpoint, args.builder_model or "qwen2.5-coder:32b", args.api_key),
             local=is_private_endpoint(args.bauer_endpoint)
         )
+    return agents
 
-    if args.init or (args.task.strip().lower() == "init" and not args.resume):
-        run_setup_wizard(Path(args.project).resolve(), agents)
-        return
 
-    if args.check:
-        os_name = f"{platform.system()} {platform.release()}"
-        print(f"🖥️  Betriebssystem: {os_name} (Python {platform.python_version()})")
-        print("🔍 Erkannte KI-Systeme & Endpoints auf deinem System:")
-        for key, agent in agents.items():
-            print(f"  [x] {agent.name} (`{key}` / `{agent.binary}`)")
-        if not agents:
-            print("  (keine) Installiere z.B. `claude` oder `agy`, oder gib --endpoint <url> an.")
-            return
-        def_planner = agents.get("claude") or next(iter(agents.values()))
-        others = [a for a in agents.values() if a.binary != def_planner.binary]
-        def_reviewer = next((a for a in others if a.binary == "agy"), others[0] if others else def_planner)
-        local_cand = next((agents[k] for k in ["bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli"] if k in agents), None)
-        eco_model = "claude-3-5-haiku" if def_planner.binary == "claude" else "gemini-2.5-flash"
-
-        def default_effort(binary: str) -> str:
-            return "high (CLI-Default)" if binary == "agy" else "Voreinstellung der CLI (via --effort nur für agy/codex steuerbar)"
-
-        print("\n" + "=" * 68)
-        print("🎯 Standard-Belegung auf diesem System (wenn NICHTS explizit angegeben wird):")
-        print("=" * 68)
-        print("1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
-        print(f"   • CLI           : {def_planner.name} (`{def_planner.binary}`)")
-        print(f"   • Modell        : {DEFAULT_MODEL_LABEL} von {def_planner.name} (änderbar via --architekt-model)")
-        print(f"   • Thinking-Effort: {default_effort(def_planner.binary)}")
-        print("   • Aufgabe       : Entwirft den Plan (Phase 1) [nur ~10-15% aller Tokens]")
-        print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
-        if def_reviewer is def_planner:
-            print(f"   • CLI           : {def_reviewer.name} (`{def_reviewer.binary}`) – kein zweites Modell gefunden, prüft sich selbst!")
-        else:
-            print(f"   • CLI           : {def_reviewer.name} (`{def_reviewer.binary}`)")
-        print(f"   • Modell        : {DEFAULT_MODEL_LABEL} von {def_reviewer.name} (änderbar via --pruefstatiker-model)")
-        print(f"   • Thinking-Effort: {default_effort(def_reviewer.binary)}")
-        print("   • Aufgabe       : Grillt den Plan unabhängig auf Schwachstellen (Phase 2) [nur ~5-10% aller Tokens]")
-        print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
-        print(f"   • CLI           : {def_planner.name} wie der Architekt (oder separat via --bauer / --builder)")
-        print("   • Modell        : Wie der Architekt (oder Sparmodell via --bauer-model / lokaler Server)")
-        print("   • Thinking-Effort: Wie der Architekt (oder steuerbar via --bauer-effort, nur für agy/codex)")
-        print("   • Aufgabe       : Setzt den Plan autonom im Code um [verbraucht ~80-90% aller Tokens!]")
-        print("=" * 68)
-        print("\n💡 Spar-Strategien & Kombi-Möglichkeiten:")
-        print("  • '--strategy eco'        : Bis zu 70% Token-Ersparnis (Architekt/Prüfstatiker Effort medium,")
-        print(f"                             Bauleiter {def_planner.name} mit `{eco_model}`)")
-        if local_cand:
-            print(f"  • '--strategy local-free' : 0 € Kosten im Bau-Loop! {def_planner.name} plant, {local_cand.name} baut!")
-        else:
-            print("  • '--strategy local-free' : 0 € Kosten im Bau-Loop – aktuell kein lokaler Server erkannt")
-            print("                             (Ollama, LM Studio oder --bauer-endpoint <url> angeben)")
-        print("  • '--strategy best-code'  : Effort high in allen 3 Phasen (wirkt nur bei agy)")
-        hybrid_cloud = next((agents[k].name for k in CLOUD_PLANNER_ORDER if k in agents), None)
-        if hybrid_cloud and local_cand:
-            print(f"  • '--strategy hybrid'     : {hybrid_cloud} plant und nimmt ab, {local_cand.name} prüft und baut in Etappen")
-        print("=" * 68)
-        print("\n⚙️  Wichtigste Steuerungs-Flags:")
-        print("  - Strategie-Presets      : --strategy <best-code|eco|local-free|balanced>")
-        print("  - Trockenlauf            : --dry-run (zeigt Rollen, Modelle & Befehl ohne Ausführung)")
-        print("  - Eigener Endpunkt       : --endpoint <url> (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
-        print("  - Bauleiter-Endpunkt     : --bauer-endpoint <url> (z.B. http://localhost:11434/v1)")
-        print("  - Bauleiter festlegen    : --bauer / --builder <claude|agy|ollama|lmstudio|endpoint|codex|copilot>")
-        print("  - Bauleiter-Modell       : --bauer-model <name> (z.B. qwen2.5-coder:32b, claude-3-5-haiku)")
-        print("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Limit nahtlos zum Alternativmodell)")
-        print("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
-        print("  - Prüfbefehl             : --proof \"python -m unittest\" (Loop führt ihn nach jeder Bau-Runde selbst aus)")
-        print("  - Abnahme                : --abnahme <cli> (prüft den fertigen Code, nie der Bauleiter; --no-inspect schaltet ab)")
-        print("  - Etappen                : --etappen auto|an|aus (Plan in kleinen Stücken; auto: an bei lokalen Bauleitern)")
-        print("  - Ohne Freigabe-Menü     : --plan-auto (baut nur, wenn der Prüfstatiker APPROVED meldet)")
-        print("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert inkl. Rolle, Modell & Effort)")
-        return
-
-    for note in apply_auto_roles(args, agents):
-        print(note)
-
-    project_path = Path(args.project).resolve()
-    if not project_path.exists():
-        fail("CG-1003", str(project_path))
-
+def print_system_check(agents: dict[str, AgentCLI]) -> None:
+    """--check: erkannte KIs, Standard-Belegung und die wichtigsten Flags."""
+    os_name = f"{platform.system()} {platform.release()}"
+    print(f"🖥️  Betriebssystem: {os_name} (Python {platform.python_version()})")
+    print("🔍 Erkannte KI-Systeme & Endpoints auf deinem System:")
+    for key, agent in agents.items():
+        print(f"  [x] {agent.name} (`{key}` / `{agent.binary}`)")
     if not agents:
-        fail("CG-1001")
+        print("  (keine) Installiere z.B. `claude` oder `agy`, oder gib --endpoint <url> an.")
+        return
+    def_planner = agents.get("claude") or next(iter(agents.values()))
+    others = [a for a in agents.values() if a.binary != def_planner.binary]
+    def_reviewer = next((a for a in others if a.binary == "agy"), others[0] if others else def_planner)
+    local_cand = next((agents[k] for k in LOCAL_BUILDER_KEYS if k in agents), None)
+    eco_model = "claude-3-5-haiku" if def_planner.binary == "claude" else "gemini-2.5-flash"
 
+    def default_effort(binary: str) -> str:
+        return "high (CLI-Default)" if binary == "agy" else "Voreinstellung der CLI (via --effort nur für agy/codex steuerbar)"
+
+    print("\n" + "=" * 68)
+    print("🎯 Standard-Belegung auf diesem System (wenn NICHTS explizit angegeben wird):")
+    print("=" * 68)
+    print("1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
+    print(f"   • CLI           : {def_planner.name} (`{def_planner.binary}`)")
+    print(f"   • Modell        : {DEFAULT_MODEL_LABEL} von {def_planner.name} (änderbar via --architekt-model)")
+    print(f"   • Thinking-Effort: {default_effort(def_planner.binary)}")
+    print("   • Aufgabe       : Entwirft den Plan (Phase 1) [nur ~10-15% aller Tokens]")
+    print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
+    if def_reviewer is def_planner:
+        print(f"   • CLI           : {def_reviewer.name} (`{def_reviewer.binary}`) – kein zweites Modell gefunden, prüft sich selbst!")
+    else:
+        print(f"   • CLI           : {def_reviewer.name} (`{def_reviewer.binary}`)")
+    print(f"   • Modell        : {DEFAULT_MODEL_LABEL} von {def_reviewer.name} (änderbar via --pruefstatiker-model)")
+    print(f"   • Thinking-Effort: {default_effort(def_reviewer.binary)}")
+    print("   • Aufgabe       : Grillt den Plan unabhängig auf Schwachstellen (Phase 2) [nur ~5-10% aller Tokens]")
+    print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
+    print(f"   • CLI           : {def_planner.name} wie der Architekt (oder separat via --bauer / --builder)")
+    print("   • Modell        : Wie der Architekt (oder Sparmodell via --bauer-model / lokaler Server)")
+    print("   • Thinking-Effort: Wie der Architekt (oder steuerbar via --bauer-effort, nur für agy/codex)")
+    print("   • Aufgabe       : Setzt den Plan autonom im Code um [verbraucht ~80-90% aller Tokens!]")
+    print("=" * 68)
+    print("\n💡 Spar-Strategien & Kombi-Möglichkeiten:")
+    print("  • '--strategy eco'        : Bis zu 70% Token-Ersparnis (Architekt/Prüfstatiker Effort medium,")
+    print(f"                             Bauleiter {def_planner.name} mit `{eco_model}`)")
+    if local_cand:
+        print(f"  • '--strategy local-free' : 0 € Kosten im Bau-Loop! {def_planner.name} plant, {local_cand.name} baut!")
+    else:
+        print("  • '--strategy local-free' : 0 € Kosten im Bau-Loop – aktuell kein lokaler Server erkannt")
+        print("                             (Ollama, LM Studio oder --bauer-endpoint <url> angeben)")
+    print("  • '--strategy best-code'  : Effort high in allen 3 Phasen (wirkt nur bei agy)")
+    hybrid_cloud = next((agents[k].name for k in CLOUD_PLANNER_ORDER if k in agents), None)
+    if hybrid_cloud and local_cand:
+        print(f"  • '--strategy hybrid'     : {hybrid_cloud} plant und nimmt ab, {local_cand.name} prüft und baut in Etappen")
+    print("=" * 68)
+    print("\n⚙️  Wichtigste Steuerungs-Flags:")
+    print("  - Strategie-Presets      : --strategy <best-code|eco|local-free|balanced>")
+    print("  - Trockenlauf            : --dry-run (zeigt Rollen, Modelle & Befehl ohne Ausführung)")
+    print("  - Eigener Endpunkt       : --endpoint <url> (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
+    print("  - Bauleiter-Endpunkt     : --bauer-endpoint <url> (z.B. http://localhost:11434/v1)")
+    print("  - Bauleiter festlegen    : --bauer / --builder <claude|agy|ollama|lmstudio|endpoint|codex|copilot>")
+    print("  - Bauleiter-Modell       : --bauer-model <name> (z.B. qwen2.5-coder:32b, claude-3-5-haiku)")
+    print("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Limit nahtlos zum Alternativmodell)")
+    print("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
+    print("  - Prüfbefehl             : --proof \"python -m unittest\" (Loop führt ihn nach jeder Bau-Runde selbst aus)")
+    print("  - Abnahme                : --abnahme <cli> (prüft den fertigen Code, nie der Bauleiter; --no-inspect schaltet ab)")
+    print("  - Etappen                : --etappen auto|an|aus (Plan in kleinen Stücken; auto: an bei lokalen Bauleitern)")
+    print("  - Ohne Freigabe-Menü     : --plan-auto (baut nur, wenn der Prüfstatiker APPROVED meldet)")
+    print("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert inkl. Rolle, Modell & Effort)")
+
+
+def maybe_first_run_guide(args: argparse.Namespace, agents: dict, project_path: Path, config_report: dict) -> bool | None:
+    """Erstlauf ohne Profil im Terminal: Trockenlauf, Einrichtung oder Start anbieten.
+    Liefert True, wenn ein geführter Trockenlauf folgt, None, wenn die Einrichtung schon alles erledigt hat."""
     guided_dry_run = False
     no_profile = not any(config_report["loaded"].values())
     if (args.task and not args.resume and not args.dry_run and args.guide and no_profile
@@ -4147,7 +4234,7 @@ def main():
         choice = first_run_guide(args)
         if choice == "init":
             run_setup_wizard(project_path, agents)
-            return
+            return None
         if choice == "dry-run":
             args.dry_run = guided_dry_run = True
         if choice == "quiet":
@@ -4156,202 +4243,161 @@ def main():
                 print(f"   Hinweis abgeschaltet ({global_profile_path()}, guide = {saved['guide']}).")
             except (OSError, ValueError) as exc:
                 print(f"   Konnte das globale Profil nicht schreiben: {exc}")
+    return guided_dry_run
 
-    config_warnings = unsafe_config_warnings(args, project_path, is_git_repo(project_path))
-    if not args.dry_run and (args.task or args.resume):
+
+def show_dry_run(args: argparse.Namespace, agents: dict, project_path: Path, config_warnings: list[str], guided_dry_run: bool) -> bool:
+    """Trockenlauf: Belegung, Kostenschätzung und Startbefehl zeigen. True nur, wenn der Nutzer danach starten will."""
+    dry_task = args.task or "Refaktoriere das Modul und erstelle Unit-Tests"
+    architekt_choice = args.planner or ("architekt_ep" if args.architekt_endpoint else None)
+    pruefstatiker_choice = args.reviewer or ("pruefstatiker_ep" if args.pruefstatiker_endpoint else None)
+    planner, reviewer = pick_plan_roles(agents, architekt_choice, pruefstatiker_choice, args.swap, bool(args.planner or args.reviewer))
+
+    strat = normalize_strategy(args.strategy or "balanced")
+
+    default_p_effort = None
+    default_r_effort = None
+    default_b_effort = None
+    default_b_model = None
+    local_cand = next((agents[k] for k in LOCAL_BUILDER_KEYS if k in agents), None)
+
+    if strat == "best-code":
+        default_p_effort = "high"
+        default_r_effort = "high"
+        default_b_effort = "high"
+        builder_choice = args.builder or planner.binary
+        builder = agents.get(builder_choice, planner)
+    elif strat == "eco":
+        default_p_effort = "medium"
+        default_r_effort = "medium"
+        default_b_effort = "low"
+        builder_choice = args.builder or planner.binary
+        builder = agents.get(builder_choice, planner)
+        default_b_model = {"claude": "claude-3-5-haiku", "agy": "gemini-2.5-flash", "gemini": "gemini-2.5-flash"}.get(builder.binary)
+    elif strat == "local-free":
+        default_p_effort = "high"
+        default_r_effort = "high"
+        default_b_effort = "low"
+        if args.builder and args.builder in agents:
+            builder = agents[args.builder]
+        elif local_cand:
+            builder = local_cand
+        else:
+            builder = planner
+        default_b_model = args.builder_model or ("qwen2.5-coder:32b" if "endpoint" in builder.binary else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model"))
+    else:  # balanced
+        default_p_effort = "high" if planner.binary == "agy" else None
+        default_r_effort = "high" if reviewer.binary == "agy" else None
+        builder_choice = args.builder or planner.binary
+        builder = agents.get(builder_choice, planner)
+
+    p_model = args.planner_model or DEFAULT_MODEL_LABEL
+    p_effort = args.planner_effort or args.effort or default_p_effort or ("high (CLI Default)" if planner.binary == "agy" else None)
+
+    r_model = args.reviewer_model or DEFAULT_MODEL_LABEL
+    r_effort = args.reviewer_effort or args.effort or default_r_effort or ("high (CLI Default)" if reviewer.binary == "agy" else None)
+
+    b_model = args.builder_model or default_b_model or (p_model if builder.binary == planner.binary else DEFAULT_MODEL_LABEL)
+    b_effort = args.builder_effort or default_b_effort or ("CLI Default" if builder.binary == "agy" else None)
+
+    print("\n" + "=" * 68)
+    print("🔍 ClaudeGravity Loop — Trockenlauf (Dry Run)")
+    print("=" * 68)
+    print(f"📌 Aufgabe        : {dry_task}")
+    print(f"🎯 Strategie      : {strat.upper()}")
+    print(f"📁 Ziel-Projekt   : {project_path}")
+    print("\n1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
+    print(f"   • CLI/Endpoint  : {planner.name} (`{planner.binary}`)")
+    print(f"   • Modell        : {p_model}")
+    print(f"   • Effort        : {effort_label(planner.binary, p_effort) or 'Standard'}")
+    print("   • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)")
+    print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
+    print(f"   • CLI/Endpoint  : {reviewer.name} (`{reviewer.binary}`)")
+    print(f"   • Modell        : {r_model}")
+    print(f"   • Effort        : {effort_label(reviewer.binary, r_effort) or 'Standard'}")
+    print("   • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)")
+    print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
+    print(f"   • CLI/Endpoint  : {builder.name} (`{builder.binary}`)")
+    print(f"   • Modell        : {b_model}")
+    print(f"   • Effort        : {effort_label(builder.binary, b_effort) or 'Standard'}")
+    print("   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)")
+    if args.escalate:
+        after = args.escalate_after or ESCALATE_AFTER_DEFAULT
+        key, why = choose_escalation(builder, agents, args.escalate, prefer=planner.binary, write_allowed=True)
+        if key:
+            rights = "" if args.yolo or not get_permission_flags(agents[key].binary) else " (braucht Schreibrechte: --yolo oder Ja bei der Rechte-Abfrage)"
+            print(f"   • Eskalation    : nach {after} erfolglosen Runden einmalig zu {agents[key].name}{rights}")
+        else:
+            print(f"   • Eskalation    : nicht möglich ({why})")
+    print("\n4. 🔎 Abnahme (Phase 4: Prüfung des fertigen Codes):")
+    if not args.inspect:
+        print("   • Abgeschaltet (--no-inspect)")
+    else:
+        def with_model(agent: AgentCLI, model: str | None) -> AgentCLI:
+            return AgentCLI(agent.name, agent.binary, agent.run_fn, model=model if model and model != DEFAULT_MODEL_LABEL else None, local=agent.local)
+        dry_candidates = [with_model(agents[args.inspector], args.inspector_model)] if args.inspector in agents else []
+        dry_inspector = pick_inspector(
+            with_model(builder, b_model),
+            dry_candidates + [with_model(reviewer, r_model), with_model(planner, p_model)],
+            agents
+        )
+        if dry_inspector is None:
+            print("   • Kein zweiter Anbieter verfügbar: keine unabhängige Abnahme möglich!")
+        else:
+            print(f"   • CLI/Endpoint  : {dry_inspector.name} (`{dry_inspector.binary}`), nie der Bauleiter")
+            if dry_inspector.model or args.inspector_model:
+                print(f"   • Modell        : {args.inspector_model or dry_inspector.model}")
+    print(f"   • Prüfbefehl    : {args.proof or 'keiner (--proof <befehl>)'}")
+    dry_builder_final = builder if (args.builder or strat == "local-free") else planner
+    if stages_wanted(args.etappen, dry_builder_final.binary):
+        print("\n🧩 Etappen-Modus: Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede (--etappen aus schaltet ab).")
+    print("\n💡 Wirtschaftlichkeits- & Qualitäts-Analyse:")
+    if strat == "local-free":
+        print("   • Spareffekt: 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3)!")
+        print(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name}. Der rechenintensive Bau-Loop")
+        print(f"     läuft komplett auf {builder.name} (Modell: {b_model}).")
+    elif strat == "eco":
+        print("   • Spareffekt: Bis zu ~70% Kosten- und Tokenersparnis!")
+        print(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name} (Effort medium). Das ressourcenintensive")
+        print(f"     Bauen in Phase 3 übernimmt {builder.name} mit dem Spar-Modell `{b_model}`.")
+    elif strat in HYBRID_STRATEGIES:
+        print(f"   • Spareffekt: Cloud nur für Plan und Abnahme ({planner.name}); Prüfung und Bau laufen lokal für 0 €.")
+        print("   • Grund: Kleine Etappen passen in den Kontext lokaler Modelle; jede Etappe prüft der Loop mit --proof.")
+    elif strat == "best-code":
+        print("   • Fokus: Höchste Code-Qualität, tiefes Reasoning und maximale Fehlertoleranz.")
+        print(f"   • Alle Phasen laufen mit Effort high: {planner.name}, {reviewer.name}, {builder.name}.")
+        if any(a.binary != "agy" for a in (planner, reviewer, builder)):
+            print("   • Hinweis: Effort wird nur an agy übergeben; andere CLIs nutzen ihre eigene Voreinstellung.")
+    else:
+        print("   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
+
+    estimate = estimate_run(collect_kpi_history(project_path), strat, args.max_iterations or 10)
+    for line in format_estimate(estimate, estimate_hints(estimate, strat, BUDGET, local_cand is not None, args.proof)):
+        print(line)
+
+    if config_warnings:
+        print("\n🔔 Hinweise:")
         for warning in config_warnings:
-            print(warning)
+            print(f"   {warning}")
 
-    if args.dry_run:
-        dry_task = args.task or "Refaktoriere das Modul und erstelle Unit-Tests"
-        swap_roles = args.swap
-        architekt_choice = args.planner or ("architekt_ep" if args.architekt_endpoint else None)
-        pruefstatiker_choice = args.reviewer or ("pruefstatiker_ep" if args.pruefstatiker_endpoint else None)
+    print("\n🚀 Generierter Shell-Befehl (zum Starten):")
+    print(f"   {shlex.join(dry_run_command(args, dry_task, strat, default_b_model))}")
+    print("=" * 68)
+    if not guided_dry_run:
+        return False
+    try:
+        go = input("\nSo starten? [j/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        go = ""
+    if go not in ("j", "ja", "y", "yes"):
+        print("Nichts ausgeführt. Tipp: `claudegravity init` speichert deine Wahl als Profil.")
+        return False
+    args.dry_run = False
+    return True
 
-        if swap_roles:
-            if not architekt_choice and "agy" in agents:
-                architekt_choice = "agy"
-            elif not architekt_choice and "gemini" in agents:
-                architekt_choice = "gemini"
-            if not pruefstatiker_choice and "claude" in agents:
-                pruefstatiker_choice = "claude"
 
-        if architekt_choice and architekt_choice in agents:
-            planner = agents[architekt_choice]
-        elif "claude" in agents and not swap_roles:
-            planner = agents["claude"]
-        else:
-            planner = list(agents.values())[0]
-
-        remaining = [a for k, a in agents.items() if a.binary != planner.binary]
-        if pruefstatiker_choice and pruefstatiker_choice in agents:
-            reviewer = agents[pruefstatiker_choice]
-        elif remaining:
-            agy_cand = [a for a in remaining if a.binary == "agy"]
-            reviewer = agy_cand[0] if agy_cand else remaining[0]
-        else:
-            reviewer = planner
-
-        if swap_roles and not args.planner and not args.reviewer and planner.binary == "claude" and reviewer.binary == "agy":
-            planner, reviewer = reviewer, planner
-
-        # Strategy
-        strat = (args.strategy or "balanced").lower()
-        if strat in ["quality", "best"]:
-            strat = "best-code"
-        elif strat in ["economy", "cost"]:
-            strat = "eco"
-        elif strat in ["local-free", "free", "local"]:
-            strat = "local-free"
-
-        default_p_effort = None
-        default_r_effort = None
-        default_b_effort = None
-        default_b_model = None
-        local_cand = None
-
-        for k in ["bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli"]:
-            if k in agents:
-                local_cand = agents[k]
-                break
-
-        if strat == "best-code":
-            default_p_effort = "high"
-            default_r_effort = "high"
-            default_b_effort = "high"
-            builder_choice = args.builder or planner.binary
-            builder = agents.get(builder_choice, planner)
-        elif strat == "eco":
-            default_p_effort = "medium"
-            default_r_effort = "medium"
-            default_b_effort = "low"
-            builder_choice = args.builder or planner.binary
-            builder = agents.get(builder_choice, planner)
-            default_b_model = {"claude": "claude-3-5-haiku", "agy": "gemini-2.5-flash", "gemini": "gemini-2.5-flash"}.get(builder.binary)
-        elif strat == "local-free":
-            default_p_effort = "high"
-            default_r_effort = "high"
-            default_b_effort = "low"
-            if args.builder and args.builder in agents:
-                builder = agents[args.builder]
-            elif local_cand:
-                builder = local_cand
-            else:
-                builder = planner
-            default_b_model = args.builder_model or ("qwen2.5-coder:32b" if "endpoint" in builder.binary else ("qwen2.5-coder:latest" if "ollama" in builder.binary else "local-model"))
-        else:  # balanced
-            default_p_effort = "high" if planner.binary == "agy" else None
-            default_r_effort = "high" if reviewer.binary == "agy" else None
-            builder_choice = args.builder or planner.binary
-            builder = agents.get(builder_choice, planner)
-
-        p_model = args.planner_model or DEFAULT_MODEL_LABEL
-        p_effort = args.planner_effort or args.effort or default_p_effort or ("high (CLI Default)" if planner.binary == "agy" else None)
-
-        r_model = args.reviewer_model or DEFAULT_MODEL_LABEL
-        r_effort = args.reviewer_effort or args.effort or default_r_effort or ("high (CLI Default)" if reviewer.binary == "agy" else None)
-
-        b_model = args.builder_model or default_b_model or (p_model if builder.binary == planner.binary else DEFAULT_MODEL_LABEL)
-        b_effort = args.builder_effort or default_b_effort or ("CLI Default" if builder.binary == "agy" else None)
-
-        print("\n" + "=" * 68)
-        print("🔍 ClaudeGravity Loop — Trockenlauf (Dry Run)")
-        print("=" * 68)
-        print(f"📌 Aufgabe        : {dry_task}")
-        print(f"🎯 Strategie      : {strat.upper()}")
-        print(f"📁 Ziel-Projekt   : {project_path}")
-        print("\n1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
-        print(f"   • CLI/Endpoint  : {planner.name} (`{planner.binary}`)")
-        print(f"   • Modell        : {p_model}")
-        print(f"   • Effort        : {effort_label(planner.binary, p_effort) or 'Standard'}")
-        print("   • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)")
-        print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
-        print(f"   • CLI/Endpoint  : {reviewer.name} (`{reviewer.binary}`)")
-        print(f"   • Modell        : {r_model}")
-        print(f"   • Effort        : {effort_label(reviewer.binary, r_effort) or 'Standard'}")
-        print("   • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)")
-        print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
-        print(f"   • CLI/Endpoint  : {builder.name} (`{builder.binary}`)")
-        print(f"   • Modell        : {b_model}")
-        print(f"   • Effort        : {effort_label(builder.binary, b_effort) or 'Standard'}")
-        print("   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)")
-        if args.escalate:
-            after = args.escalate_after or ESCALATE_AFTER_DEFAULT
-            key, why = choose_escalation(builder, agents, args.escalate, prefer=planner.binary, write_allowed=True)
-            if key:
-                rights = "" if args.yolo or not get_permission_flags(agents[key].binary) else " (braucht Schreibrechte: --yolo oder Ja bei der Rechte-Abfrage)"
-                print(f"   • Eskalation    : nach {after} erfolglosen Runden einmalig zu {agents[key].name}{rights}")
-            else:
-                print(f"   • Eskalation    : nicht möglich ({why})")
-        print("\n4. 🔎 Abnahme (Phase 4: Prüfung des fertigen Codes):")
-        if not args.inspect:
-            print("   • Abgeschaltet (--no-inspect)")
-        else:
-            def with_model(agent: AgentCLI, model: str | None) -> AgentCLI:
-                return AgentCLI(agent.name, agent.binary, agent.run_fn, model=model if model and model != DEFAULT_MODEL_LABEL else None, local=agent.local)
-            dry_candidates = [with_model(agents[args.inspector], args.inspector_model)] if args.inspector in agents else []
-            dry_inspector = pick_inspector(
-                with_model(builder, b_model),
-                dry_candidates + [with_model(reviewer, r_model), with_model(planner, p_model)],
-                agents
-            )
-            if dry_inspector is None:
-                print("   • Kein zweiter Anbieter verfügbar: keine unabhängige Abnahme möglich!")
-            else:
-                print(f"   • CLI/Endpoint  : {dry_inspector.name} (`{dry_inspector.binary}`), nie der Bauleiter")
-                if dry_inspector.model or args.inspector_model:
-                    print(f"   • Modell        : {args.inspector_model or dry_inspector.model}")
-        print(f"   • Prüfbefehl    : {args.proof or 'keiner (--proof <befehl>)'}")
-        dry_builder_final = builder if (args.builder or strat == "local-free") else planner
-        if stages_wanted(args.etappen, dry_builder_final.binary):
-            print("\n🧩 Etappen-Modus: Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede (--etappen aus schaltet ab).")
-        print("\n💡 Wirtschaftlichkeits- & Qualitäts-Analyse:")
-        if strat == "local-free":
-            print("   • Spareffekt: 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3)!")
-            print(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name}. Der rechenintensive Bau-Loop")
-            print(f"     läuft komplett auf {builder.name} (Modell: {b_model}).")
-        elif strat == "eco":
-            print("   • Spareffekt: Bis zu ~70% Kosten- und Tokenersparnis!")
-            print(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name} (Effort medium). Das ressourcenintensive")
-            print(f"     Bauen in Phase 3 übernimmt {builder.name} mit dem Spar-Modell `{b_model}`.")
-        elif strat in HYBRID_STRATEGIES:
-            print(f"   • Spareffekt: Cloud nur für Plan und Abnahme ({planner.name}); Prüfung und Bau laufen lokal für 0 €.")
-            print("   • Grund: Kleine Etappen passen in den Kontext lokaler Modelle; jede Etappe prüft der Loop mit --proof.")
-        elif strat == "best-code":
-            print("   • Fokus: Höchste Code-Qualität, tiefes Reasoning und maximale Fehlertoleranz.")
-            print(f"   • Alle Phasen laufen mit Effort high: {planner.name}, {reviewer.name}, {builder.name}.")
-            if any(a.binary != "agy" for a in (planner, reviewer, builder)):
-                print("   • Hinweis: Effort wird nur an agy übergeben; andere CLIs nutzen ihre eigene Voreinstellung.")
-        else:
-            print("   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
-
-        estimate = estimate_run(collect_kpi_history(project_path), strat, args.max_iterations or 10)
-        for line in format_estimate(estimate, estimate_hints(estimate, strat, BUDGET, local_cand is not None, args.proof)):
-            print(line)
-
-        if config_warnings:
-            print("\n🔔 Hinweise:")
-            for warning in config_warnings:
-                print(f"   {warning}")
-
-        print("\n🚀 Generierter Shell-Befehl (zum Starten):")
-        print(f"   {shlex.join(dry_run_command(args, dry_task, strat, default_b_model))}")
-        print("=" * 68)
-        if not guided_dry_run:
-            return
-        try:
-            go = input("\nSo starten? [j/N]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            go = ""
-        if go not in ("j", "ja", "y", "yes"):
-            print("Nichts ausgeführt. Tipp: `claudegravity init` speichert deine Wahl als Profil.")
-            return
-        args.dry_run = False
-
-    if not args.task and not args.resume and find_latest_session(project_path / ".dual-loop") is None:
-        print_welcome()
-        return
-
+def open_session(args: argparse.Namespace, project_path: Path, config_report: dict) -> tuple[Path, dict, str]:
+    """Neue Session anlegen oder eine unterbrochene fortsetzen. Liefert (Session-Ordner, Stand, Aufgabe)."""
     loop_dir = project_path / ".dual-loop"
     loop_dir.mkdir(exist_ok=True)
 
@@ -4421,41 +4467,16 @@ def main():
                 task = f"{task}\n\nVorgehen ({template['name']}): {template['hint']}"
                 state["task"] = task
         save_session_state(session_dir, state)
+    return session_dir, state, task
 
-    # Paarung festlegen
+
+def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, session_dir: Path, state: dict, task: str) -> "RunContext":
+    """Rollen besetzen, Rechte, Strategie, Modelle und Effort festlegen; alles landet im Sitzungsstand."""
     swap_roles = args.swap or state.get("swap_roles", False)
     if args.swap:
         state["swap_roles"] = True
 
-    architekt_choice = args.planner
-    pruefstatiker_choice = args.reviewer
-
-    if swap_roles:
-        if not architekt_choice and "agy" in agents:
-            architekt_choice = "agy"
-        elif not architekt_choice and "gemini" in agents:
-            architekt_choice = "gemini"
-        if not pruefstatiker_choice and "claude" in agents:
-            pruefstatiker_choice = "claude"
-
-    if architekt_choice and architekt_choice in agents:
-        planner_base = agents[architekt_choice]
-    elif "claude" in agents and not swap_roles:
-        planner_base = agents["claude"]
-    else:
-        planner_base = list(agents.values())[0]
-
-    remaining = [a for k, a in agents.items() if a.binary != planner_base.binary]
-    if pruefstatiker_choice and pruefstatiker_choice in agents:
-        reviewer_base = agents[pruefstatiker_choice]
-    elif remaining:
-        agy_cand = [a for a in remaining if a.binary == "agy"]
-        reviewer_base = agy_cand[0] if agy_cand else remaining[0]
-    else:
-        reviewer_base = planner_base
-
-    if swap_roles and not args.planner and not args.reviewer and planner_base.binary == "claude" and reviewer_base.binary == "agy":
-        planner_base, reviewer_base = reviewer_base, planner_base
+    planner_base, reviewer_base = pick_plan_roles(agents, args.planner, args.reviewer, swap_roles, bool(args.planner or args.reviewer))
 
     builder_choice = args.builder or state.get("builder_binary") or planner_base.binary
     builder_base = agents.get(builder_choice, planner_base)
@@ -4496,13 +4517,7 @@ def main():
     builder_flags = list(builder_perm_flags)
 
     # Strategie auflösen
-    strat = (args.strategy or state.get("strategy") or "balanced").lower()
-    if strat in ["quality", "best"]:
-        strat = "best-code"
-    elif strat in ["economy", "cost"]:
-        strat = "eco"
-    elif strat in ["local-free", "free", "local"]:
-        strat = "local-free"
+    strat = normalize_strategy(args.strategy or state.get("strategy") or "balanced")
     state["strategy"] = strat
 
     default_p_effort = None
@@ -4524,7 +4539,7 @@ def main():
         default_r_effort = "high"
         default_b_effort = "low"
         if not args.builder:
-            for k in ["bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli"]:
+            for k in LOCAL_BUILDER_KEYS:
                 if k in agents:
                     builder_base = agents[k]
                     builder = create_agent(builder_base.binary, agents, role="🔨 Bauleiter (Bau & Umsetzung)", metrics_tracker=session_metrics)
@@ -4606,7 +4621,21 @@ def main():
     if ask_mode:
         state["ask_mode"] = True
     save_session_state(session_dir, state)
+    return RunContext(
+        args=args, agents=agents, project_path=project_path, session_dir=session_dir, state=state, task=task,
+        metrics=session_metrics, strategy=strat, planner=planner, reviewer=reviewer, builder=builder,
+        planner_flags=planner_flags, reviewer_flags=reviewer_flags, builder_flags=builder_flags,
+        builder_model=builder_model, builder_effort=b_effort, yolo_active=yolo_active, auto_switch=auto_switch,
+        swap_roles=swap_roles, use_worktree=use_worktree, merge_worktree=merge_worktree, ask_mode=ask_mode,
+    )
 
+
+def print_run_banner(run: "RunContext") -> None:
+    """Kopf des Laufs: Rollen, Modi und Session; legt fest, ob der Architekt in Etappen plant."""
+    global STAGE_PLANNING
+    args, project_path, session_dir, state, task = run.args, run.project_path, run.session_dir, run.state, run.task
+    planner, reviewer, builder, strat = run.planner, run.reviewer, run.builder, run.strategy
+    ask_mode, auto_switch, swap_roles, use_worktree, merge_worktree = run.ask_mode, run.auto_switch, run.swap_roles, run.use_worktree, run.merge_worktree
     print("\n=======================================================")
     print("[*] ClaudeGravity Loop gestartet")
     print(f"[*] Ziel-Projekt      : {project_path}")
@@ -4660,6 +4689,12 @@ def main():
     print(f"[*] Session-ID        : {session_dir.name}")
     print("=======================================================\n")
 
+
+def run_plan_phase(run: "RunContext") -> bool:
+    """Phase 1 und 2: Plan entwerfen, unabhängig prüfen und freigeben. False, wenn nicht gebaut werden soll."""
+    args, agents, project_path, session_dir, state, task = run.args, run.agents, run.project_path, run.session_dir, run.state, run.task
+    planner, reviewer, planner_flags, reviewer_flags = run.planner, run.reviewer, run.planner_flags, run.reviewer_flags
+    auto_switch, ask_mode = run.auto_switch, run.ask_mode
     project_ctx = load_project_context(project_path, task)
 
     # ==========================================
@@ -4690,7 +4725,7 @@ def main():
         )
 
         if STOP_REQUESTED:
-            return
+            return False
 
         if args.approve_plan or state.get("approve_plan"):
             # Freigabe ohne Terminal: nur ein vom Prüfstatiker genehmigter Plan wird gebaut
@@ -4699,7 +4734,7 @@ def main():
                 print(f"🛑 Der Prüfstatiker hat {plan_file.name} nicht freigegeben. Ohne Rückfrage (--plan-auto) wird nicht gebaut.")
                 append_log(session_dir, "Plan nicht freigegeben, Bau mit --plan-auto nicht gestartet")
                 save_session_state(session_dir, state)
-                return
+                return False
             print(f"✅ {plan_file.name} vom Prüfstatiker genehmigt, Freigabe ohne Rückfrage (--plan-auto).")
             append_log(session_dir, f"{plan_file.name} automatisch freigegeben (--plan-auto)")
             user_confirmed = True
@@ -4712,12 +4747,21 @@ def main():
 
         if not user_confirmed or STOP_REQUESTED:
             print("Implementierung nicht gestartet.")
-            return
+            return False
 
         state["phase"] = "build"
         state["user_approved"] = True
         save_session_state(session_dir, state)
+    run.plan_file, run.planner, run.reviewer, run.planner_flags, run.reviewer_flags = plan_file, planner, reviewer, planner_flags, reviewer_flags
+    return True
 
+
+def prepare_build(run: "RunContext") -> None:
+    """Vor Phase 3: tatsächlichen Bauleiter und seine Rechte festlegen, Arbeitsbereich, Prüfbefehl und Abnahme vorbereiten."""
+    args, agents, project_path, session_dir, state = run.args, run.agents, run.project_path, run.session_dir, run.state
+    use_worktree = run.use_worktree
+    planner, reviewer, builder, strat, plan_file = run.planner, run.reviewer, run.builder, run.strategy, run.plan_file
+    builder_model, b_effort, yolo_active, session_metrics = run.builder_model, run.builder_effort, run.yolo_active, run.metrics
     if not args.builder and strat != "local-free":
         # Falls kein separater Bauleiter gesetzt ist, baut der freigegebene Architekt
         builder = create_agent(
@@ -4809,7 +4853,17 @@ def main():
         print(f"⚠️ {plan_file.name} hat sich seit Baubeginn geändert. Der Bauleiter arbeitet mit der neuen Fassung weiter.")
         append_log(session_dir, f"{plan_file.name} nach Baubeginn geändert")
         state["build_plan_sha256"] = sha256_file(plan_file)
+    run.builder, run.builder_flags, run.session_log, run.work_path, run.in_worktree = builder, builder_flags, session_log, work_path, in_worktree
+    run.proof_cmd, run.inspector, run.inspector_flags = proof_cmd, inspector, inspector_flags
 
+
+def run_build_phase(run: "RunContext") -> None:
+    """Phase 3 und 4: Bau-Loop (klassisch oder in Etappen) mit Prüfbefehl, Eskalation und Abnahme."""
+    args, agents, project_path, session_dir, state, task = run.args, run.agents, run.project_path, run.session_dir, run.state, run.task
+    planner, builder, builder_flags, plan_file = run.planner, run.builder, run.builder_flags, run.plan_file
+    inspector, inspector_flags, proof_cmd = run.inspector, run.inspector_flags, run.proof_cmd
+    work_path, in_worktree, session_log, merge_worktree = run.work_path, run.in_worktree, run.session_log, run.merge_worktree
+    auto_switch, yolo_active, session_metrics = run.auto_switch, run.yolo_active, run.metrics
     inspections_used = 0
     pending_feedback = state.get("pending_feedback", "")
 
@@ -5114,7 +5168,14 @@ def main():
 
         if args.delay > 0:
             time.sleep(args.delay)
+    run.max_iters = max_iters
 
+
+def finish_run(run: "RunContext") -> None:
+    """Abschluss: Arbeitsbereich freigeben oder behalten, Abbruchgrund und Kennzahlen ausgeben."""
+    project_path, session_dir, state, task = run.project_path, run.session_dir, run.state, run.task
+    in_worktree, work_path, merge_worktree = run.in_worktree, run.work_path, run.merge_worktree
+    session_metrics, max_iters = run.metrics, run.max_iters
     if state.get("phase") == "completed" and in_worktree and not state["worktree"].get("released"):
         release_worktree(project_path, session_dir, state, task, merge=merge_worktree)
     if state.get("phase") == "stage_open":
@@ -5148,6 +5209,54 @@ def main():
               abort_reason=state.get("abort_reason"), tokens_total=session_metrics.total_tokens,
               cost_usd_total=round(session_metrics.cost_usd, 4), build_rounds=state.get("last_iteration"))
     print("\n[*] ClaudeGravity Loop beendet.")
+
+
+def main():
+    loaded = load_cli_config(sys.argv[1:])
+    if loaded is None:
+        return
+    _parser, args, config_report = loaded
+    apply_runtime_settings(args)
+    agents = setup_agents(args)
+
+    if args.init or (args.task.strip().lower() == "init" and not args.resume):
+        run_setup_wizard(Path(args.project).resolve(), agents)
+        return
+    if args.check:
+        print_system_check(agents)
+        return
+
+    for note in apply_auto_roles(args, agents):
+        print(note)
+    project_path = Path(args.project).resolve()
+    if not project_path.exists():
+        fail("CG-1003", str(project_path))
+    if not agents:
+        fail("CG-1001")
+
+    guided_dry_run = maybe_first_run_guide(args, agents, project_path, config_report)
+    if guided_dry_run is None:
+        return
+
+    config_warnings = unsafe_config_warnings(args, project_path, is_git_repo(project_path))
+    if not args.dry_run and (args.task or args.resume):
+        for warning in config_warnings:
+            print(warning)
+    if args.dry_run and not show_dry_run(args, agents, project_path, config_warnings, guided_dry_run):
+        return
+
+    if not args.task and not args.resume and find_latest_session(project_path / ".dual-loop") is None:
+        print_welcome()
+        return
+    session_dir, state, task = open_session(args, project_path, config_report)
+    run = setup_run(args, agents, project_path, session_dir, state, task)
+    print_run_banner(run)
+    if not run_plan_phase(run):
+        return
+    prepare_build(run)
+    run_build_phase(run)
+    finish_run(run)
+
 
 
 def run_cli():

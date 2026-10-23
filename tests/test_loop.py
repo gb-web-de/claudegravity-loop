@@ -239,6 +239,30 @@ class CliSmokeTest(unittest.TestCase):
         self.assertNotIn("Traceback", res.stderr)
 
 
+class RolePickTest(unittest.TestCase):
+    def agents(self, *keys):
+        return {k: loop.AgentCLI(k, k, None) for k in keys}
+
+    def test_default_claude_plans_agy_reviews(self):
+        planner, reviewer = loop.pick_plan_roles(self.agents("codex", "claude", "agy"), None, None, False, False)
+        self.assertEqual((planner.binary, reviewer.binary), ("claude", "agy"))
+
+    def test_swap_and_explicit_choice(self):
+        agents = self.agents("claude", "agy")
+        planner, reviewer = loop.pick_plan_roles(agents, None, None, True, False)
+        self.assertEqual((planner.binary, reviewer.binary), ("agy", "claude"))
+        planner, reviewer = loop.pick_plan_roles(agents, "claude", "agy", True, True)
+        self.assertEqual((planner.binary, reviewer.binary), ("claude", "agy"))
+
+    def test_single_agent_reviews_itself(self):
+        planner, reviewer = loop.pick_plan_roles(self.agents("ollama"), None, None, False, False)
+        self.assertIs(planner, reviewer)
+
+    def test_strategy_aliases(self):
+        for alias, name in [("Quality", "best-code"), ("cost", "eco"), ("free", "local-free"), ("mixed", "mixed"), ("balanced", "balanced")]:
+            self.assertEqual(loop.normalize_strategy(alias), name)
+
+
 class AgentDescriptionTest(unittest.TestCase):
     def test_describes_provider_model_and_effort(self):
         agent = loop.AgentCLI("Antigravity (agy)", "agy", None, model="gemini-2.5-pro", effort="high")
