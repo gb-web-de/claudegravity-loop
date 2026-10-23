@@ -2,6 +2,8 @@
 
 [← Zurück zur Übersicht](../../README.md) · 🇬🇧 [English](../en/README.md)
 
+**Wähle deinen Weg:** ⚡ Schnell: `claudegravity "Deine Aufgabe"` · 💶 Günstig: `claudegravity "Deine Aufgabe" --strategy hybrid --proof "npm test"` · 🏆 Maximale Qualität: `claudegravity "Deine Aufgabe" --strategy best-code --template refactor --proof "npm test"`. Unsicher? [`claudegravity init`](schnellstart.md#1-einrichten).
+
 | Seite | Inhalt |
 | :--- | :--- |
 | [Installation](installation.md) | Voraussetzungen, Setup für Linux, macOS und Windows, globale Befehle |
@@ -9,10 +11,10 @@
 | [Ablauf & Rollen](ablauf-und-rollen.md) | Architekt, Prüfstatiker, Bauleiter, Freigabe-Menü, Limits |
 | [Bau-Loop](bau-loop.md) | Phase 3 im Detail: Runden, Rechte, Ende des Loops |
 | [Tests](tests.md) | Tests in Plan, Review und Bau; ClaudeGravity selbst prüfen |
-| [Strategien](strategien.md) | Presets `balanced`, `best-code`, `eco`, `local-free` |
+| [Strategien](strategien.md) | Presets `balanced`, `best-code`, `eco`, `local-free`, `hybrid` |
 | [Backends](backends.md) | Unterstützte CLIs, Ollama, LM Studio, eigene Server, Umgebungsvariablen, YOLO |
 | [Ollama & Codex](ollama-und-codex.md) | Durchgespielte Rollenaufteilungen, CLI- und MCP-Aufrufe, Modelle für Mac M4 mit 48 GB |
-| [CLI-Referenz](cli-referenz.md) | Alle Flags von `claudegravity` |
+| [CLI-Referenz](cli-referenz.md) | Alle Flags von `claudegravity`, Profile, Vorlagen |
 | [MCP-Server](mcp-server.md) | Registrierung, Tools, Optimizer im Terminal |
 | [Sessions & Dateien](sessions-und-dateien.md) | `.dual-loop/`, `state.json`, Fortsetzen, `.done`-Audit, `CLAUDE.md` & `knowledge/` |
 | [Fehlerbehebung](fehlerbehebung.md) | Häufige Probleme und bekannte Einschränkungen |

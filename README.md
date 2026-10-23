@@ -24,15 +24,26 @@ git clone https://github.com/gb-web-de/claudegravity-loop.git ~/Projekte/claudeg
 cd ~/Projekte/claudegravity-loop && chmod +x loop.py mcp_server.py
 mkdir -p ~/.local/bin && ln -sf "$PWD/loop.py" ~/.local/bin/claudegravity
 
-claudegravity --info                                   # Welche KIs sind da?
+claudegravity init                                     # Erkennt KIs, fragt 3 Dinge, speichert ein Profil
 claudegravity "Erstelle ein Python-Skript für Wetterabfragen mit Fehlerbehandlung"
 ```
 
 Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell). Details: [Installation](docs/de/installation.md) · [Schnellstart](docs/de/schnellstart.md).
 
+## Wähle deinen Weg
+
+| Ziel | Befehl | Was passiert |
+| :--- | :--- | :--- |
+| ⚡ **Schnell** | `claudegravity "Deine Aufgabe"` | Standard-Belegung (`balanced`): eine Cloud-CLI plant und baut, eine andere prüft und nimmt ab. |
+| 💶 **Günstig** | `claudegravity "Deine Aufgabe" --strategy hybrid --proof "npm test"` | Cloud nur für Plan und Abnahme, Prüfung und Bau laufen lokal mit Ollama oder LM Studio, in Etappen. Ohne lokales Modell: `--strategy eco`. |
+| 🏆 **Maximale Qualität** | `claudegravity "Deine Aufgabe" --strategy best-code --template refactor --proof "npm test"` | Alle Rollen mit hohem Effort, strenger Prüfstatiker, Abnahme durch einen zweiten Anbieter. |
+
+`npm test` durch den Testbefehl deines Projekts ersetzen. Unsicher? `claudegravity init` fragt dich und speichert die Wahl; `--dry-run` zeigt vorher, wer welche Rolle bekommt.
+
 ## Highlights
 
-* **Strategie-Presets:** `--strategy best-code | eco | local-free | balanced` – bis zu ~70 % Token-Ersparnis oder 0 € im Bau-Loop mit lokalem Modell. → [Strategien](docs/de/strategien.md)
+* **Einrichtung & Profile:** `claudegravity init`, Profile global oder pro Projekt, Vorlagen `--template bugfix|feature|refactor`, `--print-effective-config` zeigt, woher jeder Wert kommt. → [CLI-Referenz](docs/de/cli-referenz.md#vorrang-der-einstellungen)
+* **Strategie-Presets:** `--strategy best-code | eco | local-free | hybrid | balanced` – bis zu ~70 % Token-Ersparnis oder 0 € im Bau-Loop mit lokalem Modell. → [Strategien](docs/de/strategien.md)
 * **Cloud + lokal automatisch:** `--strategy hybrid` lässt z. B. Codex planen und abnehmen, Ollama prüfen und bauen; die Ollama-Modelle wählt der Loop aus den installierten, der Plan wird in Etappen gebaut und jede mit `--proof` geprüft. → [Ollama & Codex](docs/de/ollama-und-codex.md)
 * **Beliebige Backends pro Rolle:** `claude`, `agy`, `gemini`, `codex`, `copilot`, Ollama, LM Studio oder eigene OpenAI-kompatible Server. → [Backends](docs/de/backends.md)
 * **Trockenlauf:** `--dry-run` zeigt Belegung und Befehl, ohne etwas zu ändern.
@@ -40,7 +51,8 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 * **Als Skill:** [`skills/claudegravity/`](skills/claudegravity/SKILL.md) für Claude Code und Codex.
 * **Limits im Griff:** Wechseln, Warten oder Sichern bei Ratenlimits; `--auto-switch` wechselt automatisch.
 * **Fortsetzen:** `claudegravity -c` macht nach Abbruch genau dort weiter. → [Sessions & Dateien](docs/de/sessions-und-dateien.md)
-* **Token- & Kosten-Audit** pro Rolle, Modell und Effort in der `.done`-Datei.
+* **Token- & Kosten-Audit** pro Rolle, Modell und Effort in der `.done`-Datei, mit Kennzahlen (Kosten je Aufgabe, Runden bis Erfolg, Nacharbeitsquote) zum Vergleichen von Sessions.
+* **Robust & nachvollziehbar:** automatische Neuversuche mit Backoff bei Überlastung und Netzfehlern; geschwärzte Logs und ein Audit, wenn eine lesende Rolle doch schreibt.
 * **MCP-Server** (`mcp_server.py`), mit dem Claude Code & Co. den optimalen Befehl berechnen und starten. → [MCP-Server](docs/de/mcp-server.md)
 
 ## Dokumentation
@@ -71,13 +83,17 @@ ClaudeGravity is a zero-dependency (Python 3.10+ standard library) runner that s
 3. **🔨 Builder** implements the approved plan in a loop, running tests until it writes `.done`.
 4. **🔎 Acceptance check** – a provider other than the builder – runs `--proof` and reviews the final diff before the task counts as done.
 
-```bash
-claudegravity --info
-claudegravity "Create a Python weather CLI tool with full test coverage"
-claudegravity "Refactor auth" --strategy local-free --bauer ollama   # $0 build loop
-```
+Choose your path:
 
-Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md).
+| Goal | Command |
+| :--- | :--- |
+| ⚡ **Fast** | `claudegravity "Your task"` |
+| 💶 **Cheap** | `claudegravity "Your task" --strategy hybrid --proof "npm test"` (cloud plans and accepts, local model reviews and builds; without a local model: `--strategy eco`) |
+| 🏆 **Maximum quality** | `claudegravity "Your task" --strategy best-code --template refactor --proof "npm test"` |
+
+Not sure? `claudegravity init` asks three questions and saves a profile; `--dry-run` shows the role assignment first.
+
+Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md).
 
 MCP server for Claude Code:
 
