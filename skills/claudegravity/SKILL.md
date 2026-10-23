@@ -35,7 +35,7 @@ claudegravity "<task>" -p <project> \
 - Always pass `--proof` with the repository's own test command. The loop runs it itself after every build round and does not trust the builder's "done".
 - Add `--yolo` only when the user asked for unattended builds; it gives write access to the Bauleiter only.
 - `--max-rounds` (plan review, default 2) and `--max-inspections` (acceptance, default 2) bound the cost. `-c` resumes.
-- From an MCP client use the `claudegravity_optimize` tool to get the command, `claudegravity_run` to start it (`yolo` defaults to false). Both take the roles as parameters (`architekt`, `pruefstatiker`, `bauer`, `abnahme` and their `*_model`), plus `stages`, `approve_plan` and `merge`; `priority: "hybrid"` gives the cloud-plus-Ollama split. A background run always uses `--plan-auto` and only builds a plan the Prüfstatiker approved; check on it with `claudegravity_status`.
+- From an MCP client use the `claudegravity_optimize` tool to get the command, `claudegravity_run` to start it (`yolo` defaults to false). Both take the roles as parameters (`architekt`, `pruefstatiker`, `bauer`, `abnahme` and their `*_model`), plus `stages`, `approve_plan` and `merge`; `priority: "hybrid"` gives the cloud-plus-Ollama split. A background run always uses `--plan-auto` and only builds a plan the Prüfstatiker approved; check on it with `claudegravity_status` and stop it with `claudegravity_stop`. Always pass an absolute `project_path`; desktop apps do not start the server in the project folder.
 
 ## Read the result
 

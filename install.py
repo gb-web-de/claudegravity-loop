@@ -47,6 +47,8 @@ MARK_BEGIN = "# >>> claudegravity >>>"
 MARK_END = "# <<< claudegravity <<<"
 
 DRY_RUN = False
+# Standardprojekt für Desktop-Apps (--project): landet als CLAUDEGRAVITY_PROJECT in der Server-Umgebung
+PROJECT_DIR: Path | None = None
 
 
 def say(symbol: str, msg: str) -> None:
@@ -62,11 +64,19 @@ def python_command() -> str:
     return str(Path(sys.executable).absolute())
 
 
+def server_env() -> dict:
+    """Umgebung für den MCP-Server: UTF-8 und optional das Standardprojekt."""
+    env = {"PYTHONIOENCODING": "utf-8"}
+    if PROJECT_DIR is not None:
+        env["CLAUDEGRAVITY_PROJECT"] = str(PROJECT_DIR)
+    return env
+
+
 def server_entry(extra: dict | None = None) -> dict:
     entry = {
         "command": python_command(),
         "args": [str(MCP_SCRIPT)],
-        "env": {"PYTHONIOENCODING": "utf-8"},
+        "env": server_env(),
     }
     if extra:
         entry.update(extra)
@@ -164,7 +174,7 @@ def codex_client():
                 f"[mcp_servers.{SERVER_NAME}]",
                 f"command = {json.dumps(python_command())}",
                 f"args = [{json.dumps(str(MCP_SCRIPT))}]",
-                'env = { "PYTHONIOENCODING" = "utf-8" }',
+                "env = { " + ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in server_env().items()) + " }",
                 MARK_END,
                 "",
             ]
@@ -235,9 +245,8 @@ def claude_code_client():
             return True
         if status():
             run_cli([exe, "mcp", "remove", SERVER_NAME, "--scope", "user"])
-        res = run_cli(
-            [exe, "mcp", "add", "--scope", "user", SERVER_NAME, "-e", "PYTHONIOENCODING=utf-8", "--", python_command(), str(MCP_SCRIPT)]
-        )
+        env_args = [arg for k, v in server_env().items() for arg in ("-e", f"{k}={v}")]
+        res = run_cli([exe, "mcp", "add", "--scope", "user", SERVER_NAME, *env_args, "--", python_command(), str(MCP_SCRIPT)])
         if res.returncode != 0:
             say("!", f"claude mcp add fehlgeschlagen: {(res.stderr or res.stdout).strip()}")
             return False
@@ -435,7 +444,7 @@ def uninstall_commands_windows(bin_dir: Path) -> None:
 
 
 def main() -> int:
-    global DRY_RUN
+    global DRY_RUN, PROJECT_DIR
     parser = argparse.ArgumentParser(description="ClaudeGravity Installer: MCP-Server in alle Clients eintragen & globale Befehle anlegen")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--uninstall", action="store_true", help="MCP-Einträge und globale Befehle wieder entfernen")
@@ -446,9 +455,15 @@ def main() -> int:
     parser.add_argument("--no-mcp", action="store_true", help="MCP-Clients nicht anfassen")
     parser.add_argument("--no-commands", action="store_true", help="Keine globalen Befehle anlegen")
     parser.add_argument("--no-path", action="store_true", help="PATH nicht verändern")
+    parser.add_argument("--project", default=None, help="Standardprojekt für Desktop-Apps (CLAUDEGRAVITY_PROJECT), wenn project_path fehlt")
     parser.add_argument("--bin-dir", default=None, help=f"Zielordner für Befehle (Standard: {bin_dir_default()})")
     args = parser.parse_args()
     DRY_RUN = args.dry_run
+    if args.project:
+        PROJECT_DIR = Path(args.project).expanduser().resolve()
+        if not PROJECT_DIR.is_dir():
+            print(f"[!] --project {PROJECT_DIR} existiert nicht.")
+            return 1
 
     if sys.version_info < (3, 10):
         print("[!] ClaudeGravity benötigt Python 3.10+.")

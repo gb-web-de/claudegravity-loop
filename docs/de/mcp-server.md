@@ -2,41 +2,69 @@
 
 [← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/mcp-server.md)
 
-`mcp_server.py` ist ein eigenständiger **Model Context Protocol**-Server (JSON-RPC 2.0 über stdio, Protokollversion `2024-11-05`) ohne Abhängigkeiten. Damit kann ein KI-Assistent wie Claude Code, Antigravity oder Cursor für eine Aufgabe die passende ClaudeGravity-Konfiguration berechnen und starten. Dieselbe Logik ist auch direkt im Terminal nutzbar.
+`mcp_server.py` ist ein eigenständiger **Model Context Protocol**-Server (JSON-RPC 2.0 über stdio, Protokollversionen `2025-06-18`, `2025-03-26` und `2024-11-05`) ohne Abhängigkeiten. Damit kann ein KI-Assistent wie Claude Code, Antigravity oder Cursor für eine Aufgabe die passende ClaudeGravity-Konfiguration berechnen und starten. Dieselbe Logik ist auch direkt im Terminal nutzbar.
 
 ## Registrieren
 
-### Claude Code
+### Am einfachsten: Installer
 
 ```bash
-# Linux / macOS
-claude mcp add claudegravity -- python3 ~/Projekte/claudegravity-loop/mcp_server.py
-
-# Windows
-claude mcp add claudegravity -- python C:\claudegravity\mcp_server.py
+./install.sh                                    # Linux/macOS; Windows: install.bat oder .\install.ps1
+./install.sh --project ~/Projekte/mein-projekt  # zusätzlich Standardprojekt für Desktop-Apps
+./install.sh --only claude-desktop,codex        # nur bestimmte Clients
 ```
 
-Mit `--scope user` steht der Server in allen Projekten zur Verfügung. Kontrolle: `claude mcp list`.
+Der Installer trägt den Server in alle gefundenen Clients ein (Claude Code, Claude Desktop, Gemini CLI, Antigravity, Codex, Copilot CLI, Cursor, Windsurf, VS Code), immer mit dem **absoluten Pfad** des Pythons, mit dem er gestartet wurde. `--project` setzt `CLAUDEGRAVITY_PROJECT` in der Server-Umgebung (siehe [Desktop-Apps](#desktop-apps-claude-desktop-cursor-)). Danach den Client neu starten.
 
-### Andere MCP-Clients (Antigravity, Cursor, Claude Desktop, …)
+### Von Hand
 
-Die meisten Clients nutzen dasselbe JSON-Format in ihrer MCP-Konfigurationsdatei:
+```bash
+# Claude Code (alle Projekte)
+claude mcp add --scope user claudegravity -- "$(command -v python3)" ~/Projekte/claudegravity-loop/mcp_server.py
+
+# Codex CLI
+codex mcp add claudegravity -- "$(command -v python3)" ~/Projekte/claudegravity-loop/mcp_server.py
+
+# Windows (PowerShell)
+claude mcp add --scope user claudegravity -- (Get-Command python).Source C:\claudegravity\mcp_server.py
+```
+
+Kontrolle: `claude mcp list` bzw. `codex mcp list`. Für JSON-Clients (Claude Desktop, Cursor, Gemini CLI, Antigravity, Windsurf):
 
 ```json
 {
   "mcpServers": {
     "claudegravity": {
-      "command": "python3",
-      "args": ["/home/<user>/Projekte/claudegravity-loop/mcp_server.py"],
+      "command": "/opt/homebrew/bin/python3",
+      "args": ["/Users/<user>/Projekte/claudegravity-loop/mcp_server.py"],
       "env": {
-        "CLAUDEGRAVITY_ENDPOINT": "http://192.168.1.50:11434/v1"
+        "PYTHONIOENCODING": "utf-8",
+        "CLAUDEGRAVITY_PROJECT": "/Users/<user>/Projekte/mein-projekt"
       }
     }
   }
 }
 ```
 
-Unter Windows `"command": "python"` und einen Pfad wie `"C:\\claudegravity\\mcp_server.py"` verwenden, oder direkt `claudegravity-mcp.bat`. Der `env`-Block ist optional.
+| Client | Konfigurationsdatei |
+| :--- | :--- |
+| Claude Desktop | macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows `%APPDATA%\Claude\claude_desktop_config.json` |
+| Cursor | `~/.cursor/mcp.json` |
+| Gemini CLI | `~/.gemini/settings.json` |
+| Antigravity | `~/.gemini/antigravity/mcp_config.json` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Codex CLI | `~/.codex/config.toml`, Abschnitt `[mcp_servers.claudegravity]` mit `command`, `args`, `env` |
+
+Unter Windows Backslashes in JSON verdoppeln (`"C:\\claudegravity\\mcp_server.py"`) oder `claudegravity-mcp.bat` als `command` nutzen. `CLAUDEGRAVITY_PROJECT` und weitere Variablen wie `CLAUDEGRAVITY_ENDPOINT` sind optional.
+
+### Desktop-Apps (Claude Desktop, Cursor, …)
+
+Desktop-Apps starten den Server anders als ein Terminal. Der Server fängt das so ab:
+
+* **Kein Shell-PATH:** Unter macOS sieht eine Desktop-App meist nur `/usr/bin:/bin`. Der Server ergänzt beim Start vorhandene Ordner wie `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.volta/bin`, `~/.cargo/bin` und die `bin`-Ordner von nvm (unter Windows `%APPDATA%\npm` und `%LOCALAPPDATA%\Programs\Ollama`), damit `claude`, `codex`, `gemini` oder `ollama` gefunden werden. Liegt eine CLI woanders, den Ordner in `env` → `PATH` eintragen. `claudegravity_info` zeigt, welche Ordner ergänzt wurden.
+* **Falsches Arbeitsverzeichnis:** Der Server läuft dort meist in `/` oder im Home-Ordner. Ein relativer `project_path` wird dann abgelehnt; entweder einen absoluten Pfad übergeben oder `CLAUDEGRAVITY_PROJECT` setzen, das gilt, wenn `project_path` fehlt oder `.` ist. `~` wird aufgelöst.
+* **Zu altes Python:** `command` muss auf Python 3.10+ zeigen (unter macOS ist `/usr/bin/python3` oft 3.9). Sonst bricht der Server mit einer klaren Meldung im Client-Log ab.
+* **Kein Terminal:** Läufe aus Desktop-Apps mit `claudegravity_run` und `background: true` starten, mit `claudegravity_status` verfolgen und bei Bedarf mit `claudegravity_stop` abbrechen.
 
 ## Bereitgestellte Tools
 
@@ -68,23 +96,31 @@ Berechnet denselben Befehl und startet ihn.
 | :--- | :--- | :--- | :--- |
 | `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, Rollen, `stages`, `approve_plan`, `merge` | | wie oben | |
 | `yolo` | boolean | `false` | Volle Rechte für den Bauleiter. Nur auf ausdrücklichen Wunsch setzen; ohne `yolo` kann ein Claude-Bauleiter im Hintergrund nichts schreiben. |
-| `background` | boolean | `false` | `true`: startet den Loop als Hintergrundprozess im Projektordner und meldet PID und Log-Datei; setzt dabei immer `--plan-auto`. `false`: gibt nur den Befehl zum manuellen Start zurück. |
+| `background` | boolean | `false` | `true`: startet den Loop als eigenen Prozess im Projektordner (unter Windows ohne Konsolenfenster) und meldet PID und Log-Datei; setzt immer `--plan-auto` und lässt `-i` weg. Läuft im Projekt schon ein Hintergrundlauf, wird kein zweiter gestartet. `false`: gibt nur den Befehl zum Start im Terminal zurück (Bash bzw. PowerShell, mit dem Python des Servers). |
 
 > [!WARNING]
-> Im Hintergrund gibt es kein Terminal: Der Plan wird nur gebaut, wenn der Prüfstatiker `APPROVED` meldet (`--plan-auto`), und die Rechte-Abfrage vor Phase 3 entfällt. Ein CLI-Bauleiter wie Claude oder Codex darf dann nur mit `yolo: true` schreiben; lokale Bauleiter (Ollama, Endpunkte) brauchen das nicht, weil ClaudeGravity ihre Dateien selbst schreibt. Ergebnisse stehen in `.dual-loop/sessions/` des Projekts; die Terminal-Ausgabe des Laufs landet in `.dual-loop/sessions/<zeit>_background.log`. Gestartet wird `loop.py` direkt mit dem Python des MCP-Servers.
+> Im Hintergrund gibt es kein Terminal: Der Plan wird nur gebaut, wenn der Prüfstatiker `APPROVED` meldet (`--plan-auto`), und die Rechte-Abfrage vor Phase 3 entfällt. Ein CLI-Bauleiter wie Claude oder Codex darf dann nur mit `yolo: true` schreiben; lokale Bauleiter (Ollama, Endpunkte) brauchen das nicht, weil ClaudeGravity ihre Dateien selbst schreibt. Ergebnisse stehen in `.dual-loop/sessions/` des Projekts; die Terminal-Ausgabe des Laufs landet in `.dual-loop/sessions/<zeit>_background.log`. Gestartet wird `loop.py` direkt mit dem Python des MCP-Servers; PID und Startzeit stehen in `.dual-loop/sessions/<zeit>_background.json`.
 
 ### `claudegravity_status`
 
-Zeigt den Stand der letzten Session eines Projekts, gedacht zum Nachsehen nach einem Hintergrundlauf: Aufgabe, Phase, Bau-Runde (mit Etappe), Tokens, gemeldete Kosten, Abbruchgrund, ob die Fertigmeldung vorliegt, sowie das Ende von `LOG.md` und des Hintergrund-Logs. Liest nur, startet nichts.
+Zeigt den Stand der letzten Session eines Projekts, gedacht zum Nachsehen nach einem Hintergrundlauf: Aufgabe, Phase, Bau-Runde (mit Etappe), Tokens, gemeldete Kosten, Abbruchgrund, ob die Fertigmeldung vorliegt, ob der Hintergrundlauf noch läuft (mit Exit-Code, solange derselbe Server ihn gestartet hat), sowie das Ende von `LOG.md` und des Hintergrund-Logs. Liest nur, startet nichts.
 
 | Parameter | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
 | `project_path` | string | `.` | Zielprojekt |
 | `log_lines` | integer | `15` | Zeilen vom Ende der Logs (`0` = keine) |
 
+### `claudegravity_stop`
+
+Bricht den letzten Hintergrundlauf des Projekts ab, samt der gestarteten CLIs (POSIX: `SIGTERM` an die Prozessgruppe, Windows: `taskkill /T`). Es werden nur PIDs aus der eigenen `_background.json` beendet. Der Stand bleibt in der Session und lässt sich mit `claudegravity -c` fortsetzen.
+
+| Parameter | Typ | Standard | Beschreibung |
+| :--- | :--- | :--- | :--- |
+| `project_path` | string | `.` | Zielprojekt |
+
 ### `claudegravity_info`
 
-Zeigt Betriebssystem, Python-Version, erkannte CLIs und Endpunkte sowie Strategie-Empfehlungen. Keine Parameter.
+Zeigt Betriebssystem, Python des Servers, Arbeitsverzeichnis, `CLAUDEGRAVITY_PROJECT`, die beim Start ergänzten PATH-Ordner, erkannte CLIs und Endpunkte sowie Strategie-Empfehlungen. Keine Parameter. Erste Anlaufstelle, wenn eine Desktop-App keine CLIs findet.
 
 ## Wie der Optimizer entscheidet
 
@@ -118,7 +154,9 @@ claudegravity-mcp                                              # ohne Argumente:
 
 ## Protokoll-Details
 
-Unterstützte Methoden: `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`. Jede Zeile auf stdin ist eine JSON-RPC-Nachricht; Antworten gehen zeilenweise auf stdout. Unbekannte Methoden liefern einen JSON-RPC-Fehler.
+Unterstützte Methoden: `initialize`, `ping`, `tools/list`, `tools/call`; `resources/list`, `resources/templates/list` und `prompts/list` liefern leere Listen. Notifications (Nachrichten ohne `id`, z. B. `notifications/initialized` oder `notifications/cancelled`) bekommen nie eine Antwort. Jede Zeile auf stdin ist eine JSON-RPC-Nachricht; Antworten gehen zeilenweise auf stdout. Unbekannte Methoden liefern einen JSON-RPC-Fehler.
+
+Der Server handelt die Protokollversion aus (die des Clients, wenn bekannt, sonst `2025-06-18`), schickt bei `initialize` kurze `instructions` für das Modell mit und kennzeichnet die Tools mit `annotations` (`readOnlyHint` für optimize, status und info). Während er läuft, gehen versehentliche Ausgaben auf stdout nach stderr, damit sie das Protokoll nicht stören; stderr landet im Log des Clients (bei Claude Desktop unter `~/Library/Logs/Claude/mcp-server-claudegravity.log`).
 
 Manueller Test:
 

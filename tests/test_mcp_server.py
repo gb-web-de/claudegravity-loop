@@ -1,6 +1,7 @@
 """Unit-Tests für mcp_server.py (nur Standardbibliothek: python -m unittest discover -s tests)."""
 
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -106,6 +107,134 @@ class OptimizerTest(unittest.TestCase):
     def test_unknown_tool_is_error(self):
         self.assertTrue(mcp_server.handle_tool_call("nope", {})["isError"])
 
+    def test_missing_task_is_error(self):
+        self.assertTrue(mcp_server.handle_tool_call("claudegravity_run", {"background": True})["isError"])
+
+
+class BackgroundRunTest(unittest.TestCase):
+    """Hintergrundlauf für Desktop-Apps: PID-Datei, kein -i, Status und Abbruch."""
+
+    def setUp(self):
+        patcher = mock.patch.object(mcp_server, "detect_installed_agents", return_value={})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(mcp_server.BACKGROUND_PROCS.clear)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.project = Path(self.tmp.name)
+
+    def start(self, popen, **extra):
+        popen.return_value.pid = 4242
+        args = {"task": "Migration der Datenbank", "project_path": str(self.project), "background": True, **extra}
+        return mcp_server.handle_tool_call("claudegravity_run", args)
+
+    def test_background_writes_info_and_drops_ask_mode(self):
+        with mock.patch.object(mcp_server.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
+            res = self.start(popen, ask_mode=True)
+        self.assertFalse(res["isError"])
+        argv = popen.call_args.args[0]
+        self.assertNotIn("-i", argv)
+        self.assertIn("--plan-auto", argv)
+        # -p ist absolut, damit cwd und -p nicht doppelt aufgelöst werden
+        self.assertEqual(argv[argv.index("-p") + 1], str(self.project.resolve()))
+        info = mcp_server.latest_background_run(self.project)
+        self.assertEqual(info["pid"], 4242)
+        if sys.platform == "win32":
+            self.assertTrue(popen.call_args.kwargs["creationflags"])
+        else:
+            self.assertTrue(popen.call_args.kwargs["start_new_session"])
+
+    def test_status_shows_running_then_finished(self):
+        with mock.patch.object(mcp_server.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
+            self.start(popen)
+            status = mcp_server.handle_tool_call("claudegravity_status", {"project_path": str(self.project)})["content"][0]["text"]
+            self.assertIn("läuft noch", status)
+            # Zweiter Start, solange der erste läuft, wird abgelehnt
+            self.assertTrue(self.start(popen)["isError"])
+            popen.return_value.poll.return_value = 3
+            status = mcp_server.handle_tool_call("claudegravity_status", {"project_path": str(self.project)})["content"][0]["text"]
+        self.assertIn("Exit-Code 3", status)
+
+    def test_stop_only_kills_running_recorded_run(self):
+        res = mcp_server.handle_tool_call("claudegravity_stop", {"project_path": str(self.project)})
+        self.assertTrue(res["isError"])
+        with mock.patch.object(mcp_server.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
+            self.start(popen)
+        kill = "run" if sys.platform == "win32" else "killpg"
+        target = mcp_server.subprocess if sys.platform == "win32" else mcp_server.os
+        with mock.patch.object(target, kill) as killer:
+            res = mcp_server.handle_tool_call("claudegravity_stop", {"project_path": str(self.project)})
+        self.assertFalse(res["isError"])
+        killer.assert_called_once()
+        if sys.platform != "win32":
+            self.assertEqual(killer.call_args.args, (4242, mcp_server.signal.SIGTERM))
+
+    def test_foreground_run_returns_command_with_server_python(self):
+        res = mcp_server.handle_tool_call("claudegravity_run", {"task": HOSTILE_TASK, "project_path": str(self.project)})
+        text = res["content"][0]["text"]
+        self.assertIn(str(ROOT / "loop.py"), text)
+        self.assertIn("powershell" if sys.platform == "win32" else "bash", text)
+
+
+class DesktopEnvironmentTest(unittest.TestCase):
+    """Desktop-Apps starten den Server mit kleinem PATH und cwd / bzw. Home."""
+
+    def test_extend_search_path_adds_existing_dirs_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".local" / "bin").mkdir(parents=True)
+            if sys.platform != "win32":
+                (home / ".nvm" / "versions" / "node" / "v22.1.0" / "bin").mkdir(parents=True)
+            env = {"PATH": os.pathsep.join(["/usr/bin", "/bin"])}
+            with mock.patch.dict(os.environ, {"APPDATA": str(home / "x"), "LOCALAPPDATA": str(home / "y")}):
+                added = mcp_server.extend_search_path(env, home)
+                self.assertIn(str(home / ".local" / "bin"), added)
+                self.assertIn(str(home / ".local" / "bin"), env["PATH"].split(os.pathsep))
+                self.assertEqual(mcp_server.extend_search_path(env, home), [])
+            if sys.platform != "win32":
+                self.assertIn(str(home / ".nvm" / "versions" / "node" / "v22.1.0" / "bin"), added)
+
+    def test_relative_project_in_root_cwd_is_rejected(self):
+        root = Path(Path.cwd().anchor)
+        with mock.patch.object(mcp_server.Path, "cwd", return_value=root), mock.patch.dict(os.environ, {mcp_server.PROJECT_ENV: ""}):
+            path, error = mcp_server.resolve_project_dir(".")
+        self.assertIsNone(path)
+        self.assertIn(mcp_server.PROJECT_ENV, error)
+
+    def test_project_env_and_tilde(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {mcp_server.PROJECT_ENV: tmp}):
+            self.assertEqual(mcp_server.resolve_project_dir(None), (Path(tmp).resolve(), None))
+            self.assertEqual(mcp_server.resolve_project_dir(tmp), (Path(tmp).resolve(), None))
+        path, error = mcp_server.resolve_project_dir("~")
+        self.assertEqual(path, Path.home().resolve())
+
+
+class MessageHandlingTest(unittest.TestCase):
+    def test_notifications_never_get_a_response(self):
+        for method in ("notifications/initialized", "notifications/cancelled", "unbekannt/notification"):
+            self.assertIsNone(mcp_server.handle_message({"jsonrpc": "2.0", "method": method}))
+
+    def test_protocol_version_negotiation(self):
+        for requested, expected in (("2025-06-18", "2025-06-18"), ("2024-11-05", "2024-11-05"), ("1999-01-01", "2025-06-18")):
+            res = mcp_server.handle_message({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": requested}})
+            self.assertEqual(res["result"]["protocolVersion"], expected)
+        self.assertIn("project_path", res["result"]["instructions"])
+
+    def test_empty_lists_and_annotations(self):
+        self.assertEqual(mcp_server.handle_message({"jsonrpc": "2.0", "id": 2, "method": "prompts/list"})["result"], {"prompts": []})
+        self.assertEqual(mcp_server.handle_message({"jsonrpc": "2.0", "id": 3, "method": "resources/list"})["result"], {"resources": []})
+        tools = {t["name"]: t for t in mcp_server.MCP_TOOLS}
+        self.assertTrue(tools["claudegravity_status"]["annotations"]["readOnlyHint"])
+        self.assertFalse(tools["claudegravity_run"]["annotations"]["readOnlyHint"])
+
+    def test_internal_error_keeps_request_id(self):
+        with mock.patch.object(mcp_server, "handle_tool_call", side_effect=RuntimeError("kaputt")):
+            res = mcp_server.handle_message({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "x"}})
+        self.assertEqual((res["id"], res["error"]["code"]), (7, -32603))
+
 
 class StdioProtocolTest(unittest.TestCase):
     def test_initialize_list_and_call(self):
@@ -120,6 +249,7 @@ class StdioProtocolTest(unittest.TestCase):
                 "params": {"name": "claudegravity_optimize", "arguments": {"task": "Fix typo"}},
             },
             {"jsonrpc": "2.0", "id": 4, "method": "does/not/exist"},
+            {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 3}},
         ]
         stdin = "\n".join(json.dumps(r) for r in requests) + "\nkein json\n"
         res = subprocess.run(
@@ -135,7 +265,9 @@ class StdioProtocolTest(unittest.TestCase):
 
         self.assertEqual(by_id[1]["result"]["serverInfo"]["name"], mcp_server.SERVER_NAME)
         names = {t["name"] for t in by_id[2]["result"]["tools"]}
-        self.assertEqual(names, {"claudegravity_optimize", "claudegravity_run", "claudegravity_status", "claudegravity_info"})
+        self.assertEqual(
+            names, {"claudegravity_optimize", "claudegravity_run", "claudegravity_status", "claudegravity_stop", "claudegravity_info"}
+        )
         self.assertFalse(by_id[3]["result"]["isError"])
         self.assertEqual(by_id[4]["error"]["code"], -32601)
         self.assertEqual(by_id[None]["error"]["code"], -32700)

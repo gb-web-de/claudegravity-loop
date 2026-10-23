@@ -10,6 +10,9 @@ Usage:
   - As CLI Optimizer:      python3 mcp_server.py --optimize "Task description" [--priority best-code|lowest-cost|local-free|balanced]
 """
 
+# Damit ein zu altes Python (z. B. /usr/bin/python3 3.9 auf macOS) eine klare Meldung statt eines SyntaxErrors liefert
+from __future__ import annotations
+
 import argparse
 import datetime
 import json
@@ -17,6 +20,7 @@ import os
 import platform
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import urllib.parse
@@ -33,8 +37,17 @@ if sys.platform == "win32":
         pass
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
+# Neueste zuerst; der Server antwortet mit der Version des Clients, wenn er sie kennt
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", MCP_PROTOCOL_VERSION)
 SERVER_NAME = "claudegravity-mcp"
-SERVER_VERSION = "1.3.0"
+SERVER_VERSION = "1.4.0"
+PROJECT_ENV = "CLAUDEGRAVITY_PROJECT"
+SERVER_INSTRUCTIONS = (
+    "ClaudeGravity lässt Plan, Review und Bau von getrennten Anbietern erledigen. Ablauf: claudegravity_optimize zeigt die "
+    "Rollenbelegung, claudegravity_run mit background=true startet den Lauf, claudegravity_status zeigt den Fortschritt, "
+    "claudegravity_stop bricht ab. project_path immer als absoluten Pfad angeben, weil Desktop-Apps den Server nicht im "
+    "Projektordner starten. yolo nur auf ausdrücklichen Wunsch setzen."
+)
 
 DEFAULT_MODEL = "CLI-Default"
 AUTO_OLLAMA_MODEL = "automatisch (installierte Ollama-Modelle)"
@@ -43,6 +56,70 @@ CLOUD_PLANNER_ORDER = ("codex", "claude", "agy", "gemini")
 LOCAL_BACKEND_ORDER = ("ollama", "lmstudio", "endpoint", "ollama-cli")
 OLLAMA_KEYS = ("ollama", "ollama-cli")
 ROLE_PARAMS = ("architekt", "architekt_model", "pruefstatiker", "pruefstatiker_model", "bauer", "bauer_model", "abnahme", "abnahme_model")
+
+
+def extra_path_dirs(home: Path | None = None) -> list[Path]:
+    """Übliche Installationsorte von claude, codex, gemini, ollama & Co., die Desktop-Apps nicht im PATH haben."""
+    home = home or Path.home()
+    if sys.platform == "win32":
+        appdata = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
+        local = Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
+        dirs = [appdata / "npm", local / "Programs" / "Ollama", home / ".local" / "bin", local / "ClaudeGravity" / "bin"]
+    else:
+        dirs = [
+            Path("/opt/homebrew/bin"),
+            Path("/usr/local/bin"),
+            home / ".local" / "bin",
+            home / ".npm-global" / "bin",
+            home / ".bun" / "bin",
+            home / ".volta" / "bin",
+            home / ".cargo" / "bin",
+            home / "bin",
+        ]
+        # nvm: alle installierten Node-Versionen, neueste zuerst
+        nvm = home / ".nvm" / "versions" / "node"
+        if nvm.is_dir():
+            dirs += sorted((p / "bin" for p in nvm.iterdir()), key=lambda p: p.parent.name, reverse=True)
+    return dirs
+
+
+def extend_search_path(env: dict | None = None, home: Path | None = None) -> list[str]:
+    """Ergänzt PATH um vorhandene Ordner aus extra_path_dirs(); liefert die neu hinzugefügten Ordner."""
+    env = os.environ if env is None else env
+    current = [p for p in env.get("PATH", "").split(os.pathsep) if p]
+    known = {os.path.normcase(os.path.normpath(p)) for p in current}
+    added = []
+    for directory in extra_path_dirs(home):
+        key = os.path.normcase(os.path.normpath(str(directory)))
+        if key not in known and directory.is_dir():
+            added.append(str(directory))
+            known.add(key)
+    if added:
+        env["PATH"] = os.pathsep.join(current + added)
+    return added
+
+
+def resolve_project_dir(raw: str | None) -> tuple[Path | None, str | None]:
+    """Projektordner aus project_path, sonst CLAUDEGRAVITY_PROJECT, sonst cwd. Liefert (Pfad, None) oder (None, Fehlertext).
+
+    Desktop-Apps starten den Server meist in `/` oder im Home-Ordner; ein relativer Pfad wäre dort fast immer falsch.
+    """
+    raw = (raw or "").strip()
+    if raw in ("", ".", "./"):
+        raw = os.environ.get(PROJECT_ENV, "").strip() or raw or "."
+    path = Path(os.path.expandvars(os.path.expanduser(raw)))
+    if not path.is_absolute():
+        cwd = Path.cwd()
+        if cwd == Path(cwd.anchor) or cwd == Path.home():
+            return None, (
+                f"Fehler: project_path `{raw}` ist relativ, der MCP-Server läuft aber in `{cwd}` (typisch für Desktop-Apps). "
+                f"Bitte einen absoluten Pfad angeben oder {PROJECT_ENV} in der MCP-Konfiguration setzen."
+            )
+        path = cwd / path
+    path = path.resolve()
+    if not path.is_dir():
+        return None, f"Fehler: Projektpfad '{path}' existiert nicht."
+    return path, None
 
 
 def is_endpoint_reachable(url: str, timeout: float = 0.3) -> bool:
@@ -145,6 +222,81 @@ def background_log_path(project_dir: Path) -> Path:
     return sessions / f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_background.log"
 
 
+# Im Hintergrund gestartete Läufe dieses Server-Prozesses, damit beendete Läufe nicht als Zombie "laufend" wirken
+BACKGROUND_PROCS: dict[int, subprocess.Popen] = {}
+
+
+def background_info_path(log_path: Path) -> Path:
+    """JSON neben dem Hintergrund-Log mit PID, Startzeit und Befehl."""
+    return log_path.with_name(log_path.name[: -len(".log")] + ".json")
+
+
+def latest_background_run(project_dir: Path) -> dict | None:
+    """Angaben zum letzten Hintergrundlauf im Projekt (aus der JSON neben dem Log) oder None."""
+    sessions = project_dir / ".dual-loop" / "sessions"
+    if not sessions.is_dir():
+        return None
+    for path in sorted(sessions.glob("*_background.json"), key=lambda p: p.name, reverse=True):
+        try:
+            info = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(info, dict) and isinstance(info.get("pid"), int):
+            return info
+    return None
+
+
+def process_state(pid: int) -> tuple[bool, int | None]:
+    """(läuft noch, Exit-Code oder None). Den Exit-Code kennt nur der Server-Prozess, der den Lauf gestartet hat."""
+    proc = BACKGROUND_PROCS.get(pid)
+    if proc is not None:
+        code = proc.poll()
+        return code is None, code
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False, None
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False, None
+            return code.value == 259, None  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False, None
+    except PermissionError:
+        return True, None
+    except OSError:
+        return False, None
+    return True, None
+
+
+def stop_background_run(project_dir: Path) -> tuple[bool, str]:
+    """Beendet den letzten Hintergrundlauf des Projekts samt Kindprozessen. Nur PIDs aus der eigenen Lauf-Datei."""
+    info = latest_background_run(project_dir)
+    if info is None:
+        return False, f"Kein Hintergrundlauf in `{project_dir}` gefunden."
+    pid = info["pid"]
+    running, _ = process_state(pid)
+    if not running:
+        return False, f"Der letzte Hintergrundlauf (PID {pid}) läuft nicht mehr."
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)
+        else:
+            # Eigene Prozessgruppe (start_new_session): SIGTERM erreicht auch die CLIs; der Loop speichert dabei seinen Stand
+            os.killpg(pid, signal.SIGTERM)
+    except OSError as exc:
+        return False, f"Konnte PID {pid} nicht beenden: {exc}"
+    return True, f"🛑 Hintergrundlauf (PID {pid}) beendet. Fortsetzen mit `claudegravity -c` im Projekt `{project_dir}`."
+
+
 def tail_lines(path: Path, count: int) -> list[str]:
     """Letzte `count` Zeilen einer Textdatei; leere Liste, wenn sie fehlt oder unlesbar ist."""
     if count <= 0 or not path.is_file():
@@ -192,6 +344,16 @@ def format_session_status(project_dir: Path, log_lines: int = 15) -> str:
         log_tail = tail_lines(session / "LOG.md", log_lines)
         if log_tail:
             lines += ["", "**LOG.md (Ende):**", "```", *log_tail, "```"]
+    run = latest_background_run(project_dir)
+    if run is not None:
+        running, code = process_state(run["pid"])
+        if running:
+            state_text = "läuft noch"
+        elif code is None:
+            state_text = "beendet"
+        else:
+            state_text = f"beendet (Exit-Code {code})"
+        lines += ["", f"**Hintergrundlauf:** PID {run['pid']} · {state_text} · gestartet {run.get('started_at', '?')}"]
     if background is not None:
         bg_tail = tail_lines(background, log_lines)
         lines += ["", f"**Hintergrund-Log:** `{background}`"]
@@ -539,6 +701,8 @@ def role_arguments(arguments: dict) -> dict:
 MCP_TOOLS = [
     {
         "name": "claudegravity_optimize",
+        "title": "ClaudeGravity: Rollen und Befehl empfehlen",
+        "annotations": {"readOnlyHint": True, "openWorldHint": False},
         "description": (
             "Analysiert eine Programmieraufgabe und ermittelt die optimale Kombination aus Modellen, "
             "Reasoning-Effort und Rollen (Architekt, Prüfstatiker, Bauleiter) für ClaudeGravity Loop basierend auf dem Ziel "
@@ -585,7 +749,13 @@ MCP_TOOLS = [
     },
     {
         "name": "claudegravity_run",
-        "description": "Startet den ClaudeGravity Loop mit optimierten Parametern direkt auf dem System.",
+        "title": "ClaudeGravity: Loop starten",
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True},
+        "description": (
+            "Startet den ClaudeGravity Loop mit optimierten Parametern direkt auf dem System. Mit background=true läuft er "
+            "als eigener Prozess weiter (für Desktop-Apps ohne Terminal); Fortschritt mit claudegravity_status, Abbruch mit "
+            "claudegravity_stop. Ohne background kommt nur der Befehl zum Starten im Terminal zurück."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -596,7 +766,11 @@ MCP_TOOLS = [
                     "default": "balanced",
                 },
                 "endpoint": {"type": "string", "description": "Optionaler KI-Endpunkt."},
-                "project_path": {"type": "string", "default": "."},
+                "project_path": {
+                    "type": "string",
+                    "default": ".",
+                    "description": "Absoluter Pfad zum Projekt. Ohne Angabe CLAUDEGRAVITY_PROJECT bzw. das Arbeitsverzeichnis des Servers.",
+                },
                 "yolo": {
                     "type": "boolean",
                     "default": False,
@@ -606,12 +780,15 @@ MCP_TOOLS = [
                     "type": "string",
                     "description": "Prüfbefehl, den der Loop nach jeder Bau-Runde selbst ausführt, z.B. 'python -m unittest discover -s tests'.",
                 },
-                "ask_mode": {"type": "boolean", "default": False},
+                "ask_mode": {"type": "boolean", "default": False, "description": "Fragen-Modus (-i); entfällt im Hintergrund."},
                 "max_iterations": {"type": "integer", "default": 10},
                 "background": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Im Hintergrund starten. Setzt --plan-auto: gebaut wird nur ein vom Prüfstatiker genehmigter Plan.",
+                    "description": (
+                        "Im Hintergrund starten. Setzt --plan-auto (gebaut wird nur ein vom Prüfstatiker genehmigter Plan) "
+                        "und lässt -i weg, weil niemand Rückfragen beantworten kann."
+                    ),
                 },
                 **ROLE_SCHEMA,
             },
@@ -620,220 +797,297 @@ MCP_TOOLS = [
     },
     {
         "name": "claudegravity_status",
+        "title": "ClaudeGravity: Stand des Laufs",
+        "annotations": {"readOnlyHint": True, "openWorldHint": False},
         "description": (
             "Zeigt den Stand der letzten Loop-Session eines Projekts: Aufgabe, Phase, Runde/Etappe, Tokens, "
-            "Abbruchgrund, ob die Fertigmeldung vorliegt, und die letzten Zeilen von LOG.md und des Hintergrund-Logs. "
+            "Abbruchgrund, ob die Fertigmeldung vorliegt, ob ein Hintergrundlauf noch läuft, und die letzten Zeilen von LOG.md "
+            "und des Hintergrund-Logs. "
             "Gedacht zum Nachsehen nach claudegravity_run mit background."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "project_path": {"type": "string", "default": ".", "description": "Pfad zum Ziel-Projekt (Standard: .)."},
+                "project_path": {"type": "string", "default": ".", "description": "Absoluter Pfad zum Ziel-Projekt."},
                 "log_lines": {"type": "integer", "default": 15, "description": "Wie viele Zeilen vom Ende der Logs (0 = keine)."},
             },
         },
     },
     {
+        "name": "claudegravity_stop",
+        "title": "ClaudeGravity: Hintergrundlauf abbrechen",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": False},
+        "description": (
+            "Bricht den letzten mit claudegravity_run (background) gestarteten Lauf eines Projekts ab, samt der gestarteten CLIs. "
+            "Der Stand bleibt in der Session erhalten und lässt sich mit `claudegravity -c` fortsetzen."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"project_path": {"type": "string", "default": ".", "description": "Absoluter Pfad zum Ziel-Projekt."}},
+        },
+    },
+    {
         "name": "claudegravity_info",
+        "title": "ClaudeGravity: Systemprüfung",
+        "annotations": {"readOnlyHint": True, "openWorldHint": False},
         "description": "Prüft die installierten AI-CLIs (Claude, Antigravity, Gemini, Codex, Copilot, Ollama, LM Studio, eigene Endpunkte) und gibt Empfehlungen.",
         "inputSchema": {"type": "object", "properties": {}},
     },
 ]
 
 
+def text_result(text: str, is_error: bool = False) -> dict:
+    """Tool-Ergebnis im MCP-Format mit einem Textblock."""
+    return {"content": [{"type": "text", "text": text}], "isError": is_error}
+
+
+def manual_start_command(project_dir: Path, loop_args: list[str]) -> tuple[str, str]:
+    """(Sprache, Befehl) zum Start im Terminal dieses Systems; nutzt dasselbe Python wie der Server."""
+    argv = loop_launch_argv(loop_args)
+    if sys.platform == "win32":
+        quoted = " ".join("'" + a.replace("'", "''") + "'" for a in argv)
+        return "powershell", f"Set-Location -LiteralPath '{str(project_dir).replace(chr(39), chr(39) * 2)}'; & {quoted}"
+    return "bash", f"cd {shlex.quote(str(project_dir))} && {shlex.join(argv)}"
+
+
+def start_background_run(project_dir: Path, loop_args: list[str]) -> tuple[subprocess.Popen, Path]:
+    """Startet loop.py losgelöst vom MCP-Server: eigene Sitzung bzw. Prozessgruppe, kein stdin, unter Windows ohne Fenster."""
+    log_path = background_log_path(project_dir)
+    kwargs: dict = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200) | getattr(
+            subprocess, "CREATE_NO_WINDOW", 0x08000000
+        )
+    else:
+        kwargs["start_new_session"] = True
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        proc = subprocess.Popen(
+            loop_launch_argv(loop_args),
+            cwd=str(project_dir),
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
+            **kwargs,
+        )
+    BACKGROUND_PROCS[proc.pid] = proc
+    info = {
+        "pid": proc.pid,
+        "started_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "log": str(log_path),
+        "loop_args": loop_args,
+    }
+    background_info_path(log_path).write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    return proc, log_path
+
+
+def optimize_from_arguments(arguments: dict, project_path: str) -> dict:
+    """optimize_claudegravity_command() mit den Tool-Argumenten eines MCP-Aufrufs."""
+    try:
+        max_iterations = int(arguments.get("max_iterations", 10))
+    except (TypeError, ValueError):
+        max_iterations = 10
+    return optimize_claudegravity_command(
+        task=arguments.get("task", ""),
+        priority=arguments.get("priority", "balanced"),
+        project_path=project_path,
+        endpoint=arguments.get("endpoint"),
+        ask_mode=bool(arguments.get("ask_mode", False)),
+        yolo=bool(arguments.get("yolo", False)),
+        max_iterations=max_iterations,
+        proof=arguments.get("proof"),
+        roles=role_arguments(arguments),
+        stages=arguments.get("stages", "auto"),
+        approve_plan=bool(arguments.get("approve_plan", False) or arguments.get("background", False)),
+        merge=bool(arguments.get("merge", False)),
+    )
+
+
 def handle_tool_call(name: str, arguments: dict) -> dict:
     """Einen MCP-Tool-Aufruf ausführen und das Ergebnis im MCP-Format liefern."""
+    arguments = arguments if isinstance(arguments, dict) else {}
+    if name in ("claudegravity_optimize", "claudegravity_run") and not str(arguments.get("task", "")).strip():
+        return text_result("Fehler: Parameter `task` fehlt.", True)
+
     if name == "claudegravity_optimize":
-        task = arguments.get("task", "")
-        priority = arguments.get("priority", "balanced")
-        project_path = arguments.get("project_path", ".")
-        endpoint = arguments.get("endpoint")
-        ask_mode = arguments.get("ask_mode", False)
-        yolo = arguments.get("yolo", False)
-        max_iterations = arguments.get("max_iterations", 10)
+        opt = optimize_from_arguments(arguments, arguments.get("project_path", "."))
+        return text_result(format_optimization_markdown(opt))
 
-        opt = optimize_claudegravity_command(
-            task=task,
-            priority=priority,
-            project_path=project_path,
-            endpoint=endpoint,
-            ask_mode=ask_mode,
-            yolo=yolo,
-            max_iterations=max_iterations,
-            proof=arguments.get("proof"),
-            roles=role_arguments(arguments),
-            stages=arguments.get("stages", "auto"),
-            approve_plan=arguments.get("approve_plan", False) or arguments.get("background", False),
-            merge=arguments.get("merge", False),
+    if name == "claudegravity_run":
+        p_dir, error = resolve_project_dir(arguments.get("project_path"))
+        if error:
+            return text_result(error, True)
+        # Absoluter Pfad, damit `-p` und das Arbeitsverzeichnis des Laufs nicht doppelt aufgelöst werden
+        opt = optimize_from_arguments(arguments, str(p_dir))
+        if not arguments.get("background", False):
+            lang, command = manual_start_command(p_dir, opt["loop_args"])
+            return text_result(
+                "📋 Bereit zum Starten. Bitte führe folgenden Befehl im Terminal aus "
+                f"(oder rufe das Tool mit `background: true` auf):\n\n```{lang}\n{command}\n```"
+            )
+        # Im Hintergrund kann niemand Rückfragen beantworten
+        loop_args = [a for a in opt["loop_args"] if a not in ("-i", "--ask")]
+        running = latest_background_run(p_dir)
+        if running is not None and process_state(running["pid"])[0]:
+            return text_result(
+                f"Im Projekt `{p_dir}` läuft schon ein Hintergrundlauf (PID {running['pid']}). "
+                "Stand mit `claudegravity_status`, Abbruch mit `claudegravity_stop`.",
+                True,
+            )
+        try:
+            proc, log_path = start_background_run(p_dir, loop_args)
+        except OSError as exc:
+            return text_result(f"Fehler beim Start: {exc}", True)
+        return text_result(
+            f"🚀 ClaudeGravity Loop im Hintergrund gestartet (PID {proc.pid})!\n"
+            f"Befehl: `{format_shell_command(['claudegravity'] + loop_args)}`\nProjekt: `{p_dir}`\n"
+            f"Ausgabe: `{log_path}`\nStand abfragen: Tool `claudegravity_status` mit project_path `{p_dir}`, "
+            "abbrechen mit `claudegravity_stop`."
         )
-        md_text = format_optimization_markdown(opt)
-        return {"content": [{"type": "text", "text": md_text}], "isError": False}
 
-    elif name == "claudegravity_run":
-        task = arguments.get("task", "")
-        priority = arguments.get("priority", "balanced")
-        project_path = arguments.get("project_path", ".")
-        endpoint = arguments.get("endpoint")
-        ask_mode = arguments.get("ask_mode", False)
-        yolo = arguments.get("yolo", False)
-        max_iterations = arguments.get("max_iterations", 10)
-        background = arguments.get("background", False)
+    if name == "claudegravity_status":
+        p_dir, error = resolve_project_dir(arguments.get("project_path"))
+        if error:
+            return text_result(error, True)
+        try:
+            log_lines = int(arguments.get("log_lines", 15))
+        except (TypeError, ValueError):
+            log_lines = 15
+        return text_result(format_session_status(p_dir, log_lines))
 
-        opt = optimize_claudegravity_command(
-            task=task,
-            priority=priority,
-            project_path=project_path,
-            endpoint=endpoint,
-            ask_mode=ask_mode,
-            yolo=yolo,
-            max_iterations=max_iterations,
-            proof=arguments.get("proof"),
-            roles=role_arguments(arguments),
-            stages=arguments.get("stages", "auto"),
-            approve_plan=arguments.get("approve_plan", False) or arguments.get("background", False),
-            merge=arguments.get("merge", False),
-        )
-        cmd_str = opt["recommended_command"]
+    if name == "claudegravity_stop":
+        p_dir, error = resolve_project_dir(arguments.get("project_path"))
+        if error:
+            return text_result(error, True)
+        stopped, message = stop_background_run(p_dir)
+        return text_result(message, not stopped)
 
-        p_dir = Path(project_path).resolve()
-        if not p_dir.exists():
-            return {"content": [{"type": "text", "text": f"Fehler: Projektpfad '{p_dir}' existiert nicht."}], "isError": True}
+    if name == "claudegravity_info":
+        return text_result(format_info())
 
-        if background:
-            log_path = background_log_path(p_dir)
-            with open(log_path, "w", encoding="utf-8") as log_file:
-                proc = subprocess.Popen(
-                    loop_launch_argv(opt["loop_args"]),
-                    cwd=str(p_dir),
-                    stdin=subprocess.DEVNULL,
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                    env={**os.environ, "PYTHONUNBUFFERED": "1"},
-                )
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            f"🚀 ClaudeGravity Loop im Hintergrund gestartet (PID {proc.pid})!\nBefehl: `{cmd_str}`\nProjekt: `{p_dir}`\n"
-                            f"Ausgabe: `{log_path}`\nStand abfragen: Tool `claudegravity_status` mit project_path `{p_dir}`"
-                        ),
-                    }
-                ],
-                "isError": False,
+    return text_result(f"Unbekanntes Tool: {name}", True)
+
+
+def format_info() -> str:
+    """Systemprüfung: Betriebssystem, Python, Startumgebung des Servers, erkannte CLIs und Endpunkte."""
+    agents = detect_installed_agents()
+    lines = [
+        f"### 🖥️ Betriebssystem: {platform.system()} {platform.release()} (Python {platform.python_version()})",
+        f"* **Python des Servers:** `{sys.executable}`",
+        f"* **Skript:** `{Path(__file__).resolve()}`",
+        f"* **Arbeitsverzeichnis:** `{Path.cwd()}`",
+        f"* **{PROJECT_ENV}:** `{os.environ.get(PROJECT_ENV) or '–'}`",
+        f"* **PATH ergänzt um:** {', '.join(f'`{d}`' for d in ADDED_PATH_DIRS) or '–'}",
+        "",
+        "### 🔍 Erkannte KI-Systeme & Endpoints auf diesem System:",
+        "",
+    ]
+    for k, a in agents.items():
+        lines.append(f"* **{a}** (`{k}`)")
+    if not agents:
+        lines.append("⚠️ Keine unterstützten AI-CLIs oder lokalen Server gefunden. Bei Desktop-Apps fehlt oft der Shell-PATH: ")
+        lines.append("   Ordner der CLIs in der MCP-Konfiguration unter `env` → `PATH` eintragen.")
+    lines += [
+        "",
+        "💡 **Empfohlene Strategien:**",
+        "1. **best-code:** Maximale Codequalität mit Claude Sonnet 3.7 & Gemini 2.5 Pro.",
+        "2. **eco:** Bis zu 70% Ersparnis (Architekt=Sonnet, Bauleiter=Haiku oder Flash).",
+        "3. **local-free:** 0 € Kosten im Bau-Loop! Cloud-Architekt plant, lokaler Server (Ollama, LM Studio oder ein Rechner im Heimnetz) baut autonom.",
+    ]
+    return "\n".join(lines)
+
+
+# Ordner, die extend_search_path() beim Start ergänzt hat (für claudegravity_info)
+ADDED_PATH_DIRS: list[str] = []
+
+
+def negotiate_protocol_version(requested) -> str:
+    """Version des Clients, wenn bekannt, sonst die neueste unterstützte."""
+    return requested if requested in SUPPORTED_PROTOCOL_VERSIONS else SUPPORTED_PROTOCOL_VERSIONS[0]
+
+
+def handle_message(req) -> dict | None:
+    """Eine JSON-RPC-Nachricht verarbeiten. Liefert die Antwort oder None bei Notifications (ohne `id`)."""
+    if not isinstance(req, dict):
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Ungültige Anfrage."}}
+    is_notification = "id" not in req
+    req_id = req.get("id")
+    method = req.get("method")
+    params = req.get("params") or {}
+    if is_notification:
+        # notifications/initialized, notifications/cancelled usw. bekommen nie eine Antwort
+        return None
+    try:
+        if method == "initialize":
+            result = {
+                "protocolVersion": negotiate_protocol_version(params.get("protocolVersion")),
+                "capabilities": {"tools": {"listChanged": False}},
+                "serverInfo": {"name": SERVER_NAME, "title": "ClaudeGravity Loop", "version": SERVER_VERSION},
+                "instructions": SERVER_INSTRUCTIONS,
             }
+        elif method == "ping":
+            result = {}
+        elif method == "tools/list":
+            result = {"tools": MCP_TOOLS}
+        elif method == "tools/call":
+            result = handle_tool_call(params.get("name", ""), params.get("arguments") or {})
+        elif method in ("resources/list", "prompts/list", "resources/templates/list"):
+            # Manche Clients fragen das immer ab; leere Listen statt Fehlermeldung im Client-Log
+            key = {"resources/list": "resources", "prompts/list": "prompts"}.get(method, "resourceTemplates")
+            result = {key: []}
         else:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"📋 Bereit zum Starten. Bitte führe folgenden Befehl im Terminal aus:\n\n```bash\ncd {shlex.quote(str(p_dir))} && {cmd_str}\n```",
-                    }
-                ],
-                "isError": False,
-            }
-
-    elif name == "claudegravity_status":
-        p_dir = Path(arguments.get("project_path", ".")).resolve()
-        if not p_dir.exists():
-            return {"content": [{"type": "text", "text": f"Fehler: Projektpfad '{p_dir}' existiert nicht."}], "isError": True}
-        return {"content": [{"type": "text", "text": format_session_status(p_dir, int(arguments.get("log_lines", 15)))}], "isError": False}
-
-    elif name == "claudegravity_info":
-        agents = detect_installed_agents()
-        os_name = f"{platform.system()} {platform.release()}"
-        lines = [
-            f"### 🖥️ Betriebssystem: {os_name} (Python {platform.python_version()})",
-            "### 🔍 Erkannte KI-Systeme & Endpoints auf diesem System:",
-            "",
-        ]
-        for k, a in agents.items():
-            lines.append(f"* **{a}** (`{k}`)")
-        if not agents:
-            lines.append("⚠️ Keine unterstützten AI-CLIs oder lokalen Server gefunden.")
-        lines.append("")
-        lines.append("💡 **Empfohlene Strategien:**")
-        lines.append("1. **best-code:** Maximale Codequalität mit Claude Sonnet 3.7 & Gemini 2.5 Pro.")
-        lines.append("2. **eco:** Bis zu 70% Ersparnis (Architekt=Sonnet, Bauleiter=Haiku oder Flash).")
-        lines.append(
-            "3. **local-free:** 0 € Kosten im Bau-Loop! Cloud-Architekt plant, lokaler Server (Ollama, LM Studio oder ein Rechner im Heimnetz) baut autonom."
-        )
-        return {"content": [{"type": "text", "text": "\n".join(lines)}], "isError": False}
-
-    else:
-        return {"content": [{"type": "text", "text": f"Unbekanntes Tool: {name}"}], "isError": True}
+            return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"Methode '{method}' wird nicht unterstützt."}}
+    except Exception as exc:
+        return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32603, "message": f"Interner Fehler: {exc}"}}
+    return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
 
 def run_mcp_stdio_server():
-    """Liest JSON-RPC 2.0 Nachrichten von stdin und antwortet auf stdout."""
-    while True:
-        try:
-            line = sys.stdin.readline()
-            if not line:
+    """Liest JSON-RPC 2.0 Nachrichten von stdin und antwortet auf stdout.
+
+    Während der Server läuft, zeigt sys.stdout auf stderr: Ein versehentliches print() landet so im Client-Log,
+    statt das Protokoll zu zerstören.
+    """
+    out = sys.stdout
+    sys.stdout = sys.stderr
+    reader = getattr(sys.stdin, "buffer", None)
+
+    def send(message: dict) -> None:
+        out.write(json.dumps(message) + "\n")
+        out.flush()
+
+    print(f"{SERVER_NAME} {SERVER_VERSION} bereit (Python {platform.python_version()}, cwd {Path.cwd()})", file=sys.stderr)
+    try:
+        while True:
+            raw = reader.readline() if reader is not None else sys.stdin.readline()
+            if not raw:
                 break
-            line_str = line.strip()
-            if not line_str:
+            line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+            line = line.strip().lstrip("﻿")
+            if not line:
                 continue
-
-            req = json.loads(line_str)
-            req_id = req.get("id")
-            method = req.get("method")
-            params = req.get("params", {})
-
-            if method == "initialize":
-                res = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "protocolVersion": MCP_PROTOCOL_VERSION,
-                        "capabilities": {"tools": {}},
-                        "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-                    },
-                }
-                sys.stdout.write(json.dumps(res) + "\n")
-                sys.stdout.flush()
-
-            elif method == "notifications/initialized":
+            try:
+                req = json.loads(line)
+            except json.JSONDecodeError as err:
+                send({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": f"Parse-Fehler: {err}"}})
                 continue
-
-            elif method == "ping":
-                res = {"jsonrpc": "2.0", "id": req_id, "result": {}}
-                sys.stdout.write(json.dumps(res) + "\n")
-                sys.stdout.flush()
-
-            elif method == "tools/list":
-                res = {"jsonrpc": "2.0", "id": req_id, "result": {"tools": MCP_TOOLS}}
-                sys.stdout.write(json.dumps(res) + "\n")
-                sys.stdout.flush()
-
-            elif method == "tools/call":
-                t_name = params.get("name", "")
-                t_args = params.get("arguments", {})
-                tool_res = handle_tool_call(t_name, t_args)
-                res = {"jsonrpc": "2.0", "id": req_id, "result": tool_res}
-                sys.stdout.write(json.dumps(res) + "\n")
-                sys.stdout.flush()
-
-            else:
-                res = {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"Methode '{method}' wird nicht unterstützt."}}
-                sys.stdout.write(json.dumps(res) + "\n")
-                sys.stdout.flush()
-
-        except json.JSONDecodeError as err:
-            err_res = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": f"Parse-Fehler: {err}"}}
-            sys.stdout.write(json.dumps(err_res) + "\n")
-            sys.stdout.flush()
-        except (KeyboardInterrupt, BrokenPipeError):
-            break
-        except Exception as exc:
-            err_res = {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": f"Interner Fehler: {exc}"}}
-            sys.stdout.write(json.dumps(err_res) + "\n")
-            sys.stdout.flush()
+            res = handle_message(req)
+            if res is not None:
+                send(res)
+    except (KeyboardInterrupt, BrokenPipeError):
+        pass
+    finally:
+        sys.stdout = out
 
 
 def main():
     """MCP-Server über stdio starten oder, mit Aufgabe bzw. --optimize, eine Empfehlung direkt ausgeben."""
+    if sys.version_info < (3, 10):
+        print(f"[!] ClaudeGravity benötigt Python 3.10+ (gestartet mit {sys.executable}, {platform.python_version()}).", file=sys.stderr)
+        print("    In der MCP-Konfiguration den absoluten Pfad zu einem neueren Python als `command` eintragen.", file=sys.stderr)
+        sys.exit(1)
+    ADDED_PATH_DIRS[:] = extend_search_path()
+
     parser = argparse.ArgumentParser(description="ClaudeGravity MCP Server & Command Optimizer")
     parser.add_argument("task_pos", nargs="?", default=None, help="Aufgabe (für direkten CLI-Aufruf)")
     parser.add_argument("--optimize", "-o", dest="optimize_task", default=None, help="Aufgabe analysieren und optimalen Befehl ausgeben")
@@ -856,8 +1110,7 @@ def main():
     cli_task = args.optimize_task or args.task_pos
 
     if args.info:
-        res = handle_tool_call("claudegravity_info", {})
-        print(res["content"][0]["text"])
+        print(format_info())
         return
 
     if cli_task:
