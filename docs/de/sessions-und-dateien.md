@@ -58,6 +58,8 @@ Hält alles, was zum Fortsetzen nötig ist, u. a.:
 | `swap_roles`, `yolo_enabled`, `auto_switch`, `ask_mode`, `strategy` | aktive Modi |
 | `metrics` | gesammelte Token- und Kostenzahlen |
 
+`state.json` wird atomar geschrieben (erst `state.json.tmp`, dann umbenannt); der vorige Stand bleibt als `state.json.bak`. Ist `state.json` nach einem Absturz beschädigt, setzt `-c` mit dem Stand aus `state.json.bak` fort und wiederholt höchstens die letzte Runde. Plan und Review werden beim Fortsetzen nie neu erstellt, wenn der Plan schon freigegeben war; lag die Fertigmeldung schon vor, geht es direkt zur Abnahme.
+
 ## Fortsetzen (`-c` / `--resume`)
 
 ```bash

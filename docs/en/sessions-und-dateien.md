@@ -58,6 +58,8 @@ Holds everything needed to resume, including:
 | `swap_roles`, `yolo_enabled`, `auto_switch`, `ask_mode`, `strategy` | Active modes |
 | `metrics` | Collected token and cost figures |
 
+`state.json` is written atomically (first `state.json.tmp`, then renamed); the previous state stays as `state.json.bak`. If `state.json` is damaged after a crash, `-c` resumes from `state.json.bak` and repeats at most the last round. Plan and review are never recreated on resume once the plan was approved; if the completion signal was already there, the loop goes straight to the acceptance check.
+
 ## Resuming (`-c` / `--resume`)
 
 ```bash

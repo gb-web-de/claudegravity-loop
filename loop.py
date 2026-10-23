@@ -1719,18 +1719,41 @@ def model_report(agent: "AgentCLI") -> str:
 # Session & State Management (Resume-Support)
 # ==========================================
 def save_session_state(session_dir: Path, state: dict):
+    """Schreibt state.json atomar: erst in eine Temp-Datei, dann umbenennen. Ein Absturz mitten im
+    Schreiben hinterlässt so nie eine halbe Datei; der vorige Stand bleibt als state.json.bak."""
     state_file = session_dir / "state.json"
     state["updated_at"] = datetime.datetime.now().isoformat()
-    state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp_file = session_dir / "state.json.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        f.write(json.dumps(state, indent=2, ensure_ascii=False))
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
+    if state_file.exists():
+        try:
+            shutil.copyfile(state_file, session_dir / "state.json.bak")
+        except OSError:
+            pass
+    os.replace(tmp_file, state_file)
 
 
 def load_session_state(session_dir: Path) -> dict:
-    state_file = session_dir / "state.json"
-    if state_file.exists():
+    """Liest state.json; ist sie beschädigt, den letzten guten Stand aus state.json.bak."""
+    for name in ("state.json", "state.json.bak"):
+        state_file = session_dir / name
+        if not state_file.exists():
+            continue
         try:
-            return json.loads(state_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            print(f"⚠️  {state_file} ist beschädigt und wird übersprungen.")
+            continue
+        if isinstance(data, dict):
+            if name != "state.json":
+                print(f"♻️  Stand aus {state_file.name} wiederhergestellt (letzte Runde wird ggf. wiederholt).")
+            return data
     return {}
 
 
