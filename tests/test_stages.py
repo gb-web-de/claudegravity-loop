@@ -168,12 +168,13 @@ class DryRunCommandTest(unittest.TestCase):
             inspector="codex", inspector_model=None, inspector_effort=None, effort=None,
             proof="python -m unittest", etappen="an", swap=False, ask=False, yolo=False, approve_plan=True,
             auto_switch=False, merge=True, inspect=True, max_iterations=None, project=".",
+            escalate="auto", escalate_after=3,
         )
         cmd = loop.dry_run_command(args, "CSV-Export", "hybrid")
         joined = " ".join(cmd)
         for part in ["--strategy hybrid", "--architekt codex", "--architekt-effort high", "--pruefstatiker ollama",
                      "--pruefstatiker-model gpt-oss:20b", "--bauer ollama", "--bauer-model qwen3-coder:30b",
-                     "--abnahme codex", "--etappen an", "--plan-auto", "--merge"]:
+                     "--abnahme codex", "--etappen an", "--plan-auto", "--merge", "--escalate auto", "--escalate-after 3"]:
             self.assertIn(part, joined)
         self.assertEqual(cmd[1], "CSV-Export")
 

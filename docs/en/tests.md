@@ -44,6 +44,7 @@ python3 -m unittest discover -s tests
 | `test_retry.py`, `test_audit.py`, `test_errors.py`, `test_kpi.py` | Retries, audit, error codes, key figures |
 | `test_budget.py`, `test_estimate.py` | Budget limits, cost estimate from earlier sessions |
 | `test_progress.py` | Status line after every AI call, abort reason at the round limit |
+| `test_escalation.py` | Escalation from a local Builder to the cloud: target choice, write access, end to end |
 
 ### Smoke matrix
 

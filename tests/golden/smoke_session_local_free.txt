@@ -59,5 +59,6 @@ state.json.bak
   },
   "cost_reported_by": [],
   "retries": 0,
-  "abort_reason": null
+  "abort_reason": null,
+  "escalation": null
 }

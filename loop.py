@@ -408,6 +408,7 @@ def build_kpis(state: dict, metrics: SessionMetrics, now: datetime.datetime | No
         "cost_reported_by": reporting,
         "retries": metrics.retries.get("attempts", 0),
         "abort_reason": state.get("abort_reason"),
+        "escalation": state.get("escalation"),
     }
 
 
@@ -430,6 +431,8 @@ def format_kpi_block(kpi: dict) -> str:
         + f" · Abnahme {kpi['inspection_rounds']}",
         f"* **Nacharbeit:** {kpi['rework_rounds']} von {kpi['build_rounds']} Bau-Runden (Quote {kpi['rework_rate']:.0%}); "
         f"Prüfbefehl rot {kpi['proof_red']}/{kpi['proof_runs']}, Abnahme verweigert {kpi['inspection_rejected']}",
+        *([f"* **Eskalation:** Bau-Runde {kpi['escalation'].get('iteration')}: {kpi['escalation'].get('from')} → "
+            f"{kpi['escalation'].get('to')} ({kpi['escalation'].get('reason')})"] if kpi.get("escalation") else []),
         *([f"* **Abbruchgrund:** {kpi['abort_reason']}"] if kpi.get("abort_reason") else []),
         "",
         "```json",
@@ -2578,6 +2581,8 @@ def dry_run_command(args, task: str, strat: str, default_b_model: str | None = N
         ("--abnahme-effort", args.inspector_effort),
         ("--effort", args.effort),
         ("--proof", args.proof),
+        ("--escalate", args.escalate),
+        ("--escalate-after", args.escalate_after),
     ]
     for flag, value in pairs:
         if value:
@@ -2613,6 +2618,43 @@ def pick_inspector(builder: AgentCLI, candidates: list[AgentCLI], agents: dict[s
         if cand.binary != builder.binary:
             return cand
     return None
+
+
+ESCALATE_AFTER_DEFAULT = 2
+
+
+def choose_escalation(builder: AgentCLI, agents: dict[str, AgentCLI], choice: str | None,
+                      inspector: AgentCLI | None = None, prefer: str | None = None,
+                      write_allowed: bool = False) -> tuple[str | None, str]:
+    """Ziel, auf das ein lokaler Bauleiter nach wiederholtem Scheitern eskaliert (Schlüssel in agents), oder None mit Grund.
+
+    Nie die Abnahme (sonst prüft sich der neue Bauleiter selbst) und nie eine CLI, die ohne
+    Schreibrechte nicht bauen kann.
+    """
+    if not choice:
+        return None, "Eskalation ist aus"
+    if not builder.local:
+        return None, f"{builder.name} ist kein lokales Modell"
+
+    def refusal(key: str) -> str:
+        agent = agents.get(key)
+        if agent is None:
+            return f"`{key}` ist nicht verfügbar (claudegravity --info zeigt alle)"
+        if agent.local or agent.binary == builder.binary:
+            return f"{agent.name} ist selbst lokal"
+        if inspector is not None and agent.binary == inspector.binary:
+            return f"{agent.name} macht die Abnahme und darf nicht selbst bauen"
+        if not write_allowed and get_permission_flags(agent.binary):
+            return f"{agent.name} bräuchte Schreibrechte (--yolo oder Ja bei der Rechte-Abfrage)"
+        return ""
+
+    if choice != "auto":
+        why = refusal(choice)
+        return (None, why) if why else (choice, "")
+    for key in ([prefer] if prefer in agents else []) + list(agents):
+        if not refusal(key):
+            return key, ""
+    return None, "kein Cloud-Anbieter außer der Abnahme verfügbar"
 
 
 def run_inspection(
@@ -3704,6 +3746,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--etappen", "--stages", default="auto", choices=["auto", "an", "aus", "on", "off"], help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)")
 
     parser.add_argument("--retries", "--neuversuche", type=int, default=None, help="Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, 5xx, Verbindungsabbruch) mit Backoff und Jitter (Standard: 3, 0 schaltet ab)")
+    parser.add_argument("--escalate", "--eskalation", default=None, metavar="ZIEL",
+                        help="Lokaler Bauleiter scheitert wiederholt: auf eine Cloud-CLI wechseln (auto oder z. B. claude, codex); einmal pro Session, steht in .done")
+    parser.add_argument("--escalate-after", "--eskalation-nach", type=int, default=None, metavar="N",
+                        help=f"Erfolglose Bau-Runden in Folge bis zur Eskalation (Standard: {ESCALATE_AFTER_DEFAULT})")
     parser.add_argument("--budget-max", default=None, help="Harte Grenze für die Session: Tokens (500k, 1.5m) oder gemeldete Kosten (2.50usd); der Lauf endet nach dem Aufruf, der sie erreicht")
     parser.add_argument("--budget-warn", default=None, help="Weiche Grenze: nur Warnung (Standard: 80 %% von --budget-max)")
     parser.add_argument("--budget-roles", "--budget-rollen", default=None, help="Harte Grenzen je Rolle, z. B. \"bauleiter=300k,abnahme=0.50usd\"")
@@ -3998,6 +4044,14 @@ def main():
         print(f"   • Modell        : {b_model}")
         print(f"   • Effort        : {effort_label(builder.binary, b_effort) or 'Standard'}")
         print(f"   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)")
+        if args.escalate:
+            after = args.escalate_after or ESCALATE_AFTER_DEFAULT
+            key, why = choose_escalation(builder, agents, args.escalate, prefer=planner.binary, write_allowed=True)
+            if key:
+                rights = "" if args.yolo or not get_permission_flags(agents[key].binary) else " (braucht Schreibrechte: --yolo oder Ja bei der Rechte-Abfrage)"
+                print(f"   • Eskalation    : nach {after} erfolglosen Runden einmalig zu {agents[key].name}{rights}")
+            else:
+                print(f"   • Eskalation    : nicht möglich ({why})")
         print("\n4. 🔎 Abnahme (Phase 4: Prüfung des fertigen Codes):")
         if not args.inspect:
             print("   • Abgeschaltet (--no-inspect)")
@@ -4634,6 +4688,44 @@ def main():
     state["iteration_limit"] = max_iters
     state["stage_mode_active"] = stage_mode
 
+    # Eskalation: lokaler Bauleiter scheitert mehrfach in Folge -> einmalig auf eine Cloud-CLI wechseln
+    escalate_choice = args.escalate if args.escalate is not None else state.get("escalate")
+    escalate_after = max(1, args.escalate_after or state.get("escalate_after") or ESCALATE_AFTER_DEFAULT)
+    if escalate_choice:
+        state["escalate"], state["escalate_after"] = escalate_choice, escalate_after
+    fail_streak = 0
+    escalation_refused = False
+
+    def note_build_round(ok: bool, reason: str) -> None:
+        nonlocal fail_streak, builder, builder_flags, is_endpoint_builder, stage_tries, escalation_refused
+        if ok:
+            fail_streak = 0
+            return
+        fail_streak += 1
+        if not escalate_choice or state.get("escalation") or fail_streak < escalate_after or not builder.local:
+            return
+        write_allowed = bool(yolo_active or state.get("yolo_enabled"))
+        key, why = choose_escalation(builder, agents, escalate_choice, inspector, prefer=planner.binary, write_allowed=write_allowed)
+        if not key:
+            if not escalation_refused:
+                escalation_refused = True
+                print(f"⚠️ Eskalation nicht möglich: {why}. {builder.name} baut weiter.")
+                append_log(session_dir, f"Eskalation nicht möglich: {why}")
+            return
+        previous = builder
+        builder = create_agent(key, agents, role="🔨 Bauleiter (Bau & Umsetzung)", metrics_tracker=session_metrics)
+        builder_flags = role_flags(builder.binary, "builder", write_allowed)
+        is_endpoint_builder = builder.binary in ENDPOINT_BINARIES
+        detail = f"{fail_streak} erfolglose Bau-Runden in Folge (zuletzt: {reason})"
+        state["escalation"] = {"from": previous.name, "to": builder.name, "iteration": state.get("last_iteration"), "reason": detail}
+        state["builder_binary"], state["builder_name"] = builder.binary, builder.name
+        session_metrics.count("escalations")
+        fail_streak = 0
+        stage_tries = 0
+        print(f"⬆️ Eskalation: {previous.name} → {builder.name} nach {detail}.")
+        append_log(session_dir, f"Eskalation Bauleiter {previous.name} → {builder.name}: {detail}")
+        save_session_state(session_dir, state)
+
     for iteration in range(start_iter, max_iters + 1):
         if STOP_REQUESTED:
             break
@@ -4715,6 +4807,7 @@ def main():
                     pass
 
             if ok:
+                note_build_round(True, "")
                 print(f"✅ {stage_label} erledigt" + (f" (`{proof_cmd}` grün)." if proof_cmd else "."))
                 append_log(session_dir, f"{stage_label} erledigt: {stage_text}")
                 stage_index += 1
@@ -4739,6 +4832,7 @@ def main():
                 pending_feedback = f"Der Prüfbefehl `{proof_cmd}` schlägt nach {stage_label} fehl:\n```\n{output}\n```" if proof_cmd else f"Fehler: {output}"
                 state["pending_feedback"] = pending_feedback
                 print(f"❌ {stage_label} noch nicht fertig (Versuch {stage_tries}/{STAGE_MAX_TRIES}).")
+                note_build_round(False, f"{stage_label} " + ("Prüfbefehl rot" if proof_cmd else "fehlgeschlagen"))
                 if stage_tries >= STAGE_MAX_TRIES:
                     print(f"🛑 {stage_label} ist nach {STAGE_MAX_TRIES} Versuchen nicht grün. Stand gesichert; weiter mit 'claudegravity -c'.")
                     state["abort_reason"] = f"{stage_label} nach {STAGE_MAX_TRIES} Versuchen nicht grün"
@@ -4813,6 +4907,8 @@ def main():
                 f"```"
             )
 
+        call_failed = ""
+        written = []
         try:
             print(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) (führt genehmigten Plan aus)...", flush=True)
             res, builder, builder_flags = safe_agent_run(
@@ -4853,6 +4949,7 @@ def main():
 
         except Exception as exc:
             print(f"[!] Fehler bei Iteration {iteration}: {exc}")
+            call_failed = f"Fehler: {str(exc)[:120]}"
 
         state["metrics"] = session_metrics.to_dict()
         save_session_state(session_dir, state)
@@ -4864,6 +4961,7 @@ def main():
                 break
             if outcome == "stop":
                 break
+            note_build_round(False, "Fertigmeldung zurückgewiesen")
         elif proof_cmd and not STOP_REQUESTED:
             ok, output = run_proof(proof_cmd, work_path)
             session_metrics.count("proof_green" if ok else "proof_red")
@@ -4871,6 +4969,9 @@ def main():
                 pending_feedback = f"Der Prüfbefehl `{proof_cmd}` schlägt noch fehl:\n```\n{output}\n```"
                 state["pending_feedback"] = pending_feedback
                 save_session_state(session_dir, state)
+            note_build_round(ok, call_failed or "Prüfbefehl rot")
+        elif call_failed or (is_endpoint_builder and not written):
+            note_build_round(False, call_failed or "keine Dateien geliefert")
 
         if STOP_REQUESTED:
             break

@@ -19,6 +19,8 @@
   delay                  = 3                            [Standard]
   effort                 = –                            [Standard]
   endpoint               = –                            [Standard]
+  escalate               = –                            [Standard]
+  escalate_after         = –                            [Standard]
   etappen                = "an"                         [Vorlage]
   guide                  = true                         [Standard]
   inspect                = true                         [Standard]

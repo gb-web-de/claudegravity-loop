@@ -29,6 +29,8 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--budget-max <wert>` | | Harte Grenze für die Session in Tokens (`500k`, `1.5m`) oder gemeldeten Kosten (`2.50usd`). Siehe [Budget](#budget). | – |
 | `--budget-warn <wert>` | | Weiche Grenze, nur Warnung. | 80 % von `--budget-max` |
 | `--budget-roles <liste>` | `--budget-rollen` | Harte Grenzen je Rolle, z. B. `"bauleiter=300k,abnahme=0.50usd"`. | – |
+| `--escalate <ziel>` | `--eskalation` | Lokaler Bauleiter scheitert wiederholt: einmalig auf eine Cloud-CLI wechseln (`auto` oder z. B. `claude`). Siehe [Eskalation](strategien.md#eskalation-zur-cloud). | aus |
+| `--escalate-after <n>` | `--eskalation-nach` | Erfolglose Bau-Runden in Folge bis zur Eskalation. | 2 |
 | `--template <name>` | `--vorlage` | Aufgaben-Vorlage `bugfix`, `feature`, `refactor` oder eine eigene aus dem Profil. Siehe [Aufgaben-Vorlagen](#aufgaben-vorlagen). | – |
 | `init`, `--init` | `--einrichten` | Einrichtung: erkennt System und KI-CLIs, fragt Ziel, Prüfbefehl und Speicherort und schreibt ein Profil. Siehe [Schnellstart](schnellstart.md#1-einrichten). | – |
 | `--no-progress` | | Keine Statuszeile nach jedem KI-Aufruf (im Profil `"progress": false`). | aus |

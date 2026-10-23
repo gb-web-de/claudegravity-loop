@@ -29,6 +29,8 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--budget-max <value>` | | Hard limit for the session in tokens (`500k`, `1.5m`) or reported costs (`2.50usd`). See [Budget](#budget). | – |
 | `--budget-warn <value>` | | Soft limit, warning only. | 80 % of `--budget-max` |
 | `--budget-roles <list>` | `--budget-rollen` | Hard limits per role, e.g. `"bauleiter=300k,abnahme=0.50usd"`. | – |
+| `--escalate <target>` | `--eskalation` | A local Builder fails repeatedly: switch once to a cloud CLI (`auto` or e.g. `claude`). See [Escalation](strategien.md#escalating-to-the-cloud). | off |
+| `--escalate-after <n>` | `--eskalation-nach` | Failed build rounds in a row until escalation. | 2 |
 | `--template <name>` | `--vorlage` | Task template `bugfix`, `feature`, `refactor` or your own from a profile. See [Task templates](#task-templates). | – |
 | `init`, `--init` | `--einrichten` | Setup: detects system and AI CLIs, asks for goal, proof command and location, and writes a profile. See [Quick start](schnellstart.md#1-set-up). | – |
 | `--no-progress` | | No status line after every AI call (in a profile: `"progress": false`). | off |

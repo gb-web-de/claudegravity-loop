@@ -69,6 +69,20 @@ claudegravity "CSV export for invoices" --strategy hybrid --proof "python3 -m un
 
 Examples and model recommendations: [Ollama & Codex](ollama-und-codex.md).
 
+## Escalating to the cloud
+
+With `--escalate` (`--eskalation`) a local Builder gets a fallback: if it fails several build rounds in a row, a cloud CLI takes over the build once.
+
+```bash
+claudegravity "CSV export" --strategy local-free --proof "make test" --escalate auto --yolo
+```
+
+* **Triggers** (default: 2 in a row, `--escalate-after N`): proof command red, stage not green, completion signal rejected by the proof command or the acceptance check, call failed, or an endpoint Builder delivers no files. A successful round resets the counter.
+* **Target:** `auto` takes the Architect's CLI first, otherwise the next detected cloud CLI. Or you name it (`--escalate claude`). Never the acceptance check, because the new Builder must not accept its own work; with `hybrid` and only one cloud CLI this therefore needs a different `--abnahme`.
+* **Write access:** CLIs such as Claude Code, Codex or Gemini only build with write access (`--yolo` or yes at the permission prompt). Without it the loop says so once and the local model keeps building.
+* **Traceable:** The switch is recorded in `LOG.md`, in `state.json` (`escalation`) and in the key figures block of `.done` or `AUDIT.md`, with round, old and new Builder and reason. It happens at most once per session; the Builder receives the last feedback.
+* The dry run shows where it would escalate. Without `--escalate` the loop never moves to the cloud on its own.
+
 ## Checking presets
 
 Combine any preset with `--dry-run` to see the concrete assignment on your machine:

@@ -69,6 +69,20 @@ claudegravity "CSV-Export für Rechnungen" --strategy hybrid --proof "python3 -m
 
 Beispiele und Modellempfehlungen: [Ollama & Codex](ollama-und-codex.md).
 
+## Eskalation zur Cloud
+
+Mit `--escalate` (`--eskalation`) bekommt ein lokaler Bauleiter eine Rückfallebene: Scheitert er mehrere Bau-Runden in Folge, übernimmt einmalig eine Cloud-CLI den Bau.
+
+```bash
+claudegravity "CSV-Export" --strategy local-free --proof "make test" --escalate auto --yolo
+```
+
+* **Auslöser** (Standard: 2 in Folge, `--escalate-after N`): Prüfbefehl rot, Etappe nicht grün, Fertigmeldung vom Prüfbefehl oder von der Abnahme zurückgewiesen, Aufruf mit Fehler, oder ein Endpunkt-Bauleiter liefert keine Dateien. Eine erfolgreiche Runde setzt den Zähler zurück.
+* **Ziel:** `auto` nimmt zuerst die CLI des Architekten, sonst die nächste erkannte Cloud-CLI. Oder du nennst sie (`--escalate claude`). Nie die Abnahme, denn der neue Bauleiter darf sich nicht selbst abnehmen; bei `hybrid` mit nur einer Cloud-CLI geht es deshalb nur mit einer anderen `--abnahme`.
+* **Schreibrechte:** CLIs wie Claude Code, Codex oder Gemini bauen nur mit Schreibrechten (`--yolo` oder Ja bei der Rechte-Abfrage). Fehlen sie, meldet der Loop das einmal und das lokale Modell baut weiter.
+* **Nachvollziehbar:** Der Wechsel steht in `LOG.md`, in `state.json` (`escalation`) und im Kennzahlen-Block von `.done` bzw. `AUDIT.md`, mit Runde, altem und neuem Bauleiter und Grund. Er passiert höchstens einmal pro Session; der Bauleiter bekommt die letzte Rückmeldung mit.
+* Der Trockenlauf zeigt, wohin eskaliert würde. Ohne `--escalate` wechselt der Loop nie von selbst in die Cloud.
+
 ## Presets prüfen
 
 Kombiniere jedes Preset mit `--dry-run`, um die konkrete Belegung auf deinem Rechner zu sehen:
