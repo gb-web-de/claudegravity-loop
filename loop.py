@@ -43,6 +43,13 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+
+def say(*parts: object, sep: str = " ", end: str = "\n", file=None, flush: bool = False) -> None:
+    """Einzige Stelle für Terminal-Ausgaben des Loops (Statuszeilen, Menüs, Ergebnisse).
+    Maschinenlesbare Ereignisse gehen zusätzlich über log_event() nach events.jsonl."""
+    print(*parts, sep=sep, end=end, file=file, flush=flush)
+
+
 STOP_REQUESTED = False
 
 
@@ -86,7 +93,7 @@ def planning_directive() -> str:
 
 def sigint_handler(signum, frame):
     global STOP_REQUESTED
-    print("\n[!] Abbruch empfangen. Beende aktuelle Iteration sauber...")
+    say("\n[!] Abbruch empfangen. Beende aktuelle Iteration sauber...")
     STOP_REQUESTED = True
 
 
@@ -234,7 +241,7 @@ def parse_reset_seconds(time_str: str | None) -> int | None:
 
 
 def wait_countdown(seconds: int, reset_str: str = "") -> bool:
-    print(f"\n⏳ Starte Countdown ({seconds}s bis {reset_str or 'Reset'}). Drücke [Strg+C] zum Abbrechen...")
+    say(f"\n⏳ Starte Countdown ({seconds}s bis {reset_str or 'Reset'}). Drücke [Strg+C] zum Abbrechen...")
     try:
         for remaining in range(seconds, 0, -1):
             if STOP_REQUESTED:
@@ -245,10 +252,10 @@ def wait_countdown(seconds: int, reset_str: str = "") -> bool:
             sys.stdout.write(f"\r⏳ Warte noch: {time_display} ... ")
             sys.stdout.flush()
             time.sleep(1)
-        print("\n⏰ Wartezeit abgelaufen! Setze Ausführung fort...")
+        say("\n⏰ Wartezeit abgelaufen! Setze Ausführung fort...")
         return True
     except KeyboardInterrupt:
-        print("\n[!] Warten durch Nutzer abgebrochen.")
+        say("\n[!] Warten durch Nutzer abgebrochen.")
         return False
 
 
@@ -508,7 +515,7 @@ def append_metrics_to_done(session_dir: Path, project_path: Path, metrics: Sessi
         report = format_metrics_report(metrics, state)
         with open(session_done, "a", encoding="utf-8") as f:
             f.write(report)
-        print(f"📊 Ressourcen-Audit erfolgreich in {session_done.relative_to(project_path)} eingetragen.")
+        say(f"📊 Ressourcen-Audit erfolgreich in {session_done.relative_to(project_path)} eingetragen.")
 
 
 class AgentCLI:
@@ -541,7 +548,7 @@ class AgentCLI:
         if SETTINGS.shield and not self.local:
             prompt, found = redact_secrets(prompt)
             if found:
-                print(f"🛡️  Datenschutzschild: {', '.join(found)} vor dem Versand an {self.name} geschwärzt.")
+                say(f"🛡️  Datenschutzschild: {', '.join(found)} vor dem Versand an {self.name} geschwärzt.")
         text, metrics = self.run_fn(self.binary, prompt, cwd, extra_flags)
         if metrics:
             if metrics.get("reported_model"):
@@ -1237,7 +1244,7 @@ def apply_code_blocks(project_path: Path, text: str, on_blocked=None) -> list[st
             return
         target = resolve_project_target(project_path, rel_path)
         if target is None:
-            print(f"[!] Blockiert: {rel_path} liegt außerhalb des Projektordners oder ist eine Geheimnis-Datei und wird nicht geschrieben.")
+            say(f"[!] Blockiert: {rel_path} liegt außerhalb des Projektordners oder ist eine Geheimnis-Datei und wird nicht geschrieben.")
             if on_blocked:
                 on_blocked(rel_path)
             return
@@ -1246,7 +1253,7 @@ def apply_code_blocks(project_path: Path, text: str, on_blocked=None) -> list[st
             target.write_text(content, encoding="utf-8")
             written_files.append(rel_path)
         except Exception as ex:
-            print(f"[!] Fehler beim Schreiben von {rel_path}: {ex}")
+            say(f"[!] Fehler beim Schreiben von {rel_path}: {ex}")
 
     # Muster 1: ```filepath: path/to/file.ext oder ```file: path/to/file.ext
     pattern1 = re.compile(r'```(?:filepath:|file:)\s*([^\s\n\r`]+)\r?\n(.*?)```', re.DOTALL)
@@ -1426,12 +1433,12 @@ def acquire_worktree(project_path: Path, session_dir: Path, state: dict) -> Path
         res = _git(project_path, "worktree", "add", "-b", branch, str(wt_path), "HEAD")
 
     if res.returncode != 0:
-        print(f"[!] Git-Workspace konnte nicht angelegt werden, arbeite direkt im Projekt: {res.stderr.strip()}")
+        say(f"[!] Git-Workspace konnte nicht angelegt werden, arbeite direkt im Projekt: {res.stderr.strip()}")
         return project_path
 
     state["worktree"] = {"path": str(wt_path), "branch": branch, "base_branch": base_branch, "released": False}
     save_session_state(session_dir, state)
-    print(f"🌿 Git-Workspace angelegt: {wt_path} (Branch `{branch}` von `{base_branch}`)")
+    say(f"🌿 Git-Workspace angelegt: {wt_path} (Branch `{branch}` von `{base_branch}`)")
     return wt_path
 
 
@@ -1453,13 +1460,13 @@ def release_worktree(project_path: Path, session_dir: Path, state: dict, task: s
             if res.returncode != 0:
                 res = _git(wt_path, "-c", "user.name=ClaudeGravity Loop", "-c", "user.email=claudegravity@localhost", "commit", "-m", msg)
             if res.returncode != 0:
-                print(f"[!] Änderungen im Workspace konnten nicht committet werden, Workspace bleibt bestehen: {res.stderr.strip()}")
+                say(f"[!] Änderungen im Workspace konnten nicht committet werden, Workspace bleibt bestehen: {res.stderr.strip()}")
                 return False
-            print(f"💾 Änderungen auf Branch `{branch}` committet.")
+            say(f"💾 Änderungen auf Branch `{branch}` committet.")
 
         res = _git(project_path, "worktree", "remove", str(wt_path))
         if res.returncode != 0:
-            print(f"[!] Git-Workspace konnte nicht freigegeben werden: {res.stderr.strip()}")
+            say(f"[!] Git-Workspace konnte nicht freigegeben werden: {res.stderr.strip()}")
             return False
     _git(project_path, "worktree", "prune")
 
@@ -1467,23 +1474,23 @@ def release_worktree(project_path: Path, session_dir: Path, state: dict, task: s
     if merge and base_branch != "HEAD":
         current = _git(project_path, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
         if current != base_branch:
-            print(f"[!] Merge übersprungen: Projekt steht auf `{current}`, nicht auf `{base_branch}`.")
+            say(f"[!] Merge übersprungen: Projekt steht auf `{current}`, nicht auf `{base_branch}`.")
         else:
             res = _git(project_path, "merge", "--no-ff", "--no-edit", branch)
             if res.returncode == 0:
                 _git(project_path, "branch", "-d", branch)
                 merged = True
-                print(f"🔀 Branch `{branch}` in `{base_branch}` gemerged und gelöscht.")
+                say(f"🔀 Branch `{branch}` in `{base_branch}` gemerged und gelöscht.")
             else:
                 _git(project_path, "merge", "--abort")
-                print(f"[!] Merge von `{branch}` fehlgeschlagen (Konflikt?), Branch bleibt erhalten: {res.stdout.strip() or res.stderr.strip()}")
+                say(f"[!] Merge von `{branch}` fehlgeschlagen (Konflikt?), Branch bleibt erhalten: {res.stdout.strip() or res.stderr.strip()}")
 
     wt["released"] = True
     wt["merged"] = merged
     save_session_state(session_dir, state)
-    print("🧹 Git-Workspace freigegeben.")
+    say("🧹 Git-Workspace freigegeben.")
     if not merged:
-        print(f"💡 Ergebnis liegt auf Branch `{branch}` (übernehmen mit: git merge {branch})")
+        say(f"💡 Ergebnis liegt auf Branch `{branch}` (übernehmen mit: git merge {branch})")
     return True
 
 
@@ -1691,7 +1698,7 @@ def record_audit_event(session_dir: Path | None, kind: str, detail: str, metrics
     detail = mask_secrets(detail)
     label = AUDIT_EVENT_LABELS.get(kind, kind)
     code = AUDIT_EVENT_CODES.get(kind)
-    print(f"🛑 Audit{f' [{code}]' if code else ''}: {label}: {detail}" + (f"\n   👉 {ERROR_CODES[code][1]}\n   📖 {error_doc_link(code)}" if code else ""))
+    say(f"🛑 Audit{f' [{code}]' if code else ''}: {label}: {detail}" + (f"\n   👉 {ERROR_CODES[code][1]}\n   📖 {error_doc_link(code)}" if code else ""))
     if metrics is not None:
         metrics.note_audit(kind)
     if session_dir is None:
@@ -1772,11 +1779,11 @@ def load_session_state(session_dir: Path) -> dict:
         try:
             data = json.loads(state_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            print(f"⚠️  {state_file} ist beschädigt und wird übersprungen.")
+            say(f"⚠️  {state_file} ist beschädigt und wird übersprungen.")
             continue
         if isinstance(data, dict):
             if name != "state.json":
-                print(f"♻️  Stand aus {state_file.name} wiederhergestellt (letzte Runde wird ggf. wiederholt).")
+                say(f"♻️  Stand aus {state_file.name} wiederhergestellt (letzte Runde wird ggf. wiederholt).")
             return data
     return {}
 
@@ -1822,27 +1829,27 @@ def handle_rate_limit(
     alt_agent = get_alternative_agent(current_agent, agents, exclude)
 
     if auto_switch and alt_agent:
-        print(f"\n🔄 Auto-Switch aktiv: Wechsle automatisch von {describe_agent(current_agent)} zu {alt_agent.name}...")
+        say(f"\n🔄 Auto-Switch aktiv: Wechsle automatisch von {describe_agent(current_agent)} zu {alt_agent.name}...")
         return "switch", alt_agent
 
-    print("\n" + "=" * 65)
+    say("\n" + "=" * 65)
     if err.transient:
-        print(f"🚨 [CG-1302] STÖRUNG: {describe_agent(current_agent)} antwortet auch nach automatischen Neuversuchen nicht!")
+        say(f"🚨 [CG-1302] STÖRUNG: {describe_agent(current_agent)} antwortet auch nach automatischen Neuversuchen nicht!")
     else:
-        print(f"🚨 [CG-1301] AI-LIMIT ERREICHT: {describe_agent(current_agent)} meldet Sitzungs- / Ratenlimit!")
-    print(f"   Grund: {err.message}")
+        say(f"🚨 [CG-1301] AI-LIMIT ERREICHT: {describe_agent(current_agent)} meldet Sitzungs- / Ratenlimit!")
+    say(f"   Grund: {err.message}")
     if err.reset_time:
-        print(f"   Reset erwartet: {err.reset_time}")
-    print("=" * 65)
-    print("Wie möchtest du fortfahren?")
+        say(f"   Reset erwartet: {err.reset_time}")
+    say("=" * 65)
+    say("Wie möchtest du fortfahren?")
     if alt_agent:
-        print(f"  [1] 🔄 Modell-Wechsel -> Zu {alt_agent.name} wechseln und sofort weiterarbeiten")
+        say(f"  [1] 🔄 Modell-Wechsel -> Zu {alt_agent.name} wechseln und sofort weiterarbeiten")
     else:
-        print("  [1] 🔄 Modell-Wechsel -> (Keine Alternative, die nicht schon die Gegenrolle hat)")
+        say("  [1] 🔄 Modell-Wechsel -> (Keine Alternative, die nicht schon die Gegenrolle hat)")
     wait_info = f" ({err.reset_time})" if err.reset_time else ""
-    print(f"  [2] ⏳ Warten         -> Countdown starten{wait_info} und automatisch wiederholen")
-    print("  [3] 💾 Beenden        -> Stand sichern und beenden (Fortsetzen später mit 'claudegravity -c')")
-    print("-" * 65)
+    say(f"  [2] ⏳ Warten         -> Countdown starten{wait_info} und automatisch wiederholen")
+    say("  [3] 💾 Beenden        -> Stand sichern und beenden (Fortsetzen später mit 'claudegravity -c')")
+    say("-" * 65)
 
     try:
         choice = input("Auswahl [1/2/3] (Standard: 1): ").strip()
@@ -1946,7 +1953,7 @@ def safe_agent_run(
                 record_audit_event(session_dir, "secret_in_output", f"{agent.name} ({role}): {', '.join(found)}", tracker)
             if SETTINGS.budget and SETTINGS.budget.active and tracker is not None:
                 for warning in SETTINGS.budget.check(tracker):
-                    print(f"💶 Budget-Warnung: {warning}")
+                    say(f"💶 Budget-Warnung: {warning}")
                     append_log(session_dir, f"Budget-Warnung: {warning}")
             delta = (tracker.total_tokens if tracker is not None else 0) - tokens_before
             log_event(session_dir, "call", role=role, agent=agent.name, model=agent.reported_model or agent.model,
@@ -1957,7 +1964,7 @@ def safe_agent_run(
                       retries=attempt or None)
             if SETTINGS.progress:
                 for line in format_progress(role, agent.name, state, tracker, time.monotonic() - started, delta, SETTINGS.budget):
-                    print(line, flush=True)
+                    say(line, flush=True)
             if attempt and metrics_tracker:
                 metrics_tracker.note_retry("recovered")
             if attempt:
@@ -1977,8 +1984,8 @@ def safe_agent_run(
                     attempt += 1
                     wait = backoff_delay(attempt, policy["base"], policy["cap"])
                     short = message.strip().splitlines()[0][:160] if message.strip() else type(exc).__name__
-                    print(f"🔁 Vorübergehender Fehler bei {describe_agent(agent)}: {short}")
-                    print(f"   Neuversuch {attempt}/{policy['attempts']} in {wait:.0f} s ...")
+                    say(f"🔁 Vorübergehender Fehler bei {describe_agent(agent)}: {short}")
+                    say(f"   Neuversuch {attempt}/{policy['attempts']} in {wait:.0f} s ...")
                     append_log(session_dir, f"Vorübergehender Fehler bei {agent.name} ({short}); Neuversuch {attempt}/{policy['attempts']} in {wait:.0f} s")
                     if metrics_tracker:
                         metrics_tracker.note_retry("attempts")
@@ -2006,7 +2013,7 @@ def safe_agent_run(
                 else:
                     role_label = "Prüfstatiker"
                     role_title = "🧐 Prüfstatiker (Prüfung & Review)"
-                print(f"🔄 Rolle '{role_label}' wechselt zu {new_agent.name}!")
+                say(f"🔄 Rolle '{role_label}' wechselt zu {new_agent.name}!")
                 append_log(session_dir, f"Limit bei {agent.name}: Rolle {role_label} wechselt zu {new_agent.name}")
                 agent = new_agent
                 agent.role = role_title
@@ -2024,8 +2031,8 @@ def safe_agent_run(
             else:
                 state["abort_reason"] = f"Beendet im Limit-Menü ({agent.name}: {mask_secrets(err.message.strip().splitlines()[0][:120]) if err.message.strip() else 'Limit'})"
                 save_session_state(session_dir, state)
-                print(f"\n⏹️ Abbruchgrund: {state['abort_reason']}")
-                print("💾 Sitzung gesichert. Setze jederzeit fort mit 'claudegravity -c'.")
+                say(f"\n⏹️ Abbruchgrund: {state['abort_reason']}")
+                say("💾 Sitzung gesichert. Setze jederzeit fort mit 'claudegravity -c'.")
                 sys.exit(0)
     return "", agent, flags
 
@@ -2066,9 +2073,9 @@ def run_adversarial_plan(
     # Wenn Plan v1 noch nicht existiert (oder von vorn begonnen wird):
     if not plan_v1_file.exists():
         p_desc = describe_agent(planner)
-        print(f"\n📁 Session-Ordner: {session_dir.relative_to(project_path)}")
-        print(f"🚀 Phase 1: Plan-Entwurf durch 🏗️ Architekt ({p_desc}) im Kontext von {project_path.name}...")
-        print(f"⏳ Warte auf 🏗️ Architekt ({planner.name})...", flush=True)
+        say(f"\n📁 Session-Ordner: {session_dir.relative_to(project_path)}")
+        say(f"🚀 Phase 1: Plan-Entwurf durch 🏗️ Architekt ({p_desc}) im Kontext von {project_path.name}...")
+        say(f"⏳ Warte auf 🏗️ Architekt ({planner.name})...", flush=True)
 
         prompt_plan = (
             f"Du bist der leitende Software-Architekt für das Projekt in '{project_path}'.\n"
@@ -2099,7 +2106,7 @@ def run_adversarial_plan(
 
         # Sicherheitsprüfung: Hat Modell versehentlich eine Permission-Meldung zurückgegeben?
         if is_permission_error_response(plan):
-            print("⚠️ Modell versuchte eine Datei anzulegen. Erzwinge reine Textausgabe...")
+            say("⚠️ Modell versuchte eine Datei anzulegen. Erzwinge reine Textausgabe...")
             retry_prompt = prompt_plan + "\nACHTUNG: Lege KEINE Datei an! Gib den Plan ausschließlich als Text aus!"
             plan, planner, planner_flags = safe_agent_run(
                 agent=planner,
@@ -2117,17 +2124,17 @@ def run_adversarial_plan(
         if ask_mode:
             questions = extract_questions(plan)
             if questions:
-                print("\n" + "=" * 60)
-                print(f"❓ 🏗️ Architekt ({planner.name}) hat Rückfragen an dich:")
-                print("=" * 60)
-                print(questions)
-                print("-" * 60)
+                say("\n" + "=" * 60)
+                say(f"❓ 🏗️ Architekt ({planner.name}) hat Rückfragen an dich:")
+                say("=" * 60)
+                say(questions)
+                say("-" * 60)
                 try:
                     user_ans = input("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
                 except (EOFError, KeyboardInterrupt):
                     user_ans = ""
                 if user_ans:
-                    print(f"⏳ 🏗️ Architekt ({planner.name}) bezieht deine Vorgaben in Plan v1 ein...", flush=True)
+                    say(f"⏳ 🏗️ Architekt ({planner.name}) bezieht deine Vorgaben in Plan v1 ein...", flush=True)
                     prompt_refine = (
                         f"Du hattest dem Nutzer folgende Fragen gestellt:\n{questions}\n\n"
                         f"Der Nutzer hat wie folgt geantwortet:\n{user_ans}\n\n"
@@ -2163,7 +2170,7 @@ def run_adversarial_plan(
 
         plan_v1_file.write_text(plan, encoding="utf-8")
         current_plan_file = plan_v1_file
-        print(f"📄 Plan v1 gespeichert in {plan_v1_file.relative_to(project_path)}")
+        say(f"📄 Plan v1 gespeichert in {plan_v1_file.relative_to(project_path)}")
     else:
         # Resume: Den neuesten Plan aus der Session laden (aber Permission-Errors überspringen)
         existing_plans = sorted(session_dir.glob("PLAN_v*.md"), key=lambda p: p.name)
@@ -2171,13 +2178,13 @@ def run_adversarial_plan(
         plan_content = active_plan_file_source.read_text(encoding="utf-8")
 
         if is_permission_error_response(plan_content) and len(existing_plans) > 1:
-            print(f"⚠️ {active_plan_file_source.name} enthielt einen Berechtigungsfehler. Nutze Vorgängerversion.")
+            say(f"⚠️ {active_plan_file_source.name} enthielt einen Berechtigungsfehler. Nutze Vorgängerversion.")
             active_plan_file_source = existing_plans[-2]
             plan_content = active_plan_file_source.read_text(encoding="utf-8")
 
         plan = plan_content
         current_plan_file = active_plan_file_source
-        print(f"🔄 Wiederaufnahme: Geladen {active_plan_file_source.name}")
+        say(f"🔄 Wiederaufnahme: Geladen {active_plan_file_source.name}")
 
     start_round = state.get("rounds_completed", 0) + 1
     approved = state.get("plan_approved", False)
@@ -2185,14 +2192,14 @@ def run_adversarial_plan(
     if approved:
         approved_hash = state.get("approved_plan_sha256")
         if approved_hash and approved_hash != sha256_file(current_plan_file):
-            print(f"⚠️ {current_plan_file.name} wurde nach der Freigabe geändert. Die Freigabe gilt nicht mehr, Review startet neu.")
+            say(f"⚠️ {current_plan_file.name} wurde nach der Freigabe geändert. Die Freigabe gilt nicht mehr, Review startet neu.")
             append_log(session_dir, f"Freigabe verworfen: {current_plan_file.name} nach der Freigabe geändert")
             approved = False
             state["plan_approved"] = False
             state["rounds_completed"] = 0
             start_round = 1
         else:
-            print("🎉 Plan wurde in einer früheren Sitzung bereits genehmigt!")
+            say("🎉 Plan wurde in einer früheren Sitzung bereits genehmigt!")
             return True, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
 
     p_details = describe_agent(planner)
@@ -2213,8 +2220,8 @@ def run_adversarial_plan(
             return False, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
 
         r_desc = describe_agent(reviewer)
-        print(f"\n🔍 Phase 2: Unabhängiges Review (Runde {r}/{max_rounds}) durch 🧐 Prüfstatiker ({r_desc})...")
-        print(f"⏳ Warte auf Review von 🧐 Prüfstatiker ({reviewer.name})...", flush=True)
+        say(f"\n🔍 Phase 2: Unabhängiges Review (Runde {r}/{max_rounds}) durch 🧐 Prüfstatiker ({r_desc})...")
+        say(f"⏳ Warte auf Review von 🧐 Prüfstatiker ({reviewer.name})...", flush=True)
 
         prompt_rev = (
             f"Du bist der unabhängige Prüfstatiker und Code-Auditor für das Projekt in '{project_path}'.\n"
@@ -2260,7 +2267,7 @@ def run_adversarial_plan(
         except RuntimeError:
             if resumed_reviewer is None:
                 raise
-            print("⚠️ Prüfer-Sitzung ließ sich nicht fortsetzen, prüfe den vollständigen Plan neu...")
+            say("⚠️ Prüfer-Sitzung ließ sich nicht fortsetzen, prüfe den vollständigen Plan neu...")
             reviewer.session_id = None
             call_flags = reviewer_flags
             resumed_reviewer = reviewer
@@ -2284,18 +2291,18 @@ def run_adversarial_plan(
 
         review_r_file = session_dir / f"REVIEW_round{r}.md"
         review_r_file.write_text(review, encoding="utf-8")
-        print(f"📋 Review gespeichert in {review_r_file.relative_to(project_path)}")
+        say(f"📋 Review gespeichert in {review_r_file.relative_to(project_path)}")
 
         parsed = parse_review(review)
         is_approved, reason = review_decision(parsed)
         verdict_str = "APPROVED" if is_approved else "REVISE"
         log_entry.append(f"  - Review Runde {r}: **VERDICT: {verdict_str}** ({reason}, {len(parsed['findings'])} Befund(e))")
         if reason not in ("APPROVED", "REVISE"):
-            print(f"ℹ️  Urteil: {reason}")
+            say(f"ℹ️  Urteil: {reason}")
 
         state["rounds_completed"] = r
         if is_approved:
-            print(f"🎉 Plan von 🧐 Prüfstatiker ({reviewer.name}) genehmigt!")
+            say(f"🎉 Plan von 🧐 Prüfstatiker ({reviewer.name}) genehmigt!")
             approved = True
             state["plan_approved"] = True
             state["approved_plan_sha256"] = sha256_file(current_plan_file)
@@ -2307,11 +2314,11 @@ def run_adversarial_plan(
             if ask_mode:
                 rev_questions = extract_questions(review)
                 if rev_questions:
-                    print("\n" + "=" * 60)
-                    print(f"❓ 🧐 Prüfstatiker ({reviewer.name}) hat Rückfragen an dich:")
-                    print("=" * 60)
-                    print(rev_questions)
-                    print("-" * 60)
+                    say("\n" + "=" * 60)
+                    say(f"❓ 🧐 Prüfstatiker ({reviewer.name}) hat Rückfragen an dich:")
+                    say("=" * 60)
+                    say(rev_questions)
+                    say("-" * 60)
                     try:
                         user_rev_ans = input("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
                     except (EOFError, KeyboardInterrupt):
@@ -2319,8 +2326,8 @@ def run_adversarial_plan(
                     if user_rev_ans:
                         user_rev_feedback = f"\n\nDer Nutzer hat auf die Rückfragen folgendes klargestellt:\n{user_rev_ans}\n"
 
-            print(f"⚠️ Kritikpunkte von 🧐 Prüfstatiker ({reviewer.name}). 🏗️ Architekt ({planner.name}) bessert den Plan nach...")
-            print(f"⏳ Warte auf Überarbeitung durch 🏗️ Architekt ({describe_agent(planner)})...", flush=True)
+            say(f"⚠️ Kritikpunkte von 🧐 Prüfstatiker ({reviewer.name}). 🏗️ Architekt ({planner.name}) bessert den Plan nach...")
+            say(f"⏳ Warte auf Überarbeitung durch 🏗️ Architekt ({describe_agent(planner)})...", flush=True)
             prompt_fix = (
                 f"Der Prüfstatiker ({reviewer.name}) hat folgende Befunde zum Plan:\n\n"
                 f"{findings_digest(review)}\n"
@@ -2347,7 +2354,7 @@ def run_adversarial_plan(
 
             # Prüfen ob Modell trotz Directive einen Permission-Fehler zurückgab
             if is_permission_error_response(plan):
-                print("⚠️ Modell versuchte erneut eine Datei anzulegen. Erzwinge reinen Text...")
+                say("⚠️ Modell versuchte erneut eine Datei anzulegen. Erzwinge reinen Text...")
                 retry_fix = prompt_fix + "\nACHTUNG: Lege KEINE Datei wie docs/... an! Gib den Plan als Text auf stdout aus!"
                 plan, planner, planner_flags = safe_agent_run(
                     agent=planner,
@@ -2365,10 +2372,10 @@ def run_adversarial_plan(
             plan_next_file = next_plan_file(session_dir)
             plan_next_file.write_text(plan, encoding="utf-8")
             current_plan_file = plan_next_file
-            print(f"📄 Plan v{r+1} gespeichert in {plan_next_file.relative_to(project_path)}")
+            say(f"📄 Plan v{r+1} gespeichert in {plan_next_file.relative_to(project_path)}")
             save_session_state(session_dir, state)
         else:
-            print("🛑 Maximale Review-Runden erreicht.")
+            say("🛑 Maximale Review-Runden erreicht.")
             approved = False
             state["plan_approved"] = False
             save_session_state(session_dir, state)
@@ -2562,7 +2569,7 @@ def run_build_call(
 ) -> tuple[str, "AgentCLI", list[str], list[str]]:
     """Ein Aufruf des Bauleiters: Antwort zeigen, bei Endpunkten Dateien schreiben, Antwort ins Session-Log.
     Liefert (Antwort, Bauleiter, Flags, geschriebene Dateien); Bauleiter und Flags können nach einem Limit-Wechsel neu sein."""
-    print(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) ({wait_note})...", flush=True)
+    say(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) ({wait_note})...", flush=True)
     res, builder, builder_flags = safe_agent_run(
         agent=builder,
         prompt=prompt,
@@ -2576,8 +2583,8 @@ def run_build_call(
         metrics_tracker=ctx.metrics,
         exclude={ctx.inspector.binary} if ctx.inspector is not None else None
     )
-    print(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [{label}]:")
-    print(res)
+    say(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [{label}]:")
+    say(res)
     written: list[str] = []
     if endpoint:
         name = builder.name
@@ -2590,9 +2597,9 @@ def run_build_call(
                 ctx.written_so_far.append(w)
         ctx.state["written_files"] = ctx.written_so_far
         if written:
-            print(f"\n📝 {len(written)} Datei(en) durch 🔨 Bauleiter ({builder.name}) aktualisiert:")
+            say(f"\n📝 {len(written)} Datei(en) durch 🔨 Bauleiter ({builder.name}) aktualisiert:")
             for w in written:
-                print(f"   • {w}")
+                say(f"   • {w}")
     with open(ctx.session_log, "a", encoding="utf-8") as f_log:
         f_log.write(log_header)
         f_log.write(mask_secrets(res) + "\n")
@@ -2885,19 +2892,19 @@ def handle_plan_approval_and_changes(
     while not STOP_REQUESTED:
         p_desc = describe_agent(planner)
         r_desc = describe_agent(reviewer)
-        print("\n" + "=" * 60)
-        print("📋 PLAN-STATUS: Fertiggestellt & Geprüft")
-        print(f"📄 Aktuelle Plan-Datei             : {plan_file.relative_to(project_path)}")
-        print(f"🏗️ Architekt (Planung & Bau)       : {p_desc}")
-        print(f"🧐 Prüfstatiker (Prüfung & Review) : {r_desc}")
-        print("=" * 60)
-        print("Möchtest du den Plan freigeben, Rollen tauschen oder Änderungen vornehmen?")
-        print("  [1] Approve  -> Plan genehmigen & weiter zur Implementierung")
-        print("  [2] Changes  -> Änderungen/Feedback anbringen")
-        print("  [3] Swap     -> Rollen tauschen (Architekt <-> Prüfstatiker)")
-        print("  [4] Anzeigen -> Plan direkt hier im Terminal lesen")
-        print("  [5] Beenden  -> Abbrechen (Fortsetzen später mit --resume möglich)")
-        print("-" * 60)
+        say("\n" + "=" * 60)
+        say("📋 PLAN-STATUS: Fertiggestellt & Geprüft")
+        say(f"📄 Aktuelle Plan-Datei             : {plan_file.relative_to(project_path)}")
+        say(f"🏗️ Architekt (Planung & Bau)       : {p_desc}")
+        say(f"🧐 Prüfstatiker (Prüfung & Review) : {r_desc}")
+        say("=" * 60)
+        say("Möchtest du den Plan freigeben, Rollen tauschen oder Änderungen vornehmen?")
+        say("  [1] Approve  -> Plan genehmigen & weiter zur Implementierung")
+        say("  [2] Changes  -> Änderungen/Feedback anbringen")
+        say("  [3] Swap     -> Rollen tauschen (Architekt <-> Prüfstatiker)")
+        say("  [4] Anzeigen -> Plan direkt hier im Terminal lesen")
+        say("  [5] Beenden  -> Abbrechen (Fortsetzen später mit --resume möglich)")
+        say("-" * 60)
 
         try:
             choice = input("Auswahl [1/2/3/4/5] (Standard: 1): ").strip()
@@ -2929,37 +2936,37 @@ def handle_plan_approval_and_changes(
             state["planner_binary"] = planner.binary
             state["reviewer_binary"] = reviewer.binary
             save_session_state(session_dir, state)
-            print("\n🔄 Rollen erfolgreich getauscht:")
-            print(f"   🏗️ Neuer Architekt (Planung & Entwurf): {describe_agent(planner)}")
-            print(f"   🧐 Neuer Prüfstatiker (Prüfung & Review): {describe_agent(reviewer)}")
+            say("\n🔄 Rollen erfolgreich getauscht:")
+            say(f"   🏗️ Neuer Architekt (Planung & Entwurf): {describe_agent(planner)}")
+            say(f"   🧐 Neuer Prüfstatiker (Prüfung & Review): {describe_agent(reviewer)}")
             continue
 
         elif choice in ["4", "view", "v"]:
-            print("\n" + "-" * 50)
-            print(plan_file.read_text(encoding="utf-8"))
-            print("-" * 50)
+            say("\n" + "-" * 50)
+            say(plan_file.read_text(encoding="utf-8"))
+            say("-" * 50)
             continue
 
         elif choice in ["5", "exit", "q"]:
-            print("Abgebrochen. Du kannst diesen Stand jederzeit mit 'claudegravity --resume' fortsetzen.")
+            say("Abgebrochen. Du kannst diesen Stand jederzeit mit 'claudegravity --resume' fortsetzen.")
             return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
         elif choice in ["2", "changes", "c"]:
-            print("\n" + "=" * 60)
-            print("💬 WO / WIE MÖCHTEST DU DIE ÄNDERUNGEN VORNEHMEN?")
-            print("=" * 60)
-            print("[UI-Varianten (Graphische Oberfläche)]:")
-            print("  [1] Im Editor öffnen (VS Code / Antigravity / Cursor / System)")
-            print("      -> Öffnet die Plan-Datei direkt zum Bearbeiten")
-            print("  [2] Claude UI (Web / Desktop)")
-            print("      -> Zeigt den Plan-Pfad zum einfachen Kopieren in die Claude Web-UI")
-            print("\n[CLI-Varianten (Terminal)]:")
-            print("  [3] Feedback direkt hier eintippen")
-            print("      -> KI überarbeitet den Plan anhand deiner Anweisung automatisch")
-            print(f"  [4] Interaktive {planner.name} CLI-Session (Architekt) starten")
-            print(f"  [5] Interaktive {reviewer.name} CLI-Session (Prüfstatiker) starten")
-            print("  [6] Zurück zum Hauptmenü")
-            print("-" * 60)
+            say("\n" + "=" * 60)
+            say("💬 WO / WIE MÖCHTEST DU DIE ÄNDERUNGEN VORNEHMEN?")
+            say("=" * 60)
+            say("[UI-Varianten (Graphische Oberfläche)]:")
+            say("  [1] Im Editor öffnen (VS Code / Antigravity / Cursor / System)")
+            say("      -> Öffnet die Plan-Datei direkt zum Bearbeiten")
+            say("  [2] Claude UI (Web / Desktop)")
+            say("      -> Zeigt den Plan-Pfad zum einfachen Kopieren in die Claude Web-UI")
+            say("\n[CLI-Varianten (Terminal)]:")
+            say("  [3] Feedback direkt hier eintippen")
+            say("      -> KI überarbeitet den Plan anhand deiner Anweisung automatisch")
+            say(f"  [4] Interaktive {planner.name} CLI-Session (Architekt) starten")
+            say(f"  [5] Interaktive {reviewer.name} CLI-Session (Prüfstatiker) starten")
+            say("  [6] Zurück zum Hauptmenü")
+            say("-" * 60)
 
             try:
                 c_choice = input("Auswahl [1-6]: ").strip()
@@ -2968,25 +2975,25 @@ def handle_plan_approval_and_changes(
 
             if c_choice == "1":
                 editor = os.environ.get("EDITOR", "xdg-open")
-                print(f"🚀 Öffne {plan_file.name} mit {editor}...")
+                say(f"🚀 Öffne {plan_file.name} mit {editor}...")
                 subprocess.run([editor, str(plan_file)])
                 input("\nDrücke [Enter], sobald du mit dem Bearbeiten im Editor fertig bist...")
                 v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
                 new_v_file = session_dir / f"PLAN_v{v_num}_manual.md"
                 new_v_file.write_text(plan_file.read_text(encoding="utf-8"), encoding="utf-8")
                 plan_file = new_v_file
-                print(f"💾 Manuell bearbeiteter Plan gesichert als {new_v_file.name}")
+                say(f"💾 Manuell bearbeiteter Plan gesichert als {new_v_file.name}")
 
             elif c_choice == "2":
-                print("\n📋 Plan-Pfad für Claude UI:")
-                print(f"   Pfad: {plan_file.resolve()}")
-                print("   Kopiere den Inhalt der Datei in deine Claude UI / Web-Chat.")
+                say("\n📋 Plan-Pfad für Claude UI:")
+                say(f"   Pfad: {plan_file.resolve()}")
+                say("   Kopiere den Inhalt der Datei in deine Claude UI / Web-Chat.")
                 input(f"\nDrücke [Enter], wenn du die Änderungen vorgenommen und in {plan_file.name} gespeichert hast...")
 
             elif c_choice == "3":
                 feedback = input("\n📝 Gib deine Änderungswünsche ein: ").strip()
                 if feedback:
-                    print(f"⏳ {planner.name} überarbeitet den Plan basierend auf deinem Feedback...")
+                    say(f"⏳ {planner.name} überarbeitet den Plan basierend auf deinem Feedback...")
                     old_plan = plan_file.read_text(encoding="utf-8")
                     prompt_user_fix = (
                         f"Der Nutzer hat folgende Änderungswünsche am Plan geäußert:\n\n"
@@ -3010,17 +3017,17 @@ def handle_plan_approval_and_changes(
                     new_v_file = next_plan_file(session_dir)
                     new_v_file.write_text(new_plan, encoding="utf-8")
                     plan_file = new_v_file
-                    print(f"✅ Plan aktualisiert und als {new_v_file.name} gesichert!")
+                    say(f"✅ Plan aktualisiert und als {new_v_file.name} gesichert!")
 
             elif c_choice == "4":
-                print(f"🚀 Starte interaktive {planner.name}-Sitzung (Architekt) in {project_path}...")
+                say(f"🚀 Starte interaktive {planner.name}-Sitzung (Architekt) in {project_path}...")
                 subprocess.run([planner.binary], cwd=str(project_path))
-                print("Zurück im Loop.")
+                say("Zurück im Loop.")
 
             elif c_choice == "5":
-                print(f"🚀 Starte interaktive {reviewer.name}-Sitzung (Prüfstatiker) in {project_path}...")
+                say(f"🚀 Starte interaktive {reviewer.name}-Sitzung (Prüfstatiker) in {project_path}...")
                 subprocess.run([reviewer.binary], cwd=str(project_path))
-                print("Zurück im Loop.")
+                say("Zurück im Loop.")
 
             elif c_choice == "6":
                 continue
@@ -3090,7 +3097,7 @@ def format_error(code: str, detail: str | None = None) -> str:
 
 def fail(code: str, detail: str | None = None, exit_code: int = 1):
     """Beendet mit Fehlercode, Lösungshinweis und Doku-Verweis."""
-    print(format_error(code, detail), file=sys.stderr)
+    say(format_error(code, detail), file=sys.stderr)
     sys.exit(exit_code)
 
 
@@ -3562,7 +3569,7 @@ def handle_budget_exceeded(exc: BudgetExceeded) -> None:
         append_log(session_dir, f"Abbruch: Budget: {exc}")
         log_event(session_dir, "session_end", level="error", phase=state.get("phase"), success=False,
                   abort_reason=state["abort_reason"], code="CG-1404")
-    print("\n🛑 Hartes Budget erreicht, Lauf beendet. Stand gesichert.")
+    say("\n🛑 Hartes Budget erreicht, Lauf beendet. Stand gesichert.")
     fail("CG-1404", str(exc), exit_code=3)
 
 
@@ -3766,41 +3773,41 @@ def run_setup_wizard(project_path: Path, agents: dict, input_fn=input, global_pa
             answer = answer or default
             if not allowed or answer in allowed:
                 return answer
-            print(f"   Bitte eine der Möglichkeiten wählen: {', '.join(allowed)}")
+            say(f"   Bitte eine der Möglichkeiten wählen: {', '.join(allowed)}")
 
-    print("🧭 ClaudeGravity einrichten\n")
-    print(f"🖥️  System : {platform.system()} {platform.release()}, Python {platform.python_version()}")
-    print(f"📁 Projekt: {project_path}")
+    say("🧭 ClaudeGravity einrichten\n")
+    say(f"🖥️  System : {platform.system()} {platform.release()}, Python {platform.python_version()}")
+    say(f"📁 Projekt: {project_path}")
     cloud = [k for k in CLOUD_PLANNER_ORDER if k in agents]
     local = [k for k, a in agents.items() if a.local]
-    print("🔍 Gefunden:")
+    say("🔍 Gefunden:")
     for key, agent in agents.items():
-        print(f"   [x] {agent.name} (`{key}`, {'lokal' if agent.local else 'Cloud'})")
+        say(f"   [x] {agent.name} (`{key}`, {'lokal' if agent.local else 'Cloud'})")
     if not agents:
-        print("   (nichts) Installiere zuerst eine KI-CLI (z. B. `claude`, `codex`, `agy`) oder starte Ollama.")
+        say("   (nichts) Installiere zuerst eine KI-CLI (z. B. `claude`, `codex`, `agy`) oder starte Ollama.")
         return None
     if len(cloud) + len(local) < 2:
-        print("⚠️  Nur ein Anbieter gefunden: Architekt und Prüfstatiker wären dasselbe Modell, das sich selbst prüft.")
-        print("   Besser: eine zweite CLI installieren oder Ollama/LM Studio starten.")
+        say("⚠️  Nur ein Anbieter gefunden: Architekt und Prüfstatiker wären dasselbe Modell, das sich selbst prüft.")
+        say("   Besser: eine zweite CLI installieren oder Ollama/LM Studio starten.")
 
-    print("\nWas ist dir am wichtigsten?")
+    say("\nWas ist dir am wichtigsten?")
     for key, (_, text) in WIZARD_GOALS.items():
-        print(f"  [{key}] {text}")
+        say(f"  [{key}] {text}")
     default_goal = "2" if local else "1"
     goal = WIZARD_GOALS[ask("Auswahl", default_goal, tuple(WIZARD_GOALS))][0]
     strategy, why = strategy_for_goal(goal, agents)
-    print(f"   → Strategie `{strategy}`: {why}")
+    say(f"   → Strategie `{strategy}`: {why}")
 
     suggested = suggest_proof_command(project_path)
-    print("\nMit welchem Befehl prüft der Loop jede Bau-Runde selbst (Tests)? Ohne Prüfbefehl entscheidet nur die Abnahme.")
+    say("\nMit welchem Befehl prüft der Loop jede Bau-Runde selbst (Tests)? Ohne Prüfbefehl entscheidet nur die Abnahme.")
     proof = ask("Prüfbefehl (- für keinen)", suggested or "-")
     proof = None if proof.strip() == "-" else proof.strip()
 
     g_path = global_path or global_profile_path()
     p_path = project_profile_path(project_path)
-    print("\nWo speichern? Das Projekt-Profil gilt nur hier und schlägt das globale.")
-    print(f"  [1] Projekt: {p_path}")
-    print(f"  [2] Global : {g_path}")
+    say("\nWo speichern? Das Projekt-Profil gilt nur hier und schlägt das globale.")
+    say(f"  [1] Projekt: {p_path}")
+    say(f"  [2] Global : {g_path}")
     where = ask("Auswahl", "1", ("1", "2"))
     target = p_path if where == "1" else g_path
 
@@ -3812,20 +3819,20 @@ def run_setup_wizard(project_path: Path, agents: dict, input_fn=input, global_pa
     try:
         write_profile(target, updates)
     except (OSError, ValueError) as exc:
-        print(f"❌ Profil nicht gespeichert: {exc}")
+        say(f"❌ Profil nicht gespeichert: {exc}")
         return None
 
-    print("\n" + "=" * 68)
-    print(f"✅ Profil gespeichert: {target}")
+    say("\n" + "=" * 68)
+    say(f"✅ Profil gespeichert: {target}")
     for key, value in updates.items():
-        print(f"   {key} = {value}")
-    print("\nSo geht es weiter:")
-    print("  1. Erst ansehen, was passieren würde (legt nichts an):")
-    print('     claudegravity --dry-run "Deine Aufgabe"')
-    print("  2. Dann starten:")
-    print('     claudegravity "Deine Aufgabe"')
-    print("  Wirksame Einstellungen und ihre Herkunft: claudegravity --print-effective-config")
-    print("=" * 68)
+        say(f"   {key} = {value}")
+    say("\nSo geht es weiter:")
+    say("  1. Erst ansehen, was passieren würde (legt nichts an):")
+    say('     claudegravity --dry-run "Deine Aufgabe"')
+    say("  2. Dann starten:")
+    say('     claudegravity "Deine Aufgabe"')
+    say("  Wirksame Einstellungen und ihre Herkunft: claudegravity --print-effective-config")
+    say("=" * 68)
     return target
 
 
@@ -3850,11 +3857,11 @@ def unsafe_config_warnings(args, project_path: Path, git_repo: bool) -> list[str
 
 def first_run_guide(args, input_fn=input) -> str:
     """Erstlauf ohne Profil: Trockenlauf vorschlagen. Liefert dry-run, init, run oder quiet."""
-    print("\n👋 Erster Lauf ohne Profil. Empfohlen: erst ansehen, welche Modelle welche Rolle bekommen.")
-    print("  [1] Trockenlauf zeigen, nichts ausführen (Standard)")
-    print("  [2] Einrichtung starten (claudegravity init)")
-    print("  [3] Jetzt starten")
-    print("  [4] Jetzt starten und diesen Hinweis nicht mehr zeigen")
+    say("\n👋 Erster Lauf ohne Profil. Empfohlen: erst ansehen, welche Modelle welche Rolle bekommen.")
+    say("  [1] Trockenlauf zeigen, nichts ausführen (Standard)")
+    say("  [2] Einrichtung starten (claudegravity init)")
+    say("  [3] Jetzt starten")
+    say("  [4] Jetzt starten und diesen Hinweis nicht mehr zeigen")
     try:
         choice = input_fn("Auswahl [1]: ").strip() or "1"
     except (EOFError, KeyboardInterrupt):
@@ -3987,12 +3994,12 @@ def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
 
 def print_welcome() -> None:
     """Start ohne Aufgabe: kurzer Wegweiser statt der vollen Hilfe."""
-    print("ClaudeGravity Loop: Ein Modell plant, ein anderes prüft, eines baut, ein anderer Anbieter nimmt ab.\n")
-    print("  claudegravity init                       Einrichtung (erkennt KIs, speichert ein Profil)")
-    print('  claudegravity "Deine Aufgabe"            Loop starten')
-    print('  claudegravity --dry-run "Deine Aufgabe"  Nur zeigen, wer welche Rolle bekommt')
-    print("  claudegravity --resume                   Unterbrochene Sitzung fortsetzen")
-    print("  claudegravity --help                     Wichtigste Optionen (alle: --help-all)")
+    say("ClaudeGravity Loop: Ein Modell plant, ein anderes prüft, eines baut, ein anderer Anbieter nimmt ab.\n")
+    say("  claudegravity init                       Einrichtung (erkennt KIs, speichert ein Profil)")
+    say('  claudegravity "Deine Aufgabe"            Loop starten')
+    say('  claudegravity --dry-run "Deine Aufgabe"  Nur zeigen, wer welche Rolle bekommt')
+    say("  claudegravity --resume                   Unterbrochene Sitzung fortsetzen")
+    say("  claudegravity --help                     Wichtigste Optionen (alle: --help-all)")
 
 
 def normalize_strategy(name: str) -> str:
@@ -4086,28 +4093,28 @@ def load_cli_config(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.
     args = parser.parse_args(argv)
     config_report = apply_config_layers(parser, args, argv)
     if args.print_effective_config:
-        print(format_effective_config(config_report))
+        say(format_effective_config(config_report))
         return None
     for warning in config_report["warnings"]:
-        print(warning)
+        say(warning)
     layered = [d for d, s in config_report["sources"].items() if s in ("env", "project", "global")]
     if layered:
-        print("⚙️  Aus Umgebung/Profil: " + ", ".join(
+        say("⚙️  Aus Umgebung/Profil: " + ", ".join(
             f"{d}={config_report['values'][d]!r} ({CONFIG_SOURCE_LABELS[config_report['sources'][d]]})" for d in sorted(layered)))
     for conflict in config_report["conflicts"]:
-        print(f"⚠️  Konfigurationskonflikt: {conflict}")
+        say(f"⚠️  Konfigurationskonflikt: {conflict}")
     template = config_report.get("template")
     if args.template and not template:
         fail("CG-1101", str(args.template))
     if template and not args.init and not args.check:
-        print(f"🧩 Vorlage `{template['name']}` ({template['origin']})")
+        say(f"🧩 Vorlage `{template['name']}` ({template['origin']})")
         if "proof" in template["requires"] and not args.proof and not args.resume:
             guessed = suggest_proof_command(Path(args.project).resolve())
             if not guessed:
                 fail("CG-1102", f"Vorlage `{template['name']}`, kein Testbefehl im Projekt erkannt")
             args.proof = guessed
             config_report["sources"]["proof"] = "template"
-            print(f"   Prüfbefehl aus dem Projekt geraten: {guessed} (anderer mit --proof)")
+            say(f"   Prüfbefehl aus dem Projekt geraten: {guessed} (anderer mit --proof)")
     return parser, args, config_report
 
 
@@ -4157,12 +4164,12 @@ def setup_agents(args: argparse.Namespace) -> dict[str, AgentCLI]:
 def print_system_check(agents: dict[str, AgentCLI]) -> None:
     """--check: erkannte KIs, Standard-Belegung und die wichtigsten Flags."""
     os_name = f"{platform.system()} {platform.release()}"
-    print(f"🖥️  Betriebssystem: {os_name} (Python {platform.python_version()})")
-    print("🔍 Erkannte KI-Systeme & Endpoints auf deinem System:")
+    say(f"🖥️  Betriebssystem: {os_name} (Python {platform.python_version()})")
+    say("🔍 Erkannte KI-Systeme & Endpoints auf deinem System:")
     for key, agent in agents.items():
-        print(f"  [x] {agent.name} (`{key}` / `{agent.binary}`)")
+        say(f"  [x] {agent.name} (`{key}` / `{agent.binary}`)")
     if not agents:
-        print("  (keine) Installiere z.B. `claude` oder `agy`, oder gib --endpoint <url> an.")
+        say("  (keine) Installiere z.B. `claude` oder `agy`, oder gib --endpoint <url> an.")
         return
     def_planner = agents.get("claude") or next(iter(agents.values()))
     others = [a for a in agents.values() if a.binary != def_planner.binary]
@@ -4173,55 +4180,55 @@ def print_system_check(agents: dict[str, AgentCLI]) -> None:
     def default_effort(binary: str) -> str:
         return "high (CLI-Default)" if binary == "agy" else "Voreinstellung der CLI (via --effort nur für agy/codex steuerbar)"
 
-    print("\n" + "=" * 68)
-    print("🎯 Standard-Belegung auf diesem System (wenn NICHTS explizit angegeben wird):")
-    print("=" * 68)
-    print("1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
-    print(f"   • CLI           : {def_planner.name} (`{def_planner.binary}`)")
-    print(f"   • Modell        : {DEFAULT_MODEL_LABEL} von {def_planner.name} (änderbar via --architekt-model)")
-    print(f"   • Thinking-Effort: {default_effort(def_planner.binary)}")
-    print("   • Aufgabe       : Entwirft den Plan (Phase 1) [nur ~10-15% aller Tokens]")
-    print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
+    say("\n" + "=" * 68)
+    say("🎯 Standard-Belegung auf diesem System (wenn NICHTS explizit angegeben wird):")
+    say("=" * 68)
+    say("1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
+    say(f"   • CLI           : {def_planner.name} (`{def_planner.binary}`)")
+    say(f"   • Modell        : {DEFAULT_MODEL_LABEL} von {def_planner.name} (änderbar via --architekt-model)")
+    say(f"   • Thinking-Effort: {default_effort(def_planner.binary)}")
+    say("   • Aufgabe       : Entwirft den Plan (Phase 1) [nur ~10-15% aller Tokens]")
+    say("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
     if def_reviewer is def_planner:
-        print(f"   • CLI           : {def_reviewer.name} (`{def_reviewer.binary}`) – kein zweites Modell gefunden, prüft sich selbst!")
+        say(f"   • CLI           : {def_reviewer.name} (`{def_reviewer.binary}`) – kein zweites Modell gefunden, prüft sich selbst!")
     else:
-        print(f"   • CLI           : {def_reviewer.name} (`{def_reviewer.binary}`)")
-    print(f"   • Modell        : {DEFAULT_MODEL_LABEL} von {def_reviewer.name} (änderbar via --pruefstatiker-model)")
-    print(f"   • Thinking-Effort: {default_effort(def_reviewer.binary)}")
-    print("   • Aufgabe       : Grillt den Plan unabhängig auf Schwachstellen (Phase 2) [nur ~5-10% aller Tokens]")
-    print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
-    print(f"   • CLI           : {def_planner.name} wie der Architekt (oder separat via --bauer / --builder)")
-    print("   • Modell        : Wie der Architekt (oder Sparmodell via --bauer-model / lokaler Server)")
-    print("   • Thinking-Effort: Wie der Architekt (oder steuerbar via --bauer-effort, nur für agy/codex)")
-    print("   • Aufgabe       : Setzt den Plan autonom im Code um [verbraucht ~80-90% aller Tokens!]")
-    print("=" * 68)
-    print("\n💡 Spar-Strategien & Kombi-Möglichkeiten:")
-    print("  • '--strategy eco'        : Bis zu 70% Token-Ersparnis (Architekt/Prüfstatiker Effort medium,")
-    print(f"                             Bauleiter {def_planner.name} mit `{eco_model}`)")
+        say(f"   • CLI           : {def_reviewer.name} (`{def_reviewer.binary}`)")
+    say(f"   • Modell        : {DEFAULT_MODEL_LABEL} von {def_reviewer.name} (änderbar via --pruefstatiker-model)")
+    say(f"   • Thinking-Effort: {default_effort(def_reviewer.binary)}")
+    say("   • Aufgabe       : Grillt den Plan unabhängig auf Schwachstellen (Phase 2) [nur ~5-10% aller Tokens]")
+    say("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
+    say(f"   • CLI           : {def_planner.name} wie der Architekt (oder separat via --bauer / --builder)")
+    say("   • Modell        : Wie der Architekt (oder Sparmodell via --bauer-model / lokaler Server)")
+    say("   • Thinking-Effort: Wie der Architekt (oder steuerbar via --bauer-effort, nur für agy/codex)")
+    say("   • Aufgabe       : Setzt den Plan autonom im Code um [verbraucht ~80-90% aller Tokens!]")
+    say("=" * 68)
+    say("\n💡 Spar-Strategien & Kombi-Möglichkeiten:")
+    say("  • '--strategy eco'        : Bis zu 70% Token-Ersparnis (Architekt/Prüfstatiker Effort medium,")
+    say(f"                             Bauleiter {def_planner.name} mit `{eco_model}`)")
     if local_cand:
-        print(f"  • '--strategy local-free' : 0 € Kosten im Bau-Loop! {def_planner.name} plant, {local_cand.name} baut!")
+        say(f"  • '--strategy local-free' : 0 € Kosten im Bau-Loop! {def_planner.name} plant, {local_cand.name} baut!")
     else:
-        print("  • '--strategy local-free' : 0 € Kosten im Bau-Loop – aktuell kein lokaler Server erkannt")
-        print("                             (Ollama, LM Studio oder --bauer-endpoint <url> angeben)")
-    print("  • '--strategy best-code'  : Effort high in allen 3 Phasen (wirkt nur bei agy)")
+        say("  • '--strategy local-free' : 0 € Kosten im Bau-Loop – aktuell kein lokaler Server erkannt")
+        say("                             (Ollama, LM Studio oder --bauer-endpoint <url> angeben)")
+    say("  • '--strategy best-code'  : Effort high in allen 3 Phasen (wirkt nur bei agy)")
     hybrid_cloud = next((agents[k].name for k in CLOUD_PLANNER_ORDER if k in agents), None)
     if hybrid_cloud and local_cand:
-        print(f"  • '--strategy hybrid'     : {hybrid_cloud} plant und nimmt ab, {local_cand.name} prüft und baut in Etappen")
-    print("=" * 68)
-    print("\n⚙️  Wichtigste Steuerungs-Flags:")
-    print("  - Strategie-Presets      : --strategy <best-code|eco|local-free|balanced>")
-    print("  - Trockenlauf            : --dry-run (zeigt Rollen, Modelle & Befehl ohne Ausführung)")
-    print("  - Eigener Endpunkt       : --endpoint <url> (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
-    print("  - Bauleiter-Endpunkt     : --bauer-endpoint <url> (z.B. http://localhost:11434/v1)")
-    print("  - Bauleiter festlegen    : --bauer / --builder <claude|agy|ollama|lmstudio|endpoint|codex|copilot>")
-    print("  - Bauleiter-Modell       : --bauer-model <name> (z.B. qwen2.5-coder:32b, claude-3-5-haiku)")
-    print("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Limit nahtlos zum Alternativmodell)")
-    print("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
-    print("  - Prüfbefehl             : --proof \"python -m unittest\" (Loop führt ihn nach jeder Bau-Runde selbst aus)")
-    print("  - Abnahme                : --abnahme <cli> (prüft den fertigen Code, nie der Bauleiter; --no-inspect schaltet ab)")
-    print("  - Etappen                : --etappen auto|an|aus (Plan in kleinen Stücken; auto: an bei lokalen Bauleitern)")
-    print("  - Ohne Freigabe-Menü     : --plan-auto (baut nur, wenn der Prüfstatiker APPROVED meldet)")
-    print("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert inkl. Rolle, Modell & Effort)")
+        say(f"  • '--strategy hybrid'     : {hybrid_cloud} plant und nimmt ab, {local_cand.name} prüft und baut in Etappen")
+    say("=" * 68)
+    say("\n⚙️  Wichtigste Steuerungs-Flags:")
+    say("  - Strategie-Presets      : --strategy <best-code|eco|local-free|balanced>")
+    say("  - Trockenlauf            : --dry-run (zeigt Rollen, Modelle & Befehl ohne Ausführung)")
+    say("  - Eigener Endpunkt       : --endpoint <url> (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
+    say("  - Bauleiter-Endpunkt     : --bauer-endpoint <url> (z.B. http://localhost:11434/v1)")
+    say("  - Bauleiter festlegen    : --bauer / --builder <claude|agy|ollama|lmstudio|endpoint|codex|copilot>")
+    say("  - Bauleiter-Modell       : --bauer-model <name> (z.B. qwen2.5-coder:32b, claude-3-5-haiku)")
+    say("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Limit nahtlos zum Alternativmodell)")
+    say("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
+    say("  - Prüfbefehl             : --proof \"python -m unittest\" (Loop führt ihn nach jeder Bau-Runde selbst aus)")
+    say("  - Abnahme                : --abnahme <cli> (prüft den fertigen Code, nie der Bauleiter; --no-inspect schaltet ab)")
+    say("  - Etappen                : --etappen auto|an|aus (Plan in kleinen Stücken; auto: an bei lokalen Bauleitern)")
+    say("  - Ohne Freigabe-Menü     : --plan-auto (baut nur, wenn der Prüfstatiker APPROVED meldet)")
+    say("  - Token & Kosten-Audit   : Automatisch aktiv (wird in .done auditiert inkl. Rolle, Modell & Effort)")
 
 
 def maybe_first_run_guide(args: argparse.Namespace, agents: dict, project_path: Path, config_report: dict) -> bool | None:
@@ -4240,9 +4247,9 @@ def maybe_first_run_guide(args: argparse.Namespace, agents: dict, project_path: 
         if choice == "quiet":
             try:
                 saved = write_profile(global_profile_path(), {"guide": False})
-                print(f"   Hinweis abgeschaltet ({global_profile_path()}, guide = {saved['guide']}).")
+                say(f"   Hinweis abgeschaltet ({global_profile_path()}, guide = {saved['guide']}).")
             except (OSError, ValueError) as exc:
-                print(f"   Konnte das globale Profil nicht schreiben: {exc}")
+                say(f"   Konnte das globale Profil nicht schreiben: {exc}")
     return guided_dry_run
 
 
@@ -4300,38 +4307,38 @@ def show_dry_run(args: argparse.Namespace, agents: dict, project_path: Path, con
     b_model = args.builder_model or default_b_model or (p_model if builder.binary == planner.binary else DEFAULT_MODEL_LABEL)
     b_effort = args.builder_effort or default_b_effort or ("CLI Default" if builder.binary == "agy" else None)
 
-    print("\n" + "=" * 68)
-    print("🔍 ClaudeGravity Loop — Trockenlauf (Dry Run)")
-    print("=" * 68)
-    print(f"📌 Aufgabe        : {dry_task}")
-    print(f"🎯 Strategie      : {strat.upper()}")
-    print(f"📁 Ziel-Projekt   : {project_path}")
-    print("\n1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
-    print(f"   • CLI/Endpoint  : {planner.name} (`{planner.binary}`)")
-    print(f"   • Modell        : {p_model}")
-    print(f"   • Effort        : {effort_label(planner.binary, p_effort) or 'Standard'}")
-    print("   • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)")
-    print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
-    print(f"   • CLI/Endpoint  : {reviewer.name} (`{reviewer.binary}`)")
-    print(f"   • Modell        : {r_model}")
-    print(f"   • Effort        : {effort_label(reviewer.binary, r_effort) or 'Standard'}")
-    print("   • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)")
-    print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
-    print(f"   • CLI/Endpoint  : {builder.name} (`{builder.binary}`)")
-    print(f"   • Modell        : {b_model}")
-    print(f"   • Effort        : {effort_label(builder.binary, b_effort) or 'Standard'}")
-    print("   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)")
+    say("\n" + "=" * 68)
+    say("🔍 ClaudeGravity Loop — Trockenlauf (Dry Run)")
+    say("=" * 68)
+    say(f"📌 Aufgabe        : {dry_task}")
+    say(f"🎯 Strategie      : {strat.upper()}")
+    say(f"📁 Ziel-Projekt   : {project_path}")
+    say("\n1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
+    say(f"   • CLI/Endpoint  : {planner.name} (`{planner.binary}`)")
+    say(f"   • Modell        : {p_model}")
+    say(f"   • Effort        : {effort_label(planner.binary, p_effort) or 'Standard'}")
+    say("   • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)")
+    say("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
+    say(f"   • CLI/Endpoint  : {reviewer.name} (`{reviewer.binary}`)")
+    say(f"   • Modell        : {r_model}")
+    say(f"   • Effort        : {effort_label(reviewer.binary, r_effort) or 'Standard'}")
+    say("   • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)")
+    say("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
+    say(f"   • CLI/Endpoint  : {builder.name} (`{builder.binary}`)")
+    say(f"   • Modell        : {b_model}")
+    say(f"   • Effort        : {effort_label(builder.binary, b_effort) or 'Standard'}")
+    say("   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)")
     if args.escalate:
         after = args.escalate_after or ESCALATE_AFTER_DEFAULT
         key, why = choose_escalation(builder, agents, args.escalate, prefer=planner.binary, write_allowed=True)
         if key:
             rights = "" if args.yolo or not get_permission_flags(agents[key].binary) else " (braucht Schreibrechte: --yolo oder Ja bei der Rechte-Abfrage)"
-            print(f"   • Eskalation    : nach {after} erfolglosen Runden einmalig zu {agents[key].name}{rights}")
+            say(f"   • Eskalation    : nach {after} erfolglosen Runden einmalig zu {agents[key].name}{rights}")
         else:
-            print(f"   • Eskalation    : nicht möglich ({why})")
-    print("\n4. 🔎 Abnahme (Phase 4: Prüfung des fertigen Codes):")
+            say(f"   • Eskalation    : nicht möglich ({why})")
+    say("\n4. 🔎 Abnahme (Phase 4: Prüfung des fertigen Codes):")
     if not args.inspect:
-        print("   • Abgeschaltet (--no-inspect)")
+        say("   • Abgeschaltet (--no-inspect)")
     else:
         def with_model(agent: AgentCLI, model: str | None) -> AgentCLI:
             return AgentCLI(agent.name, agent.binary, agent.run_fn, model=model if model and model != DEFAULT_MODEL_LABEL else None, local=agent.local)
@@ -4342,47 +4349,47 @@ def show_dry_run(args: argparse.Namespace, agents: dict, project_path: Path, con
             agents
         )
         if dry_inspector is None:
-            print("   • Kein zweiter Anbieter verfügbar: keine unabhängige Abnahme möglich!")
+            say("   • Kein zweiter Anbieter verfügbar: keine unabhängige Abnahme möglich!")
         else:
-            print(f"   • CLI/Endpoint  : {dry_inspector.name} (`{dry_inspector.binary}`), nie der Bauleiter")
+            say(f"   • CLI/Endpoint  : {dry_inspector.name} (`{dry_inspector.binary}`), nie der Bauleiter")
             if dry_inspector.model or args.inspector_model:
-                print(f"   • Modell        : {args.inspector_model or dry_inspector.model}")
-    print(f"   • Prüfbefehl    : {args.proof or 'keiner (--proof <befehl>)'}")
+                say(f"   • Modell        : {args.inspector_model or dry_inspector.model}")
+    say(f"   • Prüfbefehl    : {args.proof or 'keiner (--proof <befehl>)'}")
     dry_builder_final = builder if (args.builder or strat == "local-free") else planner
     if stages_wanted(args.etappen, dry_builder_final.binary):
-        print("\n🧩 Etappen-Modus: Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede (--etappen aus schaltet ab).")
-    print("\n💡 Wirtschaftlichkeits- & Qualitäts-Analyse:")
+        say("\n🧩 Etappen-Modus: Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede (--etappen aus schaltet ab).")
+    say("\n💡 Wirtschaftlichkeits- & Qualitäts-Analyse:")
     if strat == "local-free":
-        print("   • Spareffekt: 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3)!")
-        print(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name}. Der rechenintensive Bau-Loop")
-        print(f"     läuft komplett auf {builder.name} (Modell: {b_model}).")
+        say("   • Spareffekt: 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3)!")
+        say(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name}. Der rechenintensive Bau-Loop")
+        say(f"     läuft komplett auf {builder.name} (Modell: {b_model}).")
     elif strat == "eco":
-        print("   • Spareffekt: Bis zu ~70% Kosten- und Tokenersparnis!")
-        print(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name} (Effort medium). Das ressourcenintensive")
-        print(f"     Bauen in Phase 3 übernimmt {builder.name} mit dem Spar-Modell `{b_model}`.")
+        say("   • Spareffekt: Bis zu ~70% Kosten- und Tokenersparnis!")
+        say(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name} (Effort medium). Das ressourcenintensive")
+        say(f"     Bauen in Phase 3 übernimmt {builder.name} mit dem Spar-Modell `{b_model}`.")
     elif strat in HYBRID_STRATEGIES:
-        print(f"   • Spareffekt: Cloud nur für Plan und Abnahme ({planner.name}); Prüfung und Bau laufen lokal für 0 €.")
-        print("   • Grund: Kleine Etappen passen in den Kontext lokaler Modelle; jede Etappe prüft der Loop mit --proof.")
+        say(f"   • Spareffekt: Cloud nur für Plan und Abnahme ({planner.name}); Prüfung und Bau laufen lokal für 0 €.")
+        say("   • Grund: Kleine Etappen passen in den Kontext lokaler Modelle; jede Etappe prüft der Loop mit --proof.")
     elif strat == "best-code":
-        print("   • Fokus: Höchste Code-Qualität, tiefes Reasoning und maximale Fehlertoleranz.")
-        print(f"   • Alle Phasen laufen mit Effort high: {planner.name}, {reviewer.name}, {builder.name}.")
+        say("   • Fokus: Höchste Code-Qualität, tiefes Reasoning und maximale Fehlertoleranz.")
+        say(f"   • Alle Phasen laufen mit Effort high: {planner.name}, {reviewer.name}, {builder.name}.")
         if any(a.binary != "agy" for a in (planner, reviewer, builder)):
-            print("   • Hinweis: Effort wird nur an agy übergeben; andere CLIs nutzen ihre eigene Voreinstellung.")
+            say("   • Hinweis: Effort wird nur an agy übergeben; andere CLIs nutzen ihre eigene Voreinstellung.")
     else:
-        print("   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
+        say("   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
 
     estimate = estimate_run(collect_kpi_history(project_path), strat, args.max_iterations or 10)
     for line in format_estimate(estimate, estimate_hints(estimate, strat, SETTINGS.budget, local_cand is not None, args.proof)):
-        print(line)
+        say(line)
 
     if config_warnings:
-        print("\n🔔 Hinweise:")
+        say("\n🔔 Hinweise:")
         for warning in config_warnings:
-            print(f"   {warning}")
+            say(f"   {warning}")
 
-    print("\n🚀 Generierter Shell-Befehl (zum Starten):")
-    print(f"   {shlex.join(dry_run_command(args, dry_task, strat, default_b_model))}")
-    print("=" * 68)
+    say("\n🚀 Generierter Shell-Befehl (zum Starten):")
+    say(f"   {shlex.join(dry_run_command(args, dry_task, strat, default_b_model))}")
+    say("=" * 68)
     if not guided_dry_run:
         return False
     try:
@@ -4390,7 +4397,7 @@ def show_dry_run(args: argparse.Namespace, agents: dict, project_path: Path, con
     except (EOFError, KeyboardInterrupt):
         go = ""
     if go not in ("j", "ja", "y", "yes"):
-        print("Nichts ausgeführt. Tipp: `claudegravity init` speichert deine Wahl als Profil.")
+        say("Nichts ausgeführt. Tipp: `claudegravity init` speichert deine Wahl als Profil.")
         return False
     args.dry_run = False
     return True
@@ -4420,13 +4427,13 @@ def open_session(args: argparse.Namespace, project_path: Path, config_report: di
         session_dir = latest_sess
         state = load_session_state(session_dir)
         task = state.get("task", args.task)
-        print(f"🔄 Setze letzte Sitzung fort: {session_dir.name}")
-        print(f"📌 Ursprüngliche Aufgabe: {task}")
+        say(f"🔄 Setze letzte Sitzung fort: {session_dir.name}")
+        say(f"📌 Ursprüngliche Aufgabe: {task}")
     elif not args.task and latest_sess:
         state_candidate = load_session_state(latest_sess)
         if state_candidate and state_candidate.get("phase") != "completed":
-            print(f"\n🔍 Unterbrochene Sitzung gefunden: {latest_sess.name}")
-            print(f"📌 Aufgabe: {state_candidate.get('task')}")
+            say(f"\n🔍 Unterbrochene Sitzung gefunden: {latest_sess.name}")
+            say(f"📌 Aufgabe: {state_candidate.get('task')}")
             try:
                 res_ans = input("Möchtest du diese Sitzung fortsetzen? [J/n]: ")
             except (EOFError, KeyboardInterrupt):
@@ -4488,7 +4495,7 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
     state.pop("abort_reason", None)
     if SETTINGS.budget and SETTINGS.budget.active:
         SETTINGS.budget.context = {"state": state, "session_dir": session_dir, "metrics": session_metrics}
-        print("[*] Budget            : " + ", ".join(f"{label} {format_budget(*limit)}" for _, label, limit, hard in SETTINGS.budget.limits() if hard)
+        say("[*] Budget            : " + ", ".join(f"{label} {format_budget(*limit)}" for _, label, limit, hard in SETTINGS.budget.limits() if hard)
               + (f"; Warnung ab {format_budget(*SETTINGS.budget.warn_total)}" if SETTINGS.budget.warn_total else ""))
 
     planner = create_agent(planner_base.binary, agents, role="🏗️ Architekt (Planung & Entwurf)", metrics_tracker=session_metrics)
@@ -4510,7 +4517,7 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
         builder_perm_flags = get_permission_flags(builder.binary)
         state["yolo_enabled"] = True
         save_session_state(session_dir, state)
-        print(f"🔓 YOLO-Modus aktiv: Bauleiter erhält volle Tool- & Schreibrechte ({' '.join(builder_perm_flags)}); Architekt und Prüfstatiker bleiben lesend.")
+        say(f"🔓 YOLO-Modus aktiv: Bauleiter erhält volle Tool- & Schreibrechte ({' '.join(builder_perm_flags)}); Architekt und Prüfstatiker bleiben lesend.")
 
     planner_flags = list(planner_perm_flags)
     reviewer_flags = list(reviewer_perm_flags)
@@ -4635,46 +4642,46 @@ def print_run_banner(run: "RunContext") -> None:
     args, project_path, session_dir, state, task = run.args, run.project_path, run.session_dir, run.state, run.task
     planner, reviewer, builder, strat = run.planner, run.reviewer, run.builder, run.strategy
     ask_mode, auto_switch, swap_roles, use_worktree, merge_worktree = run.ask_mode, run.auto_switch, run.swap_roles, run.use_worktree, run.merge_worktree
-    print("\n=======================================================")
-    print("[*] ClaudeGravity Loop gestartet")
-    print(f"[*] Ziel-Projekt      : {project_path}")
-    print(f"[*] Strategie         : {strat.upper()}")
+    say("\n=======================================================")
+    say("[*] ClaudeGravity Loop gestartet")
+    say(f"[*] Ziel-Projekt      : {project_path}")
+    say(f"[*] Strategie         : {strat.upper()}")
     p_info = f"{planner.name}"
     if planner.model:
         p_info += f" (Modell: {planner.model})"
     if planner.effort:
         p_info += f" [Effort: {effort_label(planner.binary, planner.effort)}]"
-    print(f"[*] 🏗️ Architekt      : {p_info}")
+    say(f"[*] 🏗️ Architekt      : {p_info}")
 
     r_info = f"{reviewer.name}"
     if reviewer.model:
         r_info += f" (Modell: {reviewer.model})"
     if reviewer.effort:
         r_info += f" [Effort: {effort_label(reviewer.binary, reviewer.effort)}]"
-    print(f"[*] 🧐 Prüfstatiker   : {r_info}")
+    say(f"[*] 🧐 Prüfstatiker   : {r_info}")
 
     b_info = f"{builder.name}"
     if builder.model:
         b_info += f" (Modell: {builder.model})"
     if builder.effort:
         b_info += f" [Effort: {effort_label(builder.binary, builder.effort)}]"
-    print(f"[*] 🔨 Bauleiter      : {b_info}")
+    say(f"[*] 🔨 Bauleiter      : {b_info}")
 
     if ask_mode:
-        print("[*] Modus             : ❓ Fragen-Modus aktiv (--ask)")
+        say("[*] Modus             : ❓ Fragen-Modus aktiv (--ask)")
     if auto_switch:
-        print("[*] Fallback          : 🔄 Auto-Switch aktiv (--auto-switch)")
+        say("[*] Fallback          : 🔄 Auto-Switch aktiv (--auto-switch)")
     if swap_roles:
-        print("[*] Rollen-Status     : 🔄 Rollen getauscht (--swap)")
+        say("[*] Rollen-Status     : 🔄 Rollen getauscht (--swap)")
     if use_worktree:
-        print("[*] Git-Workspace     : 🌿 eigener Worktree pro Session" + (" (Merge nach .done)" if merge_worktree else ""))
+        say("[*] Git-Workspace     : 🌿 eigener Worktree pro Session" + (" (Merge nach .done)" if merge_worktree else ""))
     task_secrets = redact_secrets(task)[1]
     if task_secrets:
         cloud_roles = [a.name for a in (planner, reviewer, builder) if not a.local]
         if SETTINGS.shield:
-            print(f"🛡️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}); sie werden vor dem Versand an Cloud-Modelle geschwärzt.")
+            say(f"🛡️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}); sie werden vor dem Versand an Cloud-Modelle geschwärzt.")
         elif cloud_roles:
-            print(f"⚠️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}) und der Datenschutzschild ist aus: "
+            say(f"⚠️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}) und der Datenschutzschild ist aus: "
                   f"sie gehen im Klartext an {', '.join(dict.fromkeys(cloud_roles))}. Besser als Umgebungsvariable übergeben.")
         append_log(session_dir, f"Aufgabe enthält mögliche Zugangsdaten: {', '.join(task_secrets)}")
 
@@ -4684,9 +4691,9 @@ def print_run_banner(run: "RunContext") -> None:
     state["stage_mode"] = stage_pref
     SETTINGS.stage_planning = stages_wanted(stage_pref, expected_builder)
     if SETTINGS.stage_planning:
-        print("[*] Etappen-Modus     : 🧩 Plan in Etappen, Bauleiter setzt sie einzeln um (--etappen aus schaltet ab)")
-    print(f"[*] Session-ID        : {session_dir.name}")
-    print("=======================================================\n")
+        say("[*] Etappen-Modus     : 🧩 Plan in Etappen, Bauleiter setzt sie einzeln um (--etappen aus schaltet ab)")
+    say(f"[*] Session-ID        : {session_dir.name}")
+    say("=======================================================\n")
 
 
 def run_plan_phase(run: "RunContext") -> bool:
@@ -4730,11 +4737,11 @@ def run_plan_phase(run: "RunContext") -> bool:
             # Freigabe ohne Terminal: nur ein vom Prüfstatiker genehmigter Plan wird gebaut
             state["approve_plan"] = True
             if not review_ok:
-                print(f"🛑 Der Prüfstatiker hat {plan_file.name} nicht freigegeben. Ohne Rückfrage (--plan-auto) wird nicht gebaut.")
+                say(f"🛑 Der Prüfstatiker hat {plan_file.name} nicht freigegeben. Ohne Rückfrage (--plan-auto) wird nicht gebaut.")
                 append_log(session_dir, "Plan nicht freigegeben, Bau mit --plan-auto nicht gestartet")
                 save_session_state(session_dir, state)
                 return False
-            print(f"✅ {plan_file.name} vom Prüfstatiker genehmigt, Freigabe ohne Rückfrage (--plan-auto).")
+            say(f"✅ {plan_file.name} vom Prüfstatiker genehmigt, Freigabe ohne Rückfrage (--plan-auto).")
             append_log(session_dir, f"{plan_file.name} automatisch freigegeben (--plan-auto)")
             user_confirmed = True
         else:
@@ -4745,7 +4752,7 @@ def run_plan_phase(run: "RunContext") -> bool:
             )
 
         if not user_confirmed or STOP_REQUESTED:
-            print("Implementierung nicht gestartet.")
+            say("Implementierung nicht gestartet.")
             return False
 
         state["phase"] = "build"
@@ -4782,7 +4789,7 @@ def prepare_build(run: "RunContext") -> None:
     # Falls YOLO noch nicht aktiv war, vor Phase 3 fragen
     if not yolo_active:
         try:
-            print("\n⚙️  Berechtigungs-Prüfung für Phase 3 (Implementierung):")
+            say("\n⚙️  Berechtigungs-Prüfung für Phase 3 (Implementierung):")
             perm_ans = input(f"Soll 🔨 Bauleiter ({builder.name}) volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(builder.binary))})? [J/n]: ")
             if perm_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:
                 builder_perm_flags = get_permission_flags(builder.binary)
@@ -4791,9 +4798,9 @@ def prepare_build(run: "RunContext") -> None:
                         builder_flags.insert(0, f)
                 state["yolo_enabled"] = True
                 save_session_state(session_dir, state)
-                print(f"🔓 Schreibberechtigung aktiviert ({' '.join(builder_perm_flags)}).")
+                say(f"🔓 Schreibberechtigung aktiviert ({' '.join(builder_perm_flags)}).")
             else:
-                print("🔒 Eingeschränkter Modus: Bestätigung bei jedem Tool-Call erforderlich.")
+                say("🔒 Eingeschränkter Modus: Bestätigung bei jedem Tool-Call erforderlich.")
         except (EOFError, KeyboardInterrupt):
             pass
 
@@ -4838,9 +4845,9 @@ def prepare_build(run: "RunContext") -> None:
             if inspector_effort and inspector.binary in ("agy", "codex"):
                 inspector_flags.extend(["--effort", inspector_effort])
             state["inspector_binary"] = inspector.binary
-            print(f"🔎 Abnahme des fertigen Codes durch: {describe_agent(inspector)}")
+            say(f"🔎 Abnahme des fertigen Codes durch: {describe_agent(inspector)}")
         else:
-            print("⚠️ Keine unabhängige Abnahme möglich: Es ist kein zweiter Anbieter verfügbar. Der Bauleiter prüft sich selbst.")
+            say("⚠️ Keine unabhängige Abnahme möglich: Es ist kein zweiter Anbieter verfügbar. Der Bauleiter prüft sich selbst.")
             append_log(session_dir, "Keine unabhängige Abnahme möglich (nur ein Anbieter verfügbar)")
     save_session_state(session_dir, state)
 
@@ -4849,7 +4856,7 @@ def prepare_build(run: "RunContext") -> None:
         state["build_plan_sha256"] = sha256_file(plan_file) if plan_file.exists() else None
         save_session_state(session_dir, state)
     elif plan_file.exists() and state.get("build_plan_sha256") not in (None, sha256_file(plan_file)):
-        print(f"⚠️ {plan_file.name} hat sich seit Baubeginn geändert. Der Bauleiter arbeitet mit der neuen Fassung weiter.")
+        say(f"⚠️ {plan_file.name} hat sich seit Baubeginn geändert. Der Bauleiter arbeitet mit der neuen Fassung weiter.")
         append_log(session_dir, f"{plan_file.name} nach Baubeginn geändert")
         state["build_plan_sha256"] = sha256_file(plan_file)
     run.builder, run.builder_flags, run.session_log, run.work_path, run.in_worktree = builder, builder_flags, session_log, work_path, in_worktree
@@ -4868,10 +4875,10 @@ def run_build_phase(run: "RunContext") -> None:
 
     def finish_session():
         done_file = session_dir / ".done"
-        print(f"\n🎉 Fertigmeldung ({done_file.relative_to(project_path)}) gefunden! Aufgabe erfolgreich abgeschlossen.")
+        say(f"\n🎉 Fertigmeldung ({done_file.relative_to(project_path)}) gefunden! Aufgabe erfolgreich abgeschlossen.")
         state["phase"] = "completed"
         append_metrics_to_done(session_dir, project_path, session_metrics, state)
-        print(format_metrics_report(session_metrics, state))
+        say(format_metrics_report(session_metrics, state))
         state["pending_feedback"] = ""
         state["metrics"] = session_metrics.to_dict()
         save_session_state(session_dir, state)
@@ -4891,18 +4898,18 @@ def run_build_phase(run: "RunContext") -> None:
         nonlocal inspections_used
         proof_note = "Prüfbefehl: keiner vereinbart."
         if proof_cmd:
-            print(f"🧪 Führe Prüfbefehl aus: {proof_cmd}", flush=True)
+            say(f"🧪 Führe Prüfbefehl aus: {proof_cmd}", flush=True)
             ok, output = run_proof_check(build_ctx, proof_cmd)
             append_log(session_dir, f"Prüfbefehl `{proof_cmd}`: {'grün' if ok else 'rot'}")
             if not ok:
-                print("❌ Prüfbefehl ist rot. Fertigmeldung zurückgewiesen.")
+                say("❌ Prüfbefehl ist rot. Fertigmeldung zurückgewiesen.")
                 reject_done(f"Der Prüfbefehl `{proof_cmd}` schlägt fehl:\n```\n{output}\n```")
                 return "retry"
             proof_note = f"Prüfbefehl `{proof_cmd}` wurde vom Loop selbst ausgeführt und ist grün."
         if inspector is None:
             return "finished"
         if inspections_used >= max(1, args.max_inspections):
-            print(f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Offene Befunde stehen in {session_dir.relative_to(project_path)}/INSPECTION_round*.md.")
+            say(f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Offene Befunde stehen in {session_dir.relative_to(project_path)}/INSPECTION_round*.md.")
             append_log(session_dir, "Abnahme-Limit erreicht, Aufgabe bleibt offen")
             state["phase"] = "inspection_open"
             state["abort_reason"] = f"Abnahme-Limit ({args.max_inspections}) erreicht, Befunde offen"
@@ -4911,20 +4918,20 @@ def run_build_phase(run: "RunContext") -> None:
         inspections_used += 1
         round_no = state.get("inspection_rounds", 0) + 1
         state["inspection_rounds"] = round_no
-        print(f"\n🔎 Phase 4: Abnahme (Runde {round_no}) durch {describe_agent(inspector)}...", flush=True)
+        say(f"\n🔎 Phase 4: Abnahme (Runde {round_no}) durch {describe_agent(inspector)}...", flush=True)
         changes = collect_build_changes(work_path, state.get("build_base"))
         approved_build, reason, answer = run_inspection(
             inspector, inspector_flags, builder, task, plan_file.read_text(encoding="utf-8"),
             changes, proof_note, work_path, session_dir, state, agents, auto_switch, round_no
         )
         if approved_build:
-            print(f"✅ Abnahme erteilt ({reason}).")
+            say(f"✅ Abnahme erteilt ({reason}).")
             return "finished"
-        print(f"⚠️ Abnahme verweigert ({reason}). Der Bauleiter bessert nach.")
+        say(f"⚠️ Abnahme verweigert ({reason}). Der Bauleiter bessert nach.")
         session_metrics.count("inspection_rejected")
         reject_done(f"Die unabhängige Abnahme hat die Fertigmeldung zurückgewiesen. Befunde:\n{findings_digest(answer)}")
         if inspections_used >= max(1, args.max_inspections):
-            print(f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Befunde: {session_dir.relative_to(project_path)}/INSPECTION_round{round_no}.md")
+            say(f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Befunde: {session_dir.relative_to(project_path)}/INSPECTION_round{round_no}.md")
             append_log(session_dir, "Abnahme-Limit erreicht, Aufgabe bleibt offen")
             state["phase"] = "inspection_open"
             state["abort_reason"] = f"Abnahme-Limit ({args.max_inspections}) erreicht, Befunde offen"
@@ -4932,9 +4939,9 @@ def run_build_phase(run: "RunContext") -> None:
             return "stop"
         return "retry"
 
-    print(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {work_path}...")
+    say(f"\n🔨 Phase 3: Starte Implementierungs-Loop in {work_path}...")
     b_build_desc = f"{builder.name}" + (f" (`{builder.model}`)" if builder.model else "") + (f" [{builder.effort}]" if builder.effort else "")
-    print(f"🔨 Ausführender Bauleiter: {b_build_desc}")
+    say(f"🔨 Ausführender Bauleiter: {b_build_desc}")
     start_iter = state.get("last_iteration", 0) + 1
     outcome = None
 
@@ -4955,16 +4962,16 @@ def run_build_phase(run: "RunContext") -> None:
             state["stages_plan_sha256"] = state.get("build_plan_sha256")
         stage_mode = len(stages) >= 2 or (len(stages) == 1 and (state.get("stage_mode") or args.etappen) in ("an", "on"))
         if not stage_mode:
-            print("ℹ️  Der Plan enthält keinen Abschnitt `## Etappen` mit mindestens zwei Etappen. Der Bauleiter baut den ganzen Plan auf einmal.")
+            say("ℹ️  Der Plan enthält keinen Abschnitt `## Etappen` mit mindestens zwei Etappen. Der Bauleiter baut den ganzen Plan auf einmal.")
             append_log(session_dir, "Etappen-Modus: keine Etappen im Plan, normaler Bau")
     stage_index = state.get("stage_index", 0) if stage_mode else 0
     stage_tries = 0
     if stage_mode:
-        print(f"🧩 Etappen-Modus: {len(stages)} Etappen, weiter mit Etappe {min(stage_index + 1, len(stages))}.")
+        say(f"🧩 Etappen-Modus: {len(stages)} Etappen, weiter mit Etappe {min(stage_index + 1, len(stages))}.")
         for i, s in enumerate(stages, 1):
-            print(f"   {'✓' if i <= stage_index else '•'} {i}. {s}")
+            say(f"   {'✓' if i <= stage_index else '•'} {i}. {s}")
         if not proof_cmd:
-            print("⚠️  Ohne --proof gilt jede Etappe nach einer Bau-Runde als erledigt. Mit --proof prüft der Loop jede Etappe selbst.")
+            say("⚠️  Ohne --proof gilt jede Etappe nach einer Bau-Runde als erledigt. Mit --proof prüft der Loop jede Etappe selbst.")
     if args.max_iterations:
         max_iters = args.max_iterations
     elif stage_mode:
@@ -5000,7 +5007,7 @@ def run_build_phase(run: "RunContext") -> None:
         if not key:
             if not escalation_refused:
                 escalation_refused = True
-                print(f"⚠️ Eskalation nicht möglich: {why}. {builder.name} baut weiter.")
+                say(f"⚠️ Eskalation nicht möglich: {why}. {builder.name} baut weiter.")
                 append_log(session_dir, f"Eskalation nicht möglich: {why}")
             return
         previous = builder
@@ -5013,7 +5020,7 @@ def run_build_phase(run: "RunContext") -> None:
         session_metrics.count("escalations")
         fail_streak = 0
         stage_tries = 0
-        print(f"⬆️ Eskalation: {previous.name} → {builder.name} nach {detail}.")
+        say(f"⬆️ Eskalation: {previous.name} → {builder.name} nach {detail}.")
         append_log(session_dir, f"Eskalation Bauleiter {previous.name} → {builder.name}: {detail}")
         log_event(session_dir, "escalation", level="warning", **state["escalation"])
         save_session_state(session_dir, state)
@@ -5026,7 +5033,7 @@ def run_build_phase(run: "RunContext") -> None:
             state["last_iteration"] = iteration
             stage_text = stages[stage_index]
             stage_label = f"Etappe {stage_index + 1}/{len(stages)}"
-            print(f"\n{'='*20} Iteration {iteration}/{max_iters} · {stage_label} {'='*20}\n{stage_text}\n", flush=True)
+            say(f"\n{'='*20} Iteration {iteration}/{max_iters} · {stage_label} {'='*20}\n{stage_text}\n", flush=True)
             done_list = "\n".join(f"- [x] {s}" for s in stages[:stage_index]) or "- (noch keine)"
             plan_ref = plan_file if in_worktree else plan_file.relative_to(project_path)
             file_ctx = stage_file_context(work_path, stage_text + "\n" + pending_feedback, build_ctx.written_so_far) if is_endpoint_builder else ""
@@ -5047,7 +5054,7 @@ def run_build_phase(run: "RunContext") -> None:
                 else:
                     ok = True
             except Exception as exc:
-                print(f"[!] Fehler bei Iteration {iteration}: {exc}")
+                say(f"[!] Fehler bei Iteration {iteration}: {exc}")
                 output = str(exc)
 
             # Eine vorzeitige Fertigmeldung zählt im Etappen-Modus nicht
@@ -5057,7 +5064,7 @@ def run_build_phase(run: "RunContext") -> None:
 
             if ok:
                 note_build_round(True, "")
-                print(f"✅ {stage_label} erledigt" + (f" (`{proof_cmd}` grün)." if proof_cmd else "."))
+                say(f"✅ {stage_label} erledigt" + (f" (`{proof_cmd}` grün)." if proof_cmd else "."))
                 append_log(session_dir, f"{stage_label} erledigt: {stage_text}")
                 stage_index += 1
                 stage_tries = 0
@@ -5075,15 +5082,15 @@ def run_build_phase(run: "RunContext") -> None:
                         break
                     stages.append("Befunde aus der Rückmeldung beheben (Prüfbefehl oder Abnahme), ohne Erledigtes zu beschädigen")
                     state["stages"] = stages
-                    print(f"🔁 Nacharbeit als Etappe {len(stages)} angehängt.")
+                    say(f"🔁 Nacharbeit als Etappe {len(stages)} angehängt.")
             else:
                 stage_tries += 1
                 pending_feedback = f"Der Prüfbefehl `{proof_cmd}` schlägt nach {stage_label} fehl:\n```\n{output}\n```" if proof_cmd else f"Fehler: {output}"
                 state["pending_feedback"] = pending_feedback
-                print(f"❌ {stage_label} noch nicht fertig (Versuch {stage_tries}/{STAGE_MAX_TRIES}).")
+                say(f"❌ {stage_label} noch nicht fertig (Versuch {stage_tries}/{STAGE_MAX_TRIES}).")
                 note_build_round(False, f"{stage_label} " + ("Prüfbefehl rot" if proof_cmd else "fehlgeschlagen"))
                 if stage_tries >= STAGE_MAX_TRIES:
-                    print(f"🛑 {stage_label} ist nach {STAGE_MAX_TRIES} Versuchen nicht grün. Stand gesichert; weiter mit 'claudegravity -c'.")
+                    say(f"🛑 {stage_label} ist nach {STAGE_MAX_TRIES} Versuchen nicht grün. Stand gesichert; weiter mit 'claudegravity -c'.")
                     state["abort_reason"] = f"{stage_label} nach {STAGE_MAX_TRIES} Versuchen nicht grün"
                     append_log(session_dir, f"{stage_label} nach {STAGE_MAX_TRIES} Versuchen offen")
                     tail = "\n".join((output or "").strip().splitlines()[-30:])
@@ -5116,7 +5123,7 @@ def run_build_phase(run: "RunContext") -> None:
 
         timestamp = datetime.datetime.now().isoformat()
         log_header = f"\n{'='*20} Iteration {iteration}/{max_iters} @ {timestamp} {'='*20}\n"
-        print(log_header, flush=True)
+        say(log_header, flush=True)
 
         # Im Worktree liegt der (git-ignorierte) Session-Ordner außerhalb des Arbeitsverzeichnisses -> absolute Pfade
         rel_done_path = (session_dir / ".done") if in_worktree else (session_dir / ".done").relative_to(project_path)
@@ -5138,7 +5145,7 @@ def run_build_phase(run: "RunContext") -> None:
             pending_feedback = ""
             state["pending_feedback"] = ""
         except Exception as exc:
-            print(f"[!] Fehler bei Iteration {iteration}: {exc}")
+            say(f"[!] Fehler bei Iteration {iteration}: {exc}")
             call_failed = f"Fehler: {str(exc)[:120]}"
 
         state["metrics"] = session_metrics.to_dict()
@@ -5179,35 +5186,35 @@ def finish_run(run: "RunContext") -> None:
         release_worktree(project_path, session_dir, state, task, merge=merge_worktree)
     if state.get("phase") == "stage_open":
         if in_worktree:
-            print(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
-        print(format_error("CG-1403"))
-        print(format_metrics_report(session_metrics, state))
+            say(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
+        say(format_error("CG-1403"))
+        say(format_metrics_report(session_metrics, state))
     elif state.get("phase") == "inspection_open":
         if in_worktree:
-            print(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
-        print(format_error("CG-1402"))
-        print(format_metrics_report(session_metrics, state))
+            say(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
+        say(format_error("CG-1402"))
+        say(format_metrics_report(session_metrics, state))
     elif state.get("phase") != "completed":
         if in_worktree:
-            print(f"🌿 Git-Workspace bleibt für die Fortsetzung erhalten: {work_path}")
+            say(f"🌿 Git-Workspace bleibt für die Fortsetzung erhalten: {work_path}")
         if STOP_REQUESTED:
             state["abort_reason"] = "Abgebrochen (Strg+C)"
-            print("\n[+] Abgebrochen. Stand gesichert, weiter mit 'claudegravity -c'.")
+            say("\n[+] Abgebrochen. Stand gesichert, weiter mit 'claudegravity -c'.")
         else:
             state["abort_reason"] = f"Rundenlimit erreicht ({max_iters} Bau-Runden)"
-            print(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
-            print(format_error("CG-1401", f"{max_iters} Runden"))
+            say(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
+            say(format_error("CG-1401", f"{max_iters} Runden"))
         save_session_state(session_dir, state)
         # Kein .done anlegen: Das würde eine unfertige Aufgabe beim Fortsetzen als fertig melden.
         (session_dir / "AUDIT.md").write_text(format_metrics_report(session_metrics, state), encoding="utf-8")
-        print(format_metrics_report(session_metrics, state))
+        say(format_metrics_report(session_metrics, state))
 
     if state.get("phase") != "completed" and state.get("abort_reason"):
-        print(f"\n⏹️ Abbruchgrund: {state['abort_reason']}")
+        say(f"\n⏹️ Abbruchgrund: {state['abort_reason']}")
     log_event(session_dir, "session_end", phase=state.get("phase"), success=state.get("phase") == "completed",
               abort_reason=state.get("abort_reason"), tokens_total=session_metrics.total_tokens,
               cost_usd_total=round(session_metrics.cost_usd, 4), build_rounds=state.get("last_iteration"))
-    print("\n[*] ClaudeGravity Loop beendet.")
+    say("\n[*] ClaudeGravity Loop beendet.")
 
 
 def main():
@@ -5226,7 +5233,7 @@ def main():
         return
 
     for note in apply_auto_roles(args, agents):
-        print(note)
+        say(note)
     project_path = Path(args.project).resolve()
     if not project_path.exists():
         fail("CG-1003", str(project_path))
@@ -5240,7 +5247,7 @@ def main():
     config_warnings = unsafe_config_warnings(args, project_path, is_git_repo(project_path))
     if not args.dry_run and (args.task or args.resume):
         for warning in config_warnings:
-            print(warning)
+            say(warning)
     if args.dry_run and not show_dry_run(args, agents, project_path, config_warnings, guided_dry_run):
         return
 
