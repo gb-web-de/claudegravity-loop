@@ -91,6 +91,24 @@ The Builder creates `.dual-loop/sessions/<session>/.done` once everything is imp
 
 If the run ends without a completion signal (round limit), the report goes into `AUDIT.md` instead of `.done`, so the task isn't treated as finished when resuming. Roles without API costs (subscription, local) appear as „Abo-Inklusivkontingent“ (included in subscription). For CLIs that don't report usage, token counts are rough estimates (characters / 4).
 
+### Key figures (KPI)
+
+Before the audit report there is a key figures block in a fixed format, so sessions can be compared:
+
+```markdown
+### 📈 Kennzahlen (ClaudeGravity KPI v1)
+* **Ergebnis:** erfolgreich · Strategie `hybrid` · Dauer 12 min 30 s
+* **Kosten je Aufgabe:** 0.1900 USD · **davon Abnahme:** 0.0900 USD (gemeldet von: Claude Code)
+* **Runden:** Plan-Review 2 · Bau 3 (bis Erfolg: 3) · Etappen 2 · Abnahme 2
+* **Nacharbeit:** 2 von 3 Bau-Runden (Quote 67 %); Prüfbefehl rot 1/2, Abnahme verweigert 1
+```
+
+Below it, the same values follow as one JSON line in a ` ```json ` block (`version`, `success`, `duration_s`, `build_rounds`, `rework_rate`, `cost_usd_task`, `cost_usd_by_role`, `tokens_by_role` and so on) that scripts can read.
+
+* **Costs** come only from what providers report (Claude Code, API endpoints with `usage.cost` such as OpenRouter). Subscription CLIs and local models report no costs; there is no price table, and the tokens per role are included so you can do the math yourself. The unit is USD, as reported by the providers.
+* **Rework** counts build rounds that followed a red proof command or a rejected acceptance check, at most all build rounds after the first.
+* **Build rounds to success** only exist for completed sessions.
+
 ## Project context: `CLAUDE.md` & `knowledge/`
 
 When planning, ClaudeGravity reads from the target project:

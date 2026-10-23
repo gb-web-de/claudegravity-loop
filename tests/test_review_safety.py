@@ -255,6 +255,13 @@ class EndToEndTest(unittest.TestCase):
             self.assertEqual(state["phase"], "completed")
             self.assertTrue(state["approved_plan_sha256"])
 
+            done = (session / ".done").read_text(encoding="utf-8")
+            self.assertIn("Kennzahlen (ClaudeGravity KPI v1)", done)
+            kpi = json.loads(done.split("```json\n", 1)[1].split("\n```", 1)[0])
+            self.assertTrue(kpi["success"])
+            self.assertEqual((kpi["build_rounds"], kpi["inspection_rounds"], kpi["inspection_rejected"]), (2, 2, 1))
+            self.assertEqual((kpi["rework_rounds"], kpi["rework_rate"]), (1, 0.5))
+
             builds = [c for c in calls if c["bin"] == "claude" and "Führe den genehmigten Plan" in c["prompt"]]
             self.assertEqual(len(builds), 2)
             self.assertIn("Test fehlt", builds[1]["prompt"])

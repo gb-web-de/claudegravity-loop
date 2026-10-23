@@ -91,6 +91,24 @@ Der Bauleiter legt `.dual-loop/sessions/<session>/.done` an, wenn alles umgesetz
 
 Endet der Lauf ohne Fertigmeldung (Rundenlimit), steht der Bericht in `AUDIT.md` statt in `.done`, damit die Aufgabe beim Fortsetzen nicht als fertig gilt. Rollen ohne API-Kosten (Abo, lokal) erscheinen als „Abo-Inklusivkontingent“. Bei CLIs ohne Verbrauchsangabe sind die Token-Zahlen grob geschätzt (Zeichen / 4).
 
+### Kennzahlen (KPI)
+
+Vor dem Audit-Bericht steht ein Kennzahlen-Block im festen Format, damit sich Sessions vergleichen lassen:
+
+```markdown
+### 📈 Kennzahlen (ClaudeGravity KPI v1)
+* **Ergebnis:** erfolgreich · Strategie `hybrid` · Dauer 12 min 30 s
+* **Kosten je Aufgabe:** 0.1900 USD · **davon Abnahme:** 0.0900 USD (gemeldet von: Claude Code)
+* **Runden:** Plan-Review 2 · Bau 3 (bis Erfolg: 3) · Etappen 2 · Abnahme 2
+* **Nacharbeit:** 2 von 3 Bau-Runden (Quote 67 %); Prüfbefehl rot 1/2, Abnahme verweigert 1
+```
+
+Darunter folgen dieselben Werte als eine JSON-Zeile in einem ` ```json `-Block (`version`, `success`, `duration_s`, `build_rounds`, `rework_rate`, `cost_usd_task`, `cost_usd_by_role`, `tokens_by_role` usw.), die sich per Skript auswerten lässt.
+
+* **Kosten** stammen nur aus Angaben der Anbieter (Claude Code, API-Endpunkte mit `usage.cost` wie OpenRouter). Abo-CLIs und lokale Modelle melden keine Kosten; es gibt keine Preistabelle, die Tokens je Rolle stehen zum Nachrechnen dabei. Einheit ist USD, wie die Anbieter sie melden.
+* **Nacharbeit** zählt Bau-Runden, die auf einen roten Prüfbefehl oder eine verweigerte Abnahme folgten, höchstens alle Bau-Runden nach der ersten.
+* **Bau-Runden bis Erfolg** gibt es nur bei abgeschlossenen Sessions.
+
 ## Projektkontext: `CLAUDE.md` & `knowledge/`
 
 Beim Planen liest ClaudeGravity aus dem Zielprojekt:

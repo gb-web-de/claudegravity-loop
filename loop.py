@@ -263,6 +263,11 @@ class SessionMetrics:
         self.by_agent: dict[str, dict] = {}
         self.retries = {"attempts": 0, "recovered": 0, "exhausted": 0}
         self.audit_events: dict[str, int] = {}
+        self.counters: dict[str, int] = {}
+
+    def count(self, name: str):
+        """Ereigniszähler für die Kennzahlen (z. B. proof_red, inspection_rejected)."""
+        self.counters[name] = self.counters.get(name, 0) + 1
 
     def note_audit(self, kind: str):
         self.audit_events[kind] = self.audit_events.get(kind, 0) + 1
@@ -300,6 +305,7 @@ class SessionMetrics:
                 "role": role or "",
                 "model": model or "",
                 "effort": effort or "",
+                "calls": 0,
             }
 
         entry = self.by_agent[tracker_key]
@@ -307,6 +313,7 @@ class SessionMetrics:
         entry["output_tokens"] += output_tokens
         entry["total_tokens"] += total_tokens
         entry["cost_usd"] += cost_usd
+        entry["calls"] = entry.get("calls", 0) + 1
         if role:
             entry["role"] = role
         if model:
@@ -323,6 +330,7 @@ class SessionMetrics:
             "by_agent": self.by_agent,
             "retries": self.retries,
             "audit_events": self.audit_events,
+            "counters": self.counters,
         }
 
     @classmethod
@@ -337,10 +345,98 @@ class SessionMetrics:
         m.by_agent = data.get("by_agent", {})
         m.retries.update(data.get("retries") or {})
         m.audit_events.update(data.get("audit_events") or {})
+        m.counters.update(data.get("counters") or {})
         return m
 
 
-def format_metrics_report(metrics: SessionMetrics) -> str:
+KPI_ROLE_KEYS = {"planner": "Architekt", "reviewer": "Prüfstatiker", "builder": "Bauleiter", "inspector": "Abnahme"}
+
+
+def role_key(role_title: str) -> str | None:
+    for key, word in KPI_ROLE_KEYS.items():
+        if word in (role_title or ""):
+            return key
+    return None
+
+
+def build_kpis(state: dict, metrics: SessionMetrics, now: datetime.datetime | None = None) -> dict:
+    """Vergleichbare Kennzahlen einer Session. Kosten nur, soweit Anbieter sie melden (USD)."""
+    calls = {k: 0 for k in KPI_ROLE_KEYS}
+    cost = {k: 0.0 for k in KPI_ROLE_KEYS}
+    tokens = {k: 0 for k in KPI_ROLE_KEYS}
+    reporting: list[str] = []
+    for usage in metrics.by_agent.values():
+        key = role_key(usage.get("role", ""))
+        if not key:
+            continue
+        calls[key] += usage.get("calls", 0)
+        cost[key] += usage.get("cost_usd", 0.0)
+        tokens[key] += usage.get("total_tokens", 0)
+        if usage.get("cost_usd", 0.0) > 0 and usage.get("agent_name") not in reporting:
+            reporting.append(usage.get("agent_name"))
+    build_rounds = calls["builder"]
+    rejections = metrics.counters.get("proof_red", 0) + metrics.counters.get("inspection_rejected", 0)
+    rework_rounds = min(max(build_rounds - 1, 0), rejections)
+    duration = None
+    try:
+        started = datetime.datetime.fromisoformat(state["created_at"])
+        duration = int(((now or datetime.datetime.now()) - started).total_seconds())
+    except (KeyError, TypeError, ValueError):
+        pass
+    return {
+        "version": 1,
+        "success": state.get("phase") == "completed",
+        "phase": state.get("phase"),
+        "strategy": state.get("strategy"),
+        "duration_s": duration,
+        "plan_review_rounds": state.get("rounds_completed", 0),
+        "build_rounds": build_rounds,
+        "build_rounds_to_success": build_rounds if state.get("phase") == "completed" else None,
+        "stages": len(state.get("stages") or []),
+        "proof_runs": metrics.counters.get("proof_green", 0) + metrics.counters.get("proof_red", 0),
+        "proof_red": metrics.counters.get("proof_red", 0),
+        "inspection_rounds": max(calls["inspector"], state.get("inspection_rounds", 0)),
+        "inspection_rejected": metrics.counters.get("inspection_rejected", 0),
+        "rework_rounds": rework_rounds,
+        "rework_rate": round(rework_rounds / build_rounds, 2) if build_rounds else 0.0,
+        "tokens_total": metrics.total_tokens,
+        "tokens_by_role": tokens,
+        "cost_usd_task": round(metrics.cost_usd, 4),
+        "cost_usd_inspection": round(cost["inspector"], 4),
+        "cost_usd_by_role": {k: round(v, 4) for k, v in cost.items()},
+        "cost_reported_by": reporting,
+        "retries": metrics.retries.get("attempts", 0),
+    }
+
+
+def format_kpi_block(kpi: dict) -> str:
+    def money(value: float) -> str:
+        return f"{value:.4f} USD" if value else "0 USD"
+    dur = kpi["duration_s"]
+    dur_txt = f"{dur // 60} min {dur % 60} s" if dur is not None else "unbekannt"
+    to_success = kpi["build_rounds_to_success"]
+    who = ", ".join(kpi["cost_reported_by"]) or "kein Anbieter (Abo-CLIs und lokale Modelle melden keine Kosten)"
+    lines = [
+        "",
+        "---",
+        "### 📈 Kennzahlen (ClaudeGravity KPI v1)",
+        f"* **Ergebnis:** {'erfolgreich' if kpi['success'] else 'offen (' + str(kpi['phase']) + ')'} · Strategie `{kpi['strategy']}` · Dauer {dur_txt}",
+        f"* **Kosten je Aufgabe:** {money(kpi['cost_usd_task'])} · **davon Abnahme:** {money(kpi['cost_usd_inspection'])} (gemeldet von: {who})",
+        f"* **Runden:** Plan-Review {kpi['plan_review_rounds']} · Bau {kpi['build_rounds']}"
+        + (f" (bis Erfolg: {to_success})" if to_success is not None else "")
+        + (f" · Etappen {kpi['stages']}" if kpi["stages"] else "")
+        + f" · Abnahme {kpi['inspection_rounds']}",
+        f"* **Nacharbeit:** {kpi['rework_rounds']} von {kpi['build_rounds']} Bau-Runden (Quote {kpi['rework_rate']:.0%}); "
+        f"Prüfbefehl rot {kpi['proof_red']}/{kpi['proof_runs']}, Abnahme verweigert {kpi['inspection_rejected']}",
+        "",
+        "```json",
+        json.dumps(kpi, ensure_ascii=False),
+        "```",
+    ]
+    return "\n".join(lines)
+
+
+def format_metrics_report(metrics: SessionMetrics, state: dict | None = None) -> str:
     lines = [
         "",
         "---",
@@ -375,10 +471,12 @@ def format_metrics_report(metrics: SessionMetrics) -> str:
             lines.append(f"  * {AUDIT_EVENT_LABELS.get(kind, kind)}: {count}")
     lines.append(f"* **Audit-Zeitstempel:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
+    if state is not None:
+        return format_kpi_block(build_kpis(state, metrics)) + "\n" + "\n".join(lines)
     return "\n".join(lines)
 
 
-def append_metrics_to_done(session_dir: Path, project_path: Path, metrics: SessionMetrics):
+def append_metrics_to_done(session_dir: Path, project_path: Path, metrics: SessionMetrics, state: dict | None = None):
     """Schreibt den Token- und Kostenbericht in die .done-Datei des Session-Ordners."""
     session_done = session_dir / ".done"
     root_done = project_path / ".done"
@@ -394,7 +492,7 @@ def append_metrics_to_done(session_dir: Path, project_path: Path, metrics: Sessi
 
     content = session_done.read_text(encoding="utf-8")
     if "ClaudeGravity Audit" not in content:
-        report = format_metrics_report(metrics)
+        report = format_metrics_report(metrics, state)
         with open(session_done, "a", encoding="utf-8") as f:
             f.write(report)
         print(f"📊 Ressourcen-Audit erfolgreich in {session_done.relative_to(project_path)} eingetragen.")
@@ -454,6 +552,9 @@ class AgentCLI:
                     model=used_model,
                     effort=used_effort
                 )
+        elif self.metrics_tracker:
+            # Kein Verbrauch gemeldet: Aufruf trotzdem zählen (Runden-Kennzahlen)
+            self.metrics_tracker.add(agent_name=self.name, role=self.role, model=self.model, effort=self.effort)
         return text
 
 
@@ -1033,7 +1134,7 @@ def _exec_openai_api(
             tot = usage.get("total_tokens") or (inp + out)
 
             is_local_or_private = is_private_endpoint(endpoint_url)
-            cost = 0.0 if is_local_or_private else float(data.get("cost_usd", 0.0))
+            cost = 0.0 if is_local_or_private else float(usage.get("cost") or data.get("cost_usd") or 0.0)
 
             metrics = {
                 "input_tokens": inp,
@@ -3678,9 +3779,9 @@ def main():
     def finish_session():
         done_file = session_dir / ".done"
         print(f"\n🎉 Fertigmeldung ({done_file.relative_to(project_path)}) gefunden! Aufgabe erfolgreich abgeschlossen.")
-        append_metrics_to_done(session_dir, project_path, session_metrics)
-        print(format_metrics_report(session_metrics))
         state["phase"] = "completed"
+        append_metrics_to_done(session_dir, project_path, session_metrics, state)
+        print(format_metrics_report(session_metrics, state))
         state["pending_feedback"] = ""
         state["metrics"] = session_metrics.to_dict()
         save_session_state(session_dir, state)
@@ -3704,6 +3805,7 @@ def main():
         if proof_cmd:
             print(f"🧪 Führe Prüfbefehl aus: {proof_cmd}", flush=True)
             ok, output = run_proof(proof_cmd, work_path)
+            session_metrics.count("proof_green" if ok else "proof_red")
             append_log(session_dir, f"Prüfbefehl `{proof_cmd}`: {'grün' if ok else 'rot'}")
             if not ok:
                 print("❌ Prüfbefehl ist rot. Fertigmeldung zurückgewiesen.")
@@ -3731,6 +3833,7 @@ def main():
             print(f"✅ Abnahme erteilt ({reason}).")
             return "finished"
         print(f"⚠️ Abnahme verweigert ({reason}). Der Bauleiter bessert nach.")
+        session_metrics.count("inspection_rejected")
         reject_done(f"Die unabhängige Abnahme hat die Fertigmeldung zurückgewiesen. Befunde:\n{findings_digest(answer)}")
         if inspections_used >= max(1, args.max_inspections):
             print(f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Befunde: {session_dir.relative_to(project_path)}/INSPECTION_round{round_no}.md")
@@ -3847,6 +3950,7 @@ def main():
                     f_log.write(f"\n{'='*20} Iteration {iteration} · {stage_label} {'='*20}\n{mask_secrets(res)}\n")
                 if proof_cmd:
                     ok, output = run_proof(proof_cmd, work_path)
+                    session_metrics.count("proof_green" if ok else "proof_red")
                 else:
                     ok = True
             except Exception as exc:
@@ -4009,6 +4113,7 @@ def main():
                 break
         elif proof_cmd and not STOP_REQUESTED:
             ok, output = run_proof(proof_cmd, work_path)
+            session_metrics.count("proof_green" if ok else "proof_red")
             if not ok:
                 pending_feedback = f"Der Prüfbefehl `{proof_cmd}` schlägt noch fehl:\n```\n{output}\n```"
                 state["pending_feedback"] = pending_feedback
@@ -4025,20 +4130,20 @@ def main():
     if state.get("phase") == "stage_open":
         if in_worktree:
             print(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
-        print(format_metrics_report(session_metrics))
+        print(format_metrics_report(session_metrics, state))
     elif state.get("phase") == "inspection_open":
         if in_worktree:
             print(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
         print("💡 Mit 'claudegravity -c' geht es mit den offenen Befunden weiter.")
-        print(format_metrics_report(session_metrics))
+        print(format_metrics_report(session_metrics, state))
     elif state.get("phase") != "completed":
         if in_worktree:
             print(f"🌿 Git-Workspace bleibt für die Fortsetzung erhalten: {work_path}")
         print(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
         print(f"💡 Du kannst jederzeit mit 'claudegravity -c' weitere Runden anhängen.")
         # Kein .done anlegen: Das würde eine unfertige Aufgabe beim Fortsetzen als fertig melden.
-        (session_dir / "AUDIT.md").write_text(format_metrics_report(session_metrics), encoding="utf-8")
-        print(format_metrics_report(session_metrics))
+        (session_dir / "AUDIT.md").write_text(format_metrics_report(session_metrics, state), encoding="utf-8")
+        print(format_metrics_report(session_metrics, state))
 
     print("\n[*] ClaudeGravity Loop beendet.")
 
