@@ -68,6 +68,10 @@ UPDATE_GOLDEN=1 python3 -m unittest tests.test_golden
 
 and commit the changed files in `tests/golden/`.
 
+### Lint
+
+CI checks the code with [Ruff](https://docs.astral.sh/ruff/) (rules in `ruff.toml`: syntax, Pyflakes, Bugbear, simplifications). Ruff is only a tool for development and CI; the loop itself still needs nothing but the standard library. Locally: `pip install ruff` and `ruff check .`.
+
 Without AI calls and without changing files:
 
 ```bash

@@ -161,7 +161,7 @@ def codex_client():
             f"[mcp_servers.{SERVER_NAME}]",
             f"command = {json.dumps(python_command())}",
             f"args = [{json.dumps(str(MCP_SCRIPT))}]",
-            f'env = {{ "PYTHONIOENCODING" = "utf-8" }}',
+            'env = { "PYTHONIOENCODING" = "utf-8" }',
             MARK_END,
             "",
         ])

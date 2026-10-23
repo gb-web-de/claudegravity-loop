@@ -31,6 +31,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+import contextlib
 
 # Cross-Platform Console-Encoding (Windows CMD/PowerShell UTF-8 Fix)
 if sys.platform == "win32":
@@ -488,10 +489,8 @@ def append_metrics_to_done(session_dir: Path, project_path: Path, metrics: Sessi
     root_done = project_path / ".done"
 
     if root_done.exists() and not session_done.exists():
-        try:
+        with contextlib.suppress(Exception):
             shutil.move(str(root_done), str(session_done))
-        except Exception:
-            pass
 
     if not session_done.exists():
         session_done.write_text("# Aufgabe abgeschlossen\n", encoding="utf-8")
@@ -685,7 +684,7 @@ def _exec_cli(binary: str, args: list[str], cwd: Path | None = None, stdin: str 
         raise RuntimeError(
             f"{binary}: CLI-Zeitlimit von {cli_timeout()} s überschritten. "
             f"Mehr Zeit mit CLAUDEGRAVITY_CLI_TIMEOUT=<Sekunden> (0 = ohne Limit)."
-        )
+        ) from None
     if res.returncode != 0:
         err_msg = res.stderr.strip() or res.stdout.strip() or f"Fehlercode {res.returncode}"
         if is_rate_limit(err_msg):
@@ -877,10 +876,7 @@ def _exec_codex(binary: str, prompt: str, cwd: Path | None = None, extra_flags: 
 
 
 def _exec_copilot(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
-    if binary == "gh":
-        args = ["copilot", "suggest", "-t", "shell", prompt]
-    else:
-        args = ["suggest", "-t", "shell", prompt]
+    args = ["copilot", "suggest", "-t", "shell", prompt] if binary == "gh" else ["suggest", "-t", "shell", prompt]
     if extra_flags:
         args.extend(extra_flags)
     raw = _exec_cli(binary, args, cwd)
@@ -1150,7 +1146,7 @@ def _exec_openai_api(
             try:
                 data = json.loads(resp_body)
             except json.JSONDecodeError:
-                raise RuntimeError(f"Leere Antwort vom Endpunkt {endpoint_url} (kein JSON): {resp_body[:200]}")
+                raise RuntimeError(f"Leere Antwort vom Endpunkt {endpoint_url} (kein JSON): {resp_body[:200]}") from None
             if not isinstance(data, dict):
                 raise RuntimeError(f"Leere Antwort vom Endpunkt {endpoint_url}: {resp_body[:200]}")
 
@@ -1179,25 +1175,23 @@ def _exec_openai_api(
 
     except urllib.error.HTTPError as http_err:
         err_body = ""
-        try:
+        with contextlib.suppress(Exception):
             err_body = http_err.read().decode("utf-8")
-        except Exception:
-            pass
         err_msg = f"HTTP {http_err.code} ({http_err.reason}): {err_body}"
         if is_rate_limit(err_msg) or http_err.code == 429:
             r_time = extract_reset_time(err_msg)
             r_secs = parse_reset_seconds(r_time) if r_time else 60
-            raise RateLimitError(endpoint_url, err_msg, r_time, r_secs)
-        raise RuntimeError(f"API-Fehler an {endpoint_url}: {err_msg}")
+            raise RateLimitError(endpoint_url, err_msg, r_time, r_secs) from http_err
+        raise RuntimeError(f"API-Fehler an {endpoint_url}: {err_msg}") from http_err
     except urllib.error.URLError as url_err:
-        raise RuntimeError(f"Verbindungsfehler zu {endpoint_url}: {url_err.reason}")
+        raise RuntimeError(f"Verbindungsfehler zu {endpoint_url}: {url_err.reason}") from url_err
     except ConnectionError as conn_err:
-        raise RuntimeError(f"Verbindungsfehler zu {endpoint_url}: {conn_err}")
-    except TimeoutError:
+        raise RuntimeError(f"Verbindungsfehler zu {endpoint_url}: {conn_err}") from conn_err
+    except TimeoutError as timeout_err:
         raise RuntimeError(
             f"Zeitüberschreitung nach {endpoint_timeout(endpoint_url)} s bei {endpoint_url}. "
             f"Mehr Zeit pro Runde: --timeout <Sekunden> oder CLAUDEGRAVITY_TIMEOUT."
-        )
+        ) from timeout_err
 
 
 def _exec_endpoint_runner(endpoint_url: str, default_model: str, api_key: str | None = None):
@@ -1379,8 +1373,8 @@ def check_and_clean_done_marker(session_dir: Path, project_path: Path) -> bool:
             shutil.move(str(root_done), str(session_done))
         except Exception:
             session_done.touch()
-            try: root_done.unlink()
-            except Exception: pass
+            with contextlib.suppress(Exception):
+                root_done.unlink()
         return True
     return False
 
@@ -1479,7 +1473,7 @@ def release_worktree(project_path: Path, session_dir: Path, state: dict, task: s
     wt["released"] = True
     wt["merged"] = merged
     save_session_state(session_dir, state)
-    print(f"🧹 Git-Workspace freigegeben.")
+    print("🧹 Git-Workspace freigegeben.")
     if not merged:
         print(f"💡 Ergebnis liegt auf Branch `{branch}` (übernehmen mit: git merge {branch})")
     return True
@@ -1754,15 +1748,11 @@ def save_session_state(session_dir: Path, state: dict):
     with open(tmp_file, "w", encoding="utf-8") as f:
         f.write(json.dumps(state, indent=2, ensure_ascii=False))
         f.flush()
-        try:
+        with contextlib.suppress(OSError):
             os.fsync(f.fileno())
-        except OSError:
-            pass
     if state_file.exists():
-        try:
+        with contextlib.suppress(OSError):
             shutil.copyfile(state_file, session_dir / "state.json.bak")
-        except OSError:
-            pass
     os.replace(tmp_file, state_file)
 
 
@@ -1841,10 +1831,10 @@ def handle_rate_limit(
     if alt_agent:
         print(f"  [1] 🔄 Modell-Wechsel -> Zu {alt_agent.name} wechseln und sofort weiterarbeiten")
     else:
-        print(f"  [1] 🔄 Modell-Wechsel -> (Keine Alternative, die nicht schon die Gegenrolle hat)")
+        print("  [1] 🔄 Modell-Wechsel -> (Keine Alternative, die nicht schon die Gegenrolle hat)")
     wait_info = f" ({err.reset_time})" if err.reset_time else ""
     print(f"  [2] ⏳ Warten         -> Countdown starten{wait_info} und automatisch wiederholen")
-    print(f"  [3] 💾 Beenden        -> Stand sichern und beenden (Fortsetzen später mit 'claudegravity -c')")
+    print("  [3] 💾 Beenden        -> Stand sichern und beenden (Fortsetzen später mit 'claudegravity -c')")
     print("-" * 65)
 
     try:
@@ -2056,10 +2046,8 @@ def run_adversarial_plan(
     # Alte temporäre Dateien im Root von .dual-loop aufräumen
     for legacy in [loop_dir / "PLAN.md", loop_dir / "REVIEW.md", loop_dir / "PLAN-REVIEW-LOG.md"]:
         if legacy.exists():
-            try:
+            with contextlib.suppress(Exception):
                 legacy.unlink()
-            except Exception:
-                pass
 
     log_file = session_dir / "LOG.md"
     plan_v1_file = session_dir / "PLAN_v1.md"
@@ -2795,7 +2783,7 @@ def handle_plan_approval_and_changes(
             state["planner_binary"] = planner.binary
             state["reviewer_binary"] = reviewer.binary
             save_session_state(session_dir, state)
-            print(f"\n🔄 Rollen erfolgreich getauscht:")
+            print("\n🔄 Rollen erfolgreich getauscht:")
             print(f"   🏗️ Neuer Architekt (Planung & Entwurf): {describe_agent(planner)}")
             print(f"   🧐 Neuer Prüfstatiker (Prüfung & Review): {describe_agent(reviewer)}")
             continue
@@ -2881,12 +2869,12 @@ def handle_plan_approval_and_changes(
             elif c_choice == "4":
                 print(f"🚀 Starte interaktive {planner.name}-Sitzung (Architekt) in {project_path}...")
                 subprocess.run([planner.binary], cwd=str(project_path))
-                print(f"Zurück im Loop.")
+                print("Zurück im Loop.")
 
             elif c_choice == "5":
                 print(f"🚀 Starte interaktive {reviewer.name}-Sitzung (Prüfstatiker) in {project_path}...")
                 subprocess.run([reviewer.binary], cwd=str(project_path))
-                print(f"Zurück im Loop.")
+                print("Zurück im Loop.")
 
             elif c_choice == "6":
                 continue
@@ -3081,7 +3069,7 @@ def coerce_config_value(action: argparse.Action, value):
         if text in FALSE_WORDS:
             return False
         raise ValueError(f"erwartet ja/nein, bekommen {value!r}")
-    if isinstance(value, bool) or isinstance(value, (list, dict)) or value is None:
+    if isinstance(value, (bool, list, dict)) or value is None:
         raise ValueError(f"ungültiger Wert {value!r}")
     if action.type is int:
         if isinstance(value, float) or not str(value).strip().lstrip("-").isdigit():
@@ -3153,10 +3141,9 @@ def resolve_config(
 
     for dest, state_key in SESSION_CONFIG_KEYS.items():
         if session_state and dest in actions and session_state.get(state_key) not in (None, ""):
-            try:
+            # Alter Session-Stand mit inzwischen anderen Auswahlwerten: Standard greift
+            with contextlib.suppress(ValueError):
                 layers["session"][dest] = coerce_config_value(actions[dest], session_state[state_key])
-            except ValueError:
-                pass  # Alter Session-Stand mit inzwischen anderen Auswahlwerten: Standard greift
 
     # Vorlage: selbst eine Einstellung (Kommandozeile, Session, Umgebung, Profil), wirkt direkt nach der Session
     template_name = next((src[TEMPLATE_DEST] for src in (explicit, layers["session"], layers["env"], layers["project"], layers["global"])
@@ -3330,7 +3317,7 @@ def parse_budget(text: str) -> tuple[str, float]:
     try:
         value = float(number) * factor
     except ValueError:
-        raise ValueError(f"Budget {text!r} nicht lesbar (Beispiele: 500k, 1.5m, 80000, 2.50usd, $2.50)")
+        raise ValueError(f"Budget {text!r} nicht lesbar (Beispiele: 500k, 1.5m, 80000, 2.50usd, $2.50)") from None
     if value <= 0:
         raise ValueError(f"Budget {text!r} muss größer als 0 sein")
     return unit, value
@@ -3431,7 +3418,7 @@ def handle_budget_exceeded(exc: BudgetExceeded) -> None:
         append_log(session_dir, f"Abbruch: Budget: {exc}")
         log_event(session_dir, "session_end", level="error", phase=state.get("phase"), success=False,
                   abort_reason=state["abort_reason"], code="CG-1404")
-    print(f"\n🛑 Hartes Budget erreicht, Lauf beendet. Stand gesichert.")
+    print("\n🛑 Hartes Budget erreicht, Lauf beendet. Stand gesichert.")
     fail("CG-1404", str(exc), exit_code=3)
 
 
@@ -3543,7 +3530,7 @@ def estimate_hints(est: dict, strategy: str, budget: "Budget | None", has_local:
 
 def format_estimate(est: dict, hints: list[str]) -> list[str]:
     def triple(values, fmt) -> str:
-        return " · ".join(f"{name} {fmt(v)}" for name, v in zip(("günstig", "erwartet", "ungünstig"), values))
+        return " · ".join(f"{name} {fmt(v)}" for name, v in zip(("günstig", "erwartet", "ungünstig"), values, strict=True))
     lines = ["\n💰 Kostenschätzung vorab:"]
     if est["source"] == "heuristik":
         lines.append(f"   • Bau-Runden    : {triple(est['rounds'], lambda v: str(v))} (Faustregel, noch kein Verlauf)")
@@ -3631,7 +3618,7 @@ def run_setup_wizard(project_path: Path, agents: dict, input_fn=input, global_pa
             try:
                 answer = input_fn(f"{question} [{default}]: ").strip()
             except (EOFError, KeyboardInterrupt):
-                raise SystemExit("\nEinrichtung abgebrochen, nichts gespeichert.")
+                raise SystemExit("\nEinrichtung abgebrochen, nichts gespeichert.") from None
             answer = answer or default
             if not allowed or answer in allowed:
                 return answer
@@ -3971,11 +3958,11 @@ def main():
         print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
         print(f"   • CLI           : {def_planner.name} wie der Architekt (oder separat via --bauer / --builder)")
         print("   • Modell        : Wie der Architekt (oder Sparmodell via --bauer-model / lokaler Server)")
-        print(f"   • Thinking-Effort: Wie der Architekt (oder steuerbar via --bauer-effort, nur für agy/codex)")
+        print("   • Thinking-Effort: Wie der Architekt (oder steuerbar via --bauer-effort, nur für agy/codex)")
         print("   • Aufgabe       : Setzt den Plan autonom im Code um [verbraucht ~80-90% aller Tokens!]")
         print("=" * 68)
         print("\n💡 Spar-Strategien & Kombi-Möglichkeiten:")
-        print(f"  • '--strategy eco'        : Bis zu 70% Token-Ersparnis (Architekt/Prüfstatiker Effort medium,")
+        print("  • '--strategy eco'        : Bis zu 70% Token-Ersparnis (Architekt/Prüfstatiker Effort medium,")
         print(f"                             Bauleiter {def_planner.name} mit `{eco_model}`)")
         if local_cand:
             print(f"  • '--strategy local-free' : 0 € Kosten im Bau-Loop! {def_planner.name} plant, {local_cand.name} baut!")
@@ -4065,9 +4052,8 @@ def main():
         else:
             reviewer = planner
 
-        if swap_roles and not args.planner and not args.reviewer:
-            if planner.binary == "claude" and reviewer.binary == "agy":
-                planner, reviewer = reviewer, planner
+        if swap_roles and not args.planner and not args.reviewer and planner.binary == "claude" and reviewer.binary == "agy":
+            planner, reviewer = reviewer, planner
 
         # Strategy
         strat = (args.strategy or "balanced").lower()
@@ -4138,17 +4124,17 @@ def main():
         print(f"   • CLI/Endpoint  : {planner.name} (`{planner.binary}`)")
         print(f"   • Modell        : {p_model}")
         print(f"   • Effort        : {effort_label(planner.binary, p_effort) or 'Standard'}")
-        print(f"   • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)")
+        print("   • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)")
         print("\n2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):")
         print(f"   • CLI/Endpoint  : {reviewer.name} (`{reviewer.binary}`)")
         print(f"   • Modell        : {r_model}")
         print(f"   • Effort        : {effort_label(reviewer.binary, r_effort) or 'Standard'}")
-        print(f"   • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)")
+        print("   • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)")
         print("\n3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):")
         print(f"   • CLI/Endpoint  : {builder.name} (`{builder.binary}`)")
         print(f"   • Modell        : {b_model}")
         print(f"   • Effort        : {effort_label(builder.binary, b_effort) or 'Standard'}")
-        print(f"   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)")
+        print("   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)")
         if args.escalate:
             after = args.escalate_after or ESCALATE_AFTER_DEFAULT
             key, why = choose_escalation(builder, agents, args.escalate, prefer=planner.binary, write_allowed=True)
@@ -4181,23 +4167,23 @@ def main():
             print("\n🧩 Etappen-Modus: Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede (--etappen aus schaltet ab).")
         print("\n💡 Wirtschaftlichkeits- & Qualitäts-Analyse:")
         if strat == "local-free":
-            print(f"   • Spareffekt: 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3)!")
+            print("   • Spareffekt: 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3)!")
             print(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name}. Der rechenintensive Bau-Loop")
             print(f"     läuft komplett auf {builder.name} (Modell: {b_model}).")
         elif strat == "eco":
-            print(f"   • Spareffekt: Bis zu ~70% Kosten- und Tokenersparnis!")
+            print("   • Spareffekt: Bis zu ~70% Kosten- und Tokenersparnis!")
             print(f"   • Grund: Phase 1 & 2 planen mit {planner.name} und {reviewer.name} (Effort medium). Das ressourcenintensive")
             print(f"     Bauen in Phase 3 übernimmt {builder.name} mit dem Spar-Modell `{b_model}`.")
         elif strat in HYBRID_STRATEGIES:
             print(f"   • Spareffekt: Cloud nur für Plan und Abnahme ({planner.name}); Prüfung und Bau laufen lokal für 0 €.")
-            print(f"   • Grund: Kleine Etappen passen in den Kontext lokaler Modelle; jede Etappe prüft der Loop mit --proof.")
+            print("   • Grund: Kleine Etappen passen in den Kontext lokaler Modelle; jede Etappe prüft der Loop mit --proof.")
         elif strat == "best-code":
-            print(f"   • Fokus: Höchste Code-Qualität, tiefes Reasoning und maximale Fehlertoleranz.")
+            print("   • Fokus: Höchste Code-Qualität, tiefes Reasoning und maximale Fehlertoleranz.")
             print(f"   • Alle Phasen laufen mit Effort high: {planner.name}, {reviewer.name}, {builder.name}.")
             if any(a.binary != "agy" for a in (planner, reviewer, builder)):
-                print(f"   • Hinweis: Effort wird nur an agy übergeben; andere CLIs nutzen ihre eigene Voreinstellung.")
+                print("   • Hinweis: Effort wird nur an agy übergeben; andere CLIs nutzen ihre eigene Voreinstellung.")
         else:
-            print(f"   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
+            print("   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
 
         estimate = estimate_run(collect_kpi_history(project_path), strat, args.max_iterations or 10)
         for line in format_estimate(estimate, estimate_hints(estimate, strat, BUDGET, local_cand is not None, args.proof)):
@@ -4232,10 +4218,8 @@ def main():
     # Veraltete Dateien im Root von .dual-loop bereinigen (nur noch sessions/ darin)
     for legacy in [loop_dir / "PLAN.md", loop_dir / "REVIEW.md", loop_dir / "PLAN-REVIEW-LOG.md"]:
         if legacy.exists():
-            try:
+            with contextlib.suppress(Exception):
                 legacy.unlink()
-            except Exception:
-                pass
 
     # ==========================================
     # Resume / Fortsetzen prüfen
@@ -4330,9 +4314,8 @@ def main():
     else:
         reviewer_base = planner_base
 
-    if swap_roles and not args.planner and not args.reviewer:
-        if planner_base.binary == "claude" and reviewer_base.binary == "agy":
-            planner_base, reviewer_base = reviewer_base, planner_base
+    if swap_roles and not args.planner and not args.reviewer and planner_base.binary == "claude" and reviewer_base.binary == "agy":
+        planner_base, reviewer_base = reviewer_base, planner_base
 
     builder_choice = args.builder or state.get("builder_binary") or planner_base.binary
     builder_base = agents.get(builder_choice, planner_base)
@@ -4344,7 +4327,7 @@ def main():
     state.pop("abort_reason", None)
     if BUDGET and BUDGET.active:
         BUDGET.context = {"state": state, "session_dir": session_dir, "metrics": session_metrics}
-        print(f"[*] Budget            : " + ", ".join(f"{label} {format_budget(*limit)}" for _, label, limit, hard in BUDGET.limits() if hard)
+        print("[*] Budget            : " + ", ".join(f"{label} {format_budget(*limit)}" for _, label, limit, hard in BUDGET.limits() if hard)
               + (f"; Warnung ab {format_budget(*BUDGET.warn_total)}" if BUDGET.warn_total else ""))
 
     planner = create_agent(planner_base.binary, agents, role="🏗️ Architekt (Planung & Entwurf)", metrics_tracker=session_metrics)
@@ -4484,8 +4467,8 @@ def main():
         state["ask_mode"] = True
     save_session_state(session_dir, state)
 
-    print(f"\n=======================================================")
-    print(f"[*] ClaudeGravity Loop gestartet")
+    print("\n=======================================================")
+    print("[*] ClaudeGravity Loop gestartet")
     print(f"[*] Ziel-Projekt      : {project_path}")
     print(f"[*] Strategie         : {strat.upper()}")
     p_info = f"{planner.name}"
@@ -4510,13 +4493,13 @@ def main():
     print(f"[*] 🔨 Bauleiter      : {b_info}")
 
     if ask_mode:
-        print(f"[*] Modus             : ❓ Fragen-Modus aktiv (--ask)")
+        print("[*] Modus             : ❓ Fragen-Modus aktiv (--ask)")
     if auto_switch:
-        print(f"[*] Fallback          : 🔄 Auto-Switch aktiv (--auto-switch)")
+        print("[*] Fallback          : 🔄 Auto-Switch aktiv (--auto-switch)")
     if swap_roles:
-        print(f"[*] Rollen-Status     : 🔄 Rollen getauscht (--swap)")
+        print("[*] Rollen-Status     : 🔄 Rollen getauscht (--swap)")
     if use_worktree:
-        print(f"[*] Git-Workspace     : 🌿 eigener Worktree pro Session" + (" (Merge nach .done)" if merge_worktree else ""))
+        print("[*] Git-Workspace     : 🌿 eigener Worktree pro Session" + (" (Merge nach .done)" if merge_worktree else ""))
     task_secrets = redact_secrets(task)[1]
     if task_secrets:
         cloud_roles = [a.name for a in (planner, reviewer, builder) if not a.local]
@@ -4533,9 +4516,9 @@ def main():
     state["stage_mode"] = stage_pref
     STAGE_PLANNING = stages_wanted(stage_pref, expected_builder)
     if STAGE_PLANNING:
-        print(f"[*] Etappen-Modus     : 🧩 Plan in Etappen, Bauleiter setzt sie einzeln um (--etappen aus schaltet ab)")
+        print("[*] Etappen-Modus     : 🧩 Plan in Etappen, Bauleiter setzt sie einzeln um (--etappen aus schaltet ab)")
     print(f"[*] Session-ID        : {session_dir.name}")
-    print(f"=======================================================\n")
+    print("=======================================================\n")
 
     project_ctx = load_project_context(project_path, task)
 
@@ -4704,10 +4687,8 @@ def main():
 
     def reject_done(feedback: str):
         nonlocal pending_feedback
-        try:
+        with contextlib.suppress(OSError):
             (session_dir / ".done").unlink()
-        except OSError:
-            pass
         pending_feedback = feedback
         state["pending_feedback"] = feedback
         save_session_state(session_dir, state)
@@ -4918,10 +4899,8 @@ def main():
 
             # Eine vorzeitige Fertigmeldung zählt im Etappen-Modus nicht
             if check_and_clean_done_marker(session_dir, work_path):
-                try:
+                with contextlib.suppress(OSError):
                     (session_dir / ".done").unlink()
-                except OSError:
-                    pass
 
             if ok:
                 note_build_round(True, "")
