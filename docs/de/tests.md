@@ -44,6 +44,7 @@ python3 -m unittest discover -s tests
 | `test_retry.py`, `test_audit.py`, `test_errors.py`, `test_kpi.py` | Neuversuche, Audit, Fehlercodes, Kennzahlen |
 | `test_budget.py`, `test_estimate.py` | Budget-Grenzen, Kostenschätzung vorab aus früheren Sessions |
 | `test_progress.py` | Statuszeile nach jedem KI-Aufruf, Abbruchgrund bei Rundenlimit |
+| `test_benchmark.py` | Benchmark-Pack: Aufgaben anfangs rot, Musterlösung grün, Ablauf im Fake-Modus |
 | `test_events.py` | Strukturiertes Ereignis-Log `events.jsonl` |
 | `test_escalation.py` | Eskalation vom lokalen Bauleiter zur Cloud: Zielwahl, Schreibrechte, Ende-zu-Ende |
 
@@ -88,3 +89,23 @@ Einen echten Durchlauf ohne Risiko machst du am besten im Demo-Projekt:
 ```bash
 claudegravity "Ergänze eine Begrüßungsfunktion mit Test" -p projects/demo -m 3
 ```
+
+## Benchmark-Pack
+
+`tools/benchmark/benchmark.py` lässt feste Aufgaben mit mehreren Strategien laufen und vergleicht die Kennzahlen. So siehst du auf deinem Rechner und mit deinen Abos, welche Belegung wie oft durchkommt und was sie kostet.
+
+```bash
+# echte Modelle: jede Aufgabe mit zwei Strategien (alles nach -- geht an claudegravity)
+python3 tools/benchmark/benchmark.py --strategies balanced,hybrid --out bench -- --yolo
+
+# nur eine Aufgabe, eigene Rollen
+python3 tools/benchmark/benchmark.py --tasks median-bug --strategies eco -- --bauer codex --yolo
+
+# ohne Modelle: prüft nur den Ablauf (ein Fake-Server liefert die Musterlösung)
+python3 tools/benchmark/benchmark.py --fake
+```
+
+* **Aufgaben** liegen unter `tools/benchmark/tasks/<name>/`: `task.txt`, `project/` (Startstand mit Tests, die anfangs rot sind) und `solution/` (nur für `--fake`). Dabei sind `fizzbuzz` (neue Funktion), `median-bug` (Bugfix) und `slugify` (Feature mit Umlauten). Eine eigene Aufgabe ist ein weiterer Ordner nach diesem Muster.
+* **Ablauf:** Jeder Lauf bekommt eine frische Kopie von `project/` als Git-Repository in einem Wegwerf-Ordner und startet mit `--plan-auto`, `--log-format json` und `--proof "python -m unittest discover -s tests"`. CLI-Bauleiter brauchen Schreibrechte (`-- --yolo`); dein eigenes Projekt bleibt unberührt.
+* **Ergebnis:** Tabelle je Aufgabe und Strategie (Ergebnis, Bau-Runden, Tokens, gemeldete Kosten, Dauer) plus Summe je Strategie. Mit `--out` zusätzlich `results.json`, `results.md` und die Ausgabe jedes Laufs. Exit-Code 0 nur, wenn alle Läufe erfolgreich sind.
+* `--timeout` begrenzt jeden Lauf (Standard 1800 s). Kosten erscheinen nur, wenn Anbieter sie melden.

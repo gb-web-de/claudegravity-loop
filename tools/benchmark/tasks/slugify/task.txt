@@ -1,0 +1,1 @@
+Feature: Implementiere in src/slug.py die Funktion slugify(text) für URL-Teile: Kleinbuchstaben, Umlaute als ae/oe/ue, ß als ss, alles außer a-z und 0-9 wird zu einem einzelnen Bindestrich, keine Bindestriche am Anfang oder Ende. Die Tests in tests/ müssen grün sein.

@@ -44,6 +44,7 @@ python3 -m unittest discover -s tests
 | `test_retry.py`, `test_audit.py`, `test_errors.py`, `test_kpi.py` | Retries, audit, error codes, key figures |
 | `test_budget.py`, `test_estimate.py` | Budget limits, cost estimate from earlier sessions |
 | `test_progress.py` | Status line after every AI call, abort reason at the round limit |
+| `test_benchmark.py` | Benchmark pack: tasks red at first, reference solution green, flow in fake mode |
 | `test_events.py` | Structured event log `events.jsonl` |
 | `test_escalation.py` | Escalation from a local Builder to the cloud: target choice, write access, end to end |
 
@@ -88,3 +89,23 @@ A real run without risk is best done in the demo project:
 ```bash
 claudegravity "Add a greeting function with a test" -p projects/demo -m 3
 ```
+
+## Benchmark pack
+
+`tools/benchmark/benchmark.py` runs fixed tasks with several strategies and compares the key figures. This shows, on your machine and with your subscriptions, which setup succeeds how often and what it costs.
+
+```bash
+# real models: every task with two strategies (everything after -- goes to claudegravity)
+python3 tools/benchmark/benchmark.py --strategies balanced,hybrid --out bench -- --yolo
+
+# one task only, your own roles
+python3 tools/benchmark/benchmark.py --tasks median-bug --strategies eco -- --bauer codex --yolo
+
+# without models: only checks the flow (a fake server returns the reference solution)
+python3 tools/benchmark/benchmark.py --fake
+```
+
+* **Tasks** live under `tools/benchmark/tasks/<name>/`: `task.txt`, `project/` (starting state with tests that are red at first) and `solution/` (only for `--fake`). Included are `fizzbuzz` (new function), `median-bug` (bug fix) and `slugify` (feature with umlauts). A task of your own is another folder following this pattern. The task texts are German, like the loop's prompts.
+* **Flow:** Every run gets a fresh copy of `project/` as a Git repository in a throwaway folder and starts with `--plan-auto`, `--log-format json` and `--proof "python -m unittest discover -s tests"`. CLI Builders need write access (`-- --yolo`); your own project stays untouched.
+* **Result:** A table per task and strategy (result, build rounds, tokens, reported costs, duration) plus a total per strategy. With `--out` also `results.json`, `results.md` and the output of every run. Exit code 0 only if all runs succeed.
+* `--timeout` limits every run (default 1800 s). Costs only appear if providers report them.

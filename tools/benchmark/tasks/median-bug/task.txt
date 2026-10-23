@@ -1,0 +1,1 @@
+Bugfix: median() in src/stats.py liefert bei einer geraden Anzahl Werte und bei unsortierter Eingabe falsche Ergebnisse. Behebe den Fehler, ohne die Signatur zu ändern. Die Tests in tests/ müssen grün sein.

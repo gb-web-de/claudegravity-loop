@@ -1,0 +1,1 @@
+Implementiere in src/fizz.py die Funktion fizzbuzz(n), die eine Liste der Zahlen 1 bis n liefert, wobei Vielfache von 3 durch "Fizz", von 5 durch "Buzz" und von beiden durch "FizzBuzz" ersetzt werden. Die Tests in tests/ müssen grün sein.

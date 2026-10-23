@@ -16,6 +16,7 @@ Er basiert auf dem Prinzip des [claudex-loop](https://github.com/chaseai-yt/clau
 - `claudegravity.bat`, `claudegravity.ps1`, `claudegravity-mcp.bat`: Windows-Launcher.
 - `skills/claudegravity/SKILL.md`: Skill, mit dem Claude Code oder Codex den Loop mit getrennten Anbietern startet.
 - `docs/de/` und `docs/en/`: Doku auf Deutsch und Englisch mit gleichen Dateinamen, gegenseitig verlinkt. Änderungen immer in beiden Sprachen nachziehen.
+- `tools/benchmark/benchmark.py`: Benchmark-Pack (Aufgaben unter `tools/benchmark/tasks/`), vergleicht Strategien anhand der Kennzahlen; `--fake` ohne Modelle.
 - `tests/`: `unittest`-Suite; läuft in GitHub Actions auf Linux, macOS und Windows (`.github/workflows/tests.yml`).
 - `.dual-loop/`: Git-ignorierter Arbeitsordner. Enthält den Unterordner `sessions/` und optional `profile.json` (alle Pläne, Reviews und Logs sind aufgabenspezifisch darin isoliert).
 - `projects/`: Ordner für gespiegelte Projekte (wie in der Claude UI).
