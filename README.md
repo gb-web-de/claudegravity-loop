@@ -70,7 +70,7 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 | [CLI-Referenz](docs/de/cli-referenz.md) | Alle Flags |
 | [MCP-Server](docs/de/mcp-server.md) | Registrierung, Tools, Optimizer |
 | [Sessions & Dateien](docs/de/sessions-und-dateien.md) | `.dual-loop/`, `state.json`, `.done`, Projektkontext |
-| [Fehlerbehebung](docs/de/fehlerbehebung.md) | Häufige Probleme, bekannte Einschränkungen |
+| [Fehlerbehebung](docs/de/fehlerbehebung.md) | Entscheidungsbaum, Fehlercodes CG-xxxx, häufige Probleme, bekannte Einschränkungen |
 
 ---
 

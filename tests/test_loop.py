@@ -211,7 +211,7 @@ class CliSmokeTest(unittest.TestCase):
                 capture_output=True, text=True, encoding="utf-8", timeout=60, env=env,
             )
         self.assertEqual(res.returncode, 1)
-        self.assertIn("Keine AI-CLI", res.stderr)
+        self.assertIn("[CG-1001]", res.stderr)
         self.assertNotIn("Traceback", res.stderr)
 
 

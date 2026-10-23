@@ -1636,7 +1636,8 @@ def record_audit_event(session_dir: Path | None, kind: str, detail: str, metrics
     """Hält Sicherheitsereignisse fest: LOG.md, audit-events.jsonl im Session-Ordner und Zähler im .done-Audit."""
     detail = mask_secrets(detail)
     label = AUDIT_EVENT_LABELS.get(kind, kind)
-    print(f"🛑 Audit: {label}: {detail}")
+    code = AUDIT_EVENT_CODES.get(kind)
+    print(f"🛑 Audit{f' [{code}]' if code else ''}: {label}: {detail}" + (f"\n   👉 {ERROR_CODES[code][1]}\n   📖 {error_doc_link(code)}" if code else ""))
     if metrics is not None:
         metrics.note_audit(kind)
     if session_dir is None:
@@ -1752,9 +1753,9 @@ def handle_rate_limit(
 
     print("\n" + "=" * 65)
     if err.transient:
-        print(f"🚨 STÖRUNG: {describe_agent(current_agent)} antwortet auch nach automatischen Neuversuchen nicht!")
+        print(f"🚨 [CG-1302] STÖRUNG: {describe_agent(current_agent)} antwortet auch nach automatischen Neuversuchen nicht!")
     else:
-        print(f"🚨 AI-LIMIT ERREICHT: {describe_agent(current_agent)} meldet Sitzungs- / Ratenlimit!")
+        print(f"🚨 [CG-1301] AI-LIMIT ERREICHT: {describe_agent(current_agent)} meldet Sitzungs- / Ratenlimit!")
     print(f"   Grund: {err.message}")
     if err.reset_time:
         print(f"   Reset erwartet: {err.reset_time}")
@@ -2723,6 +2724,70 @@ def handle_plan_approval_and_changes(
 
 
 # ==========================================
+# Fehlercodes (CG-1xxx) mit Lösungshinweis und Doku-Verweis
+# ==========================================
+ERROR_DOC = "docs/de/fehlerbehebung.md"
+ERROR_CODES = {
+    "CG-1001": ("Kein KI-Backend gefunden", "Eine KI-CLI installieren und anmelden (z. B. `claude`, `codex`, `agy`), Ollama starten oder --endpoint <url> angeben. Prüfen mit `claudegravity --info`."),
+    "CG-1002": ("Gewählte CLI ist nicht verfügbar", "Name mit `claudegravity --info` vergleichen (z. B. `ollama` ist der Ollama-Server) und die CLI installieren oder anmelden."),
+    "CG-1003": ("Projektordner existiert nicht", "Pfad bei -p prüfen oder in den Projektordner wechseln."),
+    "CG-1004": ("Keine Sitzung zum Fortsetzen", "Mit -p das richtige Projekt angeben oder eine neue Aufgabe starten."),
+    "CG-1101": ("Unbekannte Vorlage", "Eingebaute Vorlagen: bugfix, feature, refactor. Eigene Vorlagen stehen im Profil unter `templates`."),
+    "CG-1102": ("Vorlage braucht einen Prüfbefehl", "--proof \"<testbefehl>\" angeben oder `proof` ins Profil schreiben (`claudegravity init` hilft)."),
+    "CG-1201": ("Verbindung zum Endpunkt fehlgeschlagen", "Läuft der Server (Ollama: `ollama serve`)? URL und Port mit `curl <url>/models` prüfen, VPN/Firewall prüfen."),
+    "CG-1202": ("Zeitüberschreitung beim Endpunkt", "Mehr Zeit mit --timeout <sekunden> bzw. CLAUDEGRAVITY_TIMEOUT, ein kleineres Modell oder kleinere Etappen (--etappen an)."),
+    "CG-1203": ("Anmeldung abgelehnt (HTTP 401/403)", "CLAUDEGRAVITY_API_KEY setzen oder --api-key angeben; bei CLIs neu anmelden (z. B. `claude login`, `codex login`)."),
+    "CG-1204": ("Modell oder Adresse nicht gefunden (HTTP 404)", "Modellnamen mit `ollama list` bzw. `curl <url>/models` prüfen; die URL endet meist auf /v1."),
+    "CG-1205": ("Leere oder unlesbare Antwort", "Anderes Modell wählen; sehr kleine Modelle halten das Antwortformat oft nicht ein."),
+    "CG-1206": ("KI-CLI meldet einen Fehler", "Die CLI einmal von Hand im Terminal starten und ihre Meldung lesen; oft fehlt die Anmeldung oder ein Update."),
+    "CG-1301": ("Ratenlimit erreicht", "Wechseln, warten oder Stand sichern; mit --auto-switch wechselt der Loop selbst. Fortsetzen mit `claudegravity -c`."),
+    "CG-1302": ("Anbieter antwortet auch nach Neuversuchen nicht", "Später mit `claudegravity -c` fortsetzen oder den Anbieter wechseln; Zahl der Neuversuche mit --retries."),
+    "CG-1401": ("Rundenlimit ohne Fertigmeldung", "Mit `claudegravity -c -m 20` weitere Runden anhängen; ein --proof hilft dem Bauleiter, das Ziel zu erkennen."),
+    "CG-1402": ("Abnahme-Limit erreicht, Befunde offen", "Befunde in INSPECTION_round*.md lesen und mit `claudegravity -c` nacharbeiten lassen; mehr Runden mit --max-inspections."),
+    "CG-1403": ("Etappe nach drei Versuchen nicht grün", "Ausgabe des Prüfbefehls in LOG.md lesen, Plan oder Etappe anpassen und mit `claudegravity -c` weitermachen."),
+    "CG-1501": ("Schreibversuch blockiert", "Ein Modell wollte außerhalb des Projekts oder in eine Geheimnis-Datei schreiben. Plan und Aufgabe prüfen."),
+    "CG-1502": ("Lesende Rolle hat Dateien geändert", "Änderungen mit `git status` prüfen und bei Bedarf zurücknehmen; für diese CLI nur als Bauleiter einsetzen."),
+    "CG-1503": ("Mögliche Zugangsdaten in einer Modellantwort", "Antwort prüfen; Zugangsdaten nur über Umgebungsvariablen nutzen und kompromittierte Schlüssel erneuern."),
+    "CG-1999": ("Unerwarteter Fehler", "Bitte mit der vollständigen Ausgabe als Issue melden."),
+}
+ERROR_PATTERNS = [
+    ("CG-1002", r"Agent-CLI '.*' ist nicht verfügbar"),
+    ("CG-1203", r"HTTP 40[13]\b|unauthori[sz]ed|not logged in|nicht angemeldet|please (?:log ?in|login)|authentication"),
+    ("CG-1204", r"HTTP 404\b|model .*not found|Modell .*nicht gefunden"),
+    ("CG-1202", r"Zeitüberschreitung|timed? ?out"),
+    ("CG-1201", r"Verbindungsfehler|connection (?:refused|reset)|Name or service not known|getaddrinfo"),
+    ("CG-1205", r"Leere Antwort|JSONDecodeError|Expecting value"),
+    ("CG-1206", r"Fehler \(Code \d+\)|(?:Claude|Antigravity|Codex) Fehler"),
+]
+AUDIT_EVENT_CODES = {"blocked_write": "CG-1501", "readonly_changed": "CG-1502", "secret_in_output": "CG-1503"}
+
+
+def classify_error(text: str) -> str:
+    for code, pattern in ERROR_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return code
+    return "CG-1999"
+
+
+def error_doc_link(code: str) -> str:
+    return f"{ERROR_DOC}#{code.lower()}"
+
+
+def format_error(code: str, detail: str | None = None) -> str:
+    title, fix = ERROR_CODES.get(code, ERROR_CODES["CG-1999"])
+    lines = [f"❌ [{code}] {title}" + (f": {mask_secrets(detail.strip())}" if detail and detail.strip() else "")]
+    lines.append(f"   👉 {fix}")
+    lines.append(f"   📖 {error_doc_link(code)}")
+    return "\n".join(lines)
+
+
+def fail(code: str, detail: str | None = None, exit_code: int = 1):
+    """Beendet mit Fehlercode, Lösungshinweis und Doku-Verweis."""
+    print(format_error(code, detail), file=sys.stderr)
+    sys.exit(exit_code)
+
+
+# ==========================================
 # Konfiguration in Schichten: CLI > Umgebung > Profil > Standard
 # ==========================================
 CONFIG_ENV_PREFIX = "CLAUDEGRAVITY_"
@@ -3295,13 +3360,13 @@ def main():
         print(f"⚠️  Konfigurationskonflikt: {conflict}")
     template = config_report.get("template")
     if args.template and not template:
-        sys.exit(1)  # unbekannte Vorlage, Warnung steht oben
+        fail("CG-1101", str(args.template))
     if template and not args.init and not args.check:
         print(f"🧩 Vorlage `{template['name']}` ({template['origin']})")
         if "proof" in template["requires"] and not args.proof and not args.resume:
             guessed = suggest_proof_command(Path(args.project).resolve())
             if not guessed:
-                sys.exit(f"Fehler: Die Vorlage `{template['name']}` braucht einen Prüfbefehl. Bitte --proof \"<testbefehl>\" angeben.")
+                fail("CG-1102", f"Vorlage `{template['name']}`, kein Testbefehl im Projekt erkannt")
             args.proof = guessed
             config_report["sources"]["proof"] = "template"
             print(f"   Prüfbefehl aus dem Projekt geraten: {guessed} (anderer mit --proof)")
@@ -3415,14 +3480,10 @@ def main():
 
     project_path = Path(args.project).resolve()
     if not project_path.exists():
-        sys.exit(f"Fehler: Projektordner '{project_path}' existiert nicht.")
+        fail("CG-1003", str(project_path))
 
     if not agents:
-        sys.exit(
-            "Fehler: Keine AI-CLI und kein Endpunkt gefunden.\n"
-            "Installiere z.B. `claude` oder `agy`, oder gib einen OpenAI-kompatiblen Server an: "
-            "--endpoint http://localhost:11434/v1 (Details: claudegravity --info)"
-        )
+        fail("CG-1001")
 
     guided_dry_run = False
     no_profile = not any(config_report["loaded"].values())
@@ -3634,7 +3695,7 @@ def main():
 
     if args.resume:
         if not latest_sess:
-            sys.exit("Fehler: Keine frühere Sitzung zum Fortsetzen gefunden.")
+            fail("CG-1004", str(project_path))
         session_dir = latest_sess
         state = load_session_state(session_dir)
         task = state.get("task", args.task)
@@ -4427,17 +4488,21 @@ def main():
     if state.get("phase") == "stage_open":
         if in_worktree:
             print(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
+        print(format_error("CG-1403"))
         print(format_metrics_report(session_metrics, state))
     elif state.get("phase") == "inspection_open":
         if in_worktree:
             print(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")
-        print("💡 Mit 'claudegravity -c' geht es mit den offenen Befunden weiter.")
+        print(format_error("CG-1402"))
         print(format_metrics_report(session_metrics, state))
     elif state.get("phase") != "completed":
         if in_worktree:
             print(f"🌿 Git-Workspace bleibt für die Fortsetzung erhalten: {work_path}")
-        print(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
-        print(f"💡 Du kannst jederzeit mit 'claudegravity -c' weitere Runden anhängen.")
+        if STOP_REQUESTED:
+            print("\n[+] Abgebrochen. Stand gesichert, weiter mit 'claudegravity -c'.")
+        else:
+            print(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
+            print(format_error("CG-1401", f"{max_iters} Runden"))
         # Kein .done anlegen: Das würde eine unfertige Aufgabe beim Fortsetzen als fertig melden.
         (session_dir / "AUDIT.md").write_text(format_metrics_report(session_metrics, state), encoding="utf-8")
         print(format_metrics_report(session_metrics, state))
@@ -4445,5 +4510,15 @@ def main():
     print("\n[*] ClaudeGravity Loop beendet.")
 
 
+def run_cli():
+    """Einstieg: unerwartete Fehler mit Fehlercode, Lösungshinweis und Doku-Verweis statt Traceback."""
+    try:
+        main()
+    except (RuntimeError, ValueError, OSError) as exc:
+        if os.environ.get("CLAUDEGRAVITY_DEBUG"):
+            raise
+        fail(classify_error(str(exc)), str(exc), exit_code=2)
+
+
 if __name__ == "__main__":
-    main()
+    run_cli()
