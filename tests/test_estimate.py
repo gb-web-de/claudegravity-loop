@@ -120,10 +120,12 @@ class DryRunTest(unittest.TestCase):
             write_session(project, "20261020_a", "balanced", 2, 20_000, usd=0.4)
             write_session(project, "20261021_b", "balanced", 4, 60_000, usd=1.0)
             env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDEGRAVITY_")}
-            env["CLAUDEGRAVITY_CONFIG_DIR"] = str(Path(tmp) / "cfg")
-            out = subprocess.run([sys.executable, str(ROOT / "loop.py"), "Aufgabe", "-p", str(project),
+            env.update(CLAUDEGRAVITY_CONFIG_DIR=str(Path(tmp) / "cfg"), PYTHONIOENCODING="utf-8")
+            res = subprocess.run([sys.executable, str(ROOT / "loop.py"), "Aufgabe", "-p", str(project),
                                   "--dry-run", "--strategy", "balanced", "--endpoint", "http://127.0.0.1:9/v1"],
-                                 capture_output=True, text=True, env=env, timeout=60).stdout
+                                 capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
+            out = res.stdout
+            self.assertEqual(res.returncode, 0, res.stderr[-2000:])
             self.assertIn("Kostenschätzung vorab", out)
             self.assertIn("2 frühere Session(s) mit gleicher Strategie", out)
             self.assertIn("Kosten        : günstig 0.40 USD · erwartet 0.70 USD · ungünstig 1.00 USD", out)

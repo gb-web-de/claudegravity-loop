@@ -27,8 +27,11 @@ import run_smoke  # noqa: E402
 def normalize(text: str, *paths: Path) -> str:
     """Entfernt, was sich von Lauf zu Lauf ändert: Pfade, Zeiten, Ports, Python-Pfad."""
     for p in paths:
-        for variant in {str(p), p.as_posix(), str(p.resolve()), p.resolve().as_posix()}:
+        # Längste zuerst: unter macOS ist /var/... ein Symlink auf /private/var/...
+        for variant in sorted({str(p), p.as_posix(), str(p.resolve()), p.resolve().as_posix()}, key=len, reverse=True):
             text = text.replace(variant, "<TMP>")
+    # Windows: Pfade unterhalb von <TMP> mit / schreiben
+    text = re.sub(r"<TMP>[^\s'\"]*", lambda m: m.group(0).replace("\\", "/"), text)
     text = text.replace(sys.executable, "<PYTHON>")
     text = re.sub(r"127\.0\.0\.1:\d+", "<SERVER>", text)
     text = re.sub(r"\d{8}_\d{6}", "<ZEIT>", text)
