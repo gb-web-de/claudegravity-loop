@@ -203,7 +203,8 @@ class CliSmokeTest(unittest.TestCase):
     def test_exits_cleanly_without_any_agent(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = {k: v for k, v in os.environ.items()
-                   if k not in ("CLAUDEGRAVITY_ENDPOINT", "OPENAI_BASE_URL", "AI_ENDPOINT")}
+                   if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT")}
+            env["CLAUDEGRAVITY_CONFIG_DIR"] = os.devnull  # kein globales Profil des Nutzers
             env["PATH"] = tmp
             res = subprocess.run(
                 [sys.executable, str(ROOT / "loop.py"), "--dry-run", "x", "-p", tmp],

@@ -881,6 +881,7 @@ SENSITIVE_PATHS = [
     re.compile(r"(?:^|/)\.(?:netrc|git-credentials|pgpass|npmrc|pypirc)$"),
     re.compile(r"(?:^|/)(?:credentials|secrets?|service-account[\w-]*|client_secret[\w-]*)\.(?:json|ya?ml|toml)$"),
     re.compile(r"(?:^|/)auth\.json$"),
+    re.compile(r"(?:^|/)\.dual-loop/profile\.json$"),
 ]
 
 
@@ -2424,7 +2425,267 @@ def handle_plan_approval_and_changes(
     return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
 
-def main():
+# ==========================================
+# Konfiguration in Schichten: CLI > Umgebung > Profil > Standard
+# ==========================================
+CONFIG_ENV_PREFIX = "CLAUDEGRAVITY_"
+PROFILE_FILE = "profile.json"
+# Nicht über Umgebung oder Profil setzbar: Aufgabe/Ziel, einmalige Aktionen und Geheimnisse
+CONFIG_EXCLUDED = {"help", "task", "project", "resume", "check", "dry_run", "print_effective_config", "api_key", "no_shield"}
+# Das Projekt-Profil liegt im Projektordner, in den ein Bauleiter schreiben kann: keine Rechte daraus
+PROJECT_PROFILE_FORBIDDEN = {"yolo"}
+# Standardwerte, die erst später im Lauf gesetzt werden (für --print-effective-config)
+CONFIG_DISPLAY_DEFAULTS = {"strategy": "balanced", "max_iterations": "10 (Etappen: 2 je Etappe + 2)"}
+# Beim Fortsetzen gilt der gespeicherte Stand der Session vor Umgebung und Profil
+SESSION_CONFIG_KEYS = {
+    "strategy": "strategy",
+    "planner": "planner_binary",
+    "reviewer": "reviewer_binary",
+    "builder": "builder_binary",
+    "planner_model": "planner_model",
+    "reviewer_model": "reviewer_model",
+    "builder_model": "builder_model",
+    "planner_effort": "planner_effort",
+    "reviewer_effort": "reviewer_effort",
+    "builder_effort": "builder_effort",
+    "inspector": "inspector_binary",
+    "inspector_model": "inspector_model",
+    "inspector_effort": "inspector_effort",
+    "proof": "proof",
+    "etappen": "stage_mode",
+    "approve_plan": "approve_plan",
+    "auto_switch": "auto_switch",
+    "merge": "merge_worktree",
+    "ask": "ask_mode",
+    "swap": "swap_roles",
+    "yolo": "yolo_enabled",
+    "inspect": "inspect",
+}
+CONFIG_SOURCE_LABELS = {
+    "cli": "Kommandozeile",
+    "session": "Session (Fortsetzen)",
+    "env": "Umgebung",
+    "project": "Projekt-Profil",
+    "global": "Globales Profil",
+    "default": "Standard",
+}
+TRUE_WORDS = {"1", "true", "yes", "ja", "an", "on", "y", "j"}
+FALSE_WORDS = {"0", "false", "no", "nein", "aus", "off", "n", ""}
+
+
+def global_profile_path(env: dict | None = None) -> Path:
+    """~/.config/claudegravity/profile.json (XDG_CONFIG_HOME bzw. %APPDATA% unter Windows)."""
+    env = os.environ if env is None else env
+    if env.get("CLAUDEGRAVITY_CONFIG_DIR"):
+        base = Path(env["CLAUDEGRAVITY_CONFIG_DIR"]).expanduser()
+    elif os.name == "nt" and env.get("APPDATA"):
+        base = Path(env["APPDATA"]) / "claudegravity"
+    else:
+        base = Path(env.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "claudegravity"
+    return base / PROFILE_FILE
+
+
+def project_profile_path(project_path: Path) -> Path:
+    return project_path / ".dual-loop" / PROFILE_FILE
+
+
+def config_actions(parser: argparse.ArgumentParser) -> dict[str, argparse.Action]:
+    return {a.dest: a for a in parser._actions if a.dest not in CONFIG_EXCLUDED and a.option_strings}
+
+
+def config_key_aliases(parser: argparse.ArgumentParser) -> dict[str, str]:
+    """Profil-Schlüssel -> dest. Erlaubt dest (`builder_model`) und Flag-Namen (`bauer-model`)."""
+    aliases: dict[str, str] = {}
+    for dest, action in config_actions(parser).items():
+        aliases[dest] = dest
+        if isinstance(action, argparse._StoreFalseAction):
+            continue  # `no_worktree: true` wäre doppelt verneint; nur `worktree: false` zulassen
+        for opt in action.option_strings:
+            if opt.startswith("--"):
+                aliases[opt[2:].replace("-", "_")] = dest
+    return aliases
+
+
+def coerce_config_value(action: argparse.Action, value):
+    """Prüft einen Wert aus Umgebung, Profil oder Session gegen Typ und Auswahl des Flags."""
+    if isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        if text in TRUE_WORDS:
+            return True
+        if text in FALSE_WORDS:
+            return False
+        raise ValueError(f"erwartet ja/nein, bekommen {value!r}")
+    if isinstance(value, bool) or isinstance(value, (list, dict)) or value is None:
+        raise ValueError(f"ungültiger Wert {value!r}")
+    if action.type is int:
+        if isinstance(value, float) or not str(value).strip().lstrip("-").isdigit():
+            raise ValueError(f"erwartet eine ganze Zahl, bekommen {value!r}")
+        value = int(str(value).strip())
+    else:
+        value = str(value)
+    if action.choices and value not in action.choices:
+        raise ValueError(f"{value!r} ist keine erlaubte Auswahl ({', '.join(map(str, action.choices))})")
+    return value
+
+
+def load_profile(path: Path) -> tuple[dict, list[str]]:
+    """Liest ein Profil (flaches JSON-Objekt). Fehlt die Datei, ist das kein Fehler."""
+    if not path.is_file():
+        return {}, []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {}, [f"⚠️ Profil {path} nicht lesbar ({exc}); wird ignoriert."]
+    if not isinstance(data, dict):
+        return {}, [f"⚠️ Profil {path} muss ein JSON-Objekt sein; wird ignoriert."]
+    return data, []
+
+
+def resolve_config(
+    parser: argparse.ArgumentParser,
+    explicit: dict,
+    env: dict,
+    project_profile: dict,
+    global_profile: dict,
+    session_state: dict | None = None,
+) -> tuple[dict, dict, list[str], list[str]]:
+    """Ermittelt je Einstellung Wert und Quelle.
+
+    Reihenfolge: Kommandozeile > Session (nur beim Fortsetzen) > Umgebung > Projekt-Profil
+    > globales Profil > Standard. Liefert (Werte, Quellen, Konflikte, Warnungen).
+    """
+    actions = config_actions(parser)
+    aliases = config_key_aliases(parser)
+    warnings: list[str] = []
+    layers: dict[str, dict] = {"session": {}, "env": {}, "project": {}, "global": {}}
+
+    for layer, profile in (("project", project_profile), ("global", global_profile)):
+        for raw_key, raw_value in profile.items():
+            if raw_key.startswith(("_", "$")):
+                continue  # Kommentare und Metadaten
+            key = raw_key.strip().lower().replace("-", "_")
+            if key in ("api_key", "apikey"):
+                warnings.append(f"⚠️ {CONFIG_SOURCE_LABELS[layer]}: `{raw_key}` wird ignoriert. Schlüssel gehören in CLAUDEGRAVITY_API_KEY, nie in eine Datei.")
+                continue
+            dest = aliases.get(key)
+            if not dest:
+                warnings.append(f"⚠️ {CONFIG_SOURCE_LABELS[layer]}: unbekannte Einstellung `{raw_key}` wird ignoriert.")
+                continue
+            if layer == "project" and dest in PROJECT_PROFILE_FORBIDDEN:
+                warnings.append(f"⚠️ Projekt-Profil: `{raw_key}` wird ignoriert. Schreibrechte nur per Kommandozeile, Umgebung oder globalem Profil.")
+                continue
+            try:
+                layers[layer][dest] = coerce_config_value(actions[dest], raw_value)
+            except ValueError as exc:
+                warnings.append(f"⚠️ {CONFIG_SOURCE_LABELS[layer]}: `{raw_key}` {exc}; wird ignoriert.")
+
+    for dest, action in actions.items():
+        name = CONFIG_ENV_PREFIX + dest.upper()
+        if name in env:
+            try:
+                layers["env"][dest] = coerce_config_value(action, env[name])
+            except ValueError as exc:
+                warnings.append(f"⚠️ Umgebung: {name} {exc}; wird ignoriert.")
+
+    for dest, state_key in SESSION_CONFIG_KEYS.items():
+        if session_state and dest in actions and session_state.get(state_key) not in (None, ""):
+            try:
+                layers["session"][dest] = coerce_config_value(actions[dest], session_state[state_key])
+            except ValueError:
+                pass  # Alter Session-Stand mit inzwischen anderen Auswahlwerten: Standard greift
+
+    values: dict = {}
+    sources: dict = {}
+    conflicts: list[str] = []
+    for dest, action in actions.items():
+        candidates = []
+        if dest in explicit:
+            candidates.append(("cli", explicit[dest]))
+        for layer in ("session", "env", "project", "global"):
+            if dest in layers[layer]:
+                candidates.append((layer, layers[layer][dest]))
+        if candidates:
+            source, value = candidates[0]
+            losers = [(s, v) for s, v in candidates[1:] if v != value]
+            if losers:
+                overridden = ", ".join(f"{CONFIG_SOURCE_LABELS[s]} {v!r}" for s, v in losers)
+                conflicts.append(f"{dest}: {CONFIG_SOURCE_LABELS[source]} {value!r} überschreibt {overridden}")
+        else:
+            source, value = "default", action.default
+        values[dest] = value
+        sources[dest] = source
+    return values, sources, conflicts, warnings
+
+
+def explicit_cli_values(parser: argparse.ArgumentParser, argv: list[str]) -> dict:
+    """Nur die Flags, die wirklich auf der Kommandozeile stehen (ohne Standardwerte)."""
+    saved = {a.dest: a.default for a in parser._actions}
+    try:
+        for action in parser._actions:
+            action.default = argparse.SUPPRESS
+        namespace, _ = parser.parse_known_args(argv)
+    finally:
+        for action in parser._actions:
+            action.default = saved[action.dest]
+    return vars(namespace)
+
+
+def apply_config_layers(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    argv: list[str],
+    env: dict | None = None,
+    global_path: Path | None = None,
+) -> dict:
+    """Setzt Werte aus Umgebung, Profilen und (beim Fortsetzen) der Session in `args`."""
+    env = dict(os.environ) if env is None else env
+    project_path = Path(args.project).expanduser().resolve()
+    paths = {
+        "global": global_path or global_profile_path(env),
+        "project": project_profile_path(project_path),
+    }
+    global_profile, warnings = load_profile(paths["global"])
+    project_profile, more = load_profile(paths["project"])
+    warnings += more
+    session_state = None
+    if getattr(args, "resume", False):
+        latest = find_latest_session(project_path / ".dual-loop")
+        session_state = load_session_state(latest) if latest else None
+    explicit = explicit_cli_values(parser, argv)
+    values, sources, conflicts, more = resolve_config(parser, explicit, env, project_profile, global_profile, session_state)
+    warnings += more
+    for dest, value in values.items():
+        setattr(args, dest, value)
+    return {"values": values, "sources": sources, "conflicts": conflicts, "warnings": warnings, "paths": paths,
+            "loaded": {k: bool(v) for k, v in (("global", global_profile), ("project", project_profile))}}
+
+
+def format_effective_config(report: dict) -> str:
+    lines = ["⚙️  Wirksame Konfiguration (Kommandozeile > Session > Umgebung > Projekt-Profil > globales Profil > Standard)", ""]
+    for layer in ("project", "global"):
+        state = "geladen" if report["loaded"][layer] else "nicht vorhanden"
+        lines.append(f"  {CONFIG_SOURCE_LABELS[layer]:<16}: {report['paths'][layer]} ({state})")
+    lines.append(f"  {'Umgebung':<16}: {CONFIG_ENV_PREFIX}<EINSTELLUNG>, z. B. {CONFIG_ENV_PREFIX}STRATEGY=hybrid")
+    lines.append("")
+    conflict_keys = {c.split(":", 1)[0] for c in report["conflicts"]}
+    width = max(len(k) for k in report["values"])
+    for dest in sorted(report["values"]):
+        value = report["values"][dest]
+        if value is None and report["sources"][dest] == "default" and dest in CONFIG_DISPLAY_DEFAULTS:
+            value = CONFIG_DISPLAY_DEFAULTS[dest]
+        shown = "–" if value is None else (json.dumps(value, ensure_ascii=False) if isinstance(value, str) else str(value).lower())
+        mark = "  ⚠️ Konflikt" if dest in conflict_keys else ""
+        lines.append(f"  {dest:<{width}} = {shown:<28} [{CONFIG_SOURCE_LABELS[report['sources'][dest]]}]{mark}")
+    if report["conflicts"]:
+        lines += ["", "Konflikte:"] + [f"  ⚠️ {c}" for c in report["conflicts"]]
+    if report["warnings"]:
+        lines += [""] + [f"  {w}" for w in report["warnings"]]
+    return "\n".join(lines)
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop")
     parser.add_argument("task", nargs="?", default="", help="Die Aufgabe für den Loop")
     parser.add_argument("-p", "--project", default=".", help="Pfad zum Ziel-Projekt (absolut oder relativ, Standard: .)")
@@ -2449,7 +2710,7 @@ def main():
     parser.add_argument("--architekt-endpoint", default=None, help="Spezifischer Endpunkt für den Architekten")
     parser.add_argument("--pruefstatiker-endpoint", default=None, help="Spezifischer Endpunkt für den Prüfstatiker")
     parser.add_argument("--bauer-endpoint", default=None, help="Spezifischer Endpunkt für den Bauleiter (Phase 3)")
-    parser.add_argument("--strategy", "--preset", default="balanced", choices=["best-code", "quality", "eco", "economy", "cost", "local-free", "free", "local", "hybrid", "mixed", "balanced"], help="Optimierungs-Strategie: best-code (beste Qualität), eco (bis zu 70%% Ersparnis), local-free (0€ Kosten in Phase 3 via Lokal/Intranet-Modell), hybrid (Cloud-CLI plant und nimmt ab, lokales Modell prüft und baut in Etappen), balanced (Standard)")
+    parser.add_argument("--strategy", "--preset", default=None, choices=["best-code", "quality", "eco", "economy", "cost", "local-free", "free", "local", "hybrid", "mixed", "balanced"], help="Optimierungs-Strategie: best-code (beste Qualität), eco (bis zu 70%% Ersparnis), local-free (0€ Kosten in Phase 3 via Lokal/Intranet-Modell), hybrid (Cloud-CLI plant und nimmt ab, lokales Modell prüft und baut in Etappen), balanced (Standard)")
     parser.add_argument("--dry-run", action="store_true", help="Trockenlauf: Zeigt Rollen, Modelle, Kosten-Analyse und generierten Befehl ohne Ausführung")
     parser.add_argument("--auto-switch", "--fallback", action="store_true", help="Bei Erreichen eines AI-Limits automatisch zum alternativen Modell wechseln")
     parser.add_argument("--yolo", "--auto-approve", action="store_true", help="Automatisch volle Schreib- und Toolrechte erteilen (keine Nachfrage)")
@@ -2467,7 +2728,27 @@ def main():
     parser.add_argument("--plan-auto", "--approve-plan", dest="approve_plan", action="store_true", help="Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (sonst kein Bau); für Läufe ohne Terminal")
     parser.add_argument("--etappen", "--stages", default="auto", choices=["auto", "an", "aus", "on", "off"], help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)")
 
-    args = parser.parse_args()
+    parser.add_argument("--print-effective-config", "--config", dest="print_effective_config", action="store_true", help="Wirksame Konfiguration mit Quelle je Einstellung (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden")
+    return parser
+
+
+def main():
+    parser = build_parser()
+
+    argv = sys.argv[1:]
+    args = parser.parse_args(argv)
+    config_report = apply_config_layers(parser, args, argv)
+    if args.print_effective_config:
+        print(format_effective_config(config_report))
+        return
+    for warning in config_report["warnings"]:
+        print(warning)
+    layered = [d for d, s in config_report["sources"].items() if s in ("env", "project", "global")]
+    if layered:
+        print("⚙️  Aus Umgebung/Profil: " + ", ".join(
+            f"{d}={config_report['values'][d]!r} ({CONFIG_SOURCE_LABELS[config_report['sources'][d]]})" for d in sorted(layered)))
+    for conflict in config_report["conflicts"]:
+        print(f"⚠️  Konfigurationskonflikt: {conflict}")
 
     global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING
     env_timeout = os.environ.get("CLAUDEGRAVITY_TIMEOUT", "")

@@ -25,6 +25,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). Siehe [Strategien](strategien.md). | `balanced` |
 | `--dry-run` | | Belegung, Kostenanalyse und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |
 | `--info` | `--check` | Erkannte CLIs/Endpunkte und Standard-Belegung anzeigen. | aus |
+| `--print-effective-config` | `--config` | Wirksame Einstellungen mit Quelle (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden. Siehe [Vorrang der Einstellungen](#vorrang-der-einstellungen). | aus |
 | `--etappen <modus>` | `--stages` | `auto`, `an`, `aus`. Der Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede mit `--proof`. `auto` schaltet den Modus für Bauleiter ohne eigenen Dateizugriff ein (Ollama, LM Studio, Endpunkte). Siehe [Bau-Loop](bau-loop.md#etappen-modus). | `auto` |
 | `--plan-auto` | `--approve-plan` | Plan ohne Freigabe-Menü übernehmen, sobald der Prüfstatiker `APPROVED` meldet. Meldet er das nicht, wird nicht gebaut. Für Läufe ohne Terminal. | aus |
 
@@ -102,10 +103,39 @@ Details: [Sessions & Dateien](sessions-und-dateien.md#git-workspace-pro-session)
 
 ## Vorrang der Einstellungen
 
-1. Explizites Flag in diesem Aufruf
-2. Gespeicherter Wert aus `state.json` (bei `-c`)
-3. Standardwert des gewählten Presets
-4. CLI-Default des Backends
+Jede Einstellung kommt aus der ersten Quelle, die sie setzt:
+
+1. **Kommandozeile:** Flag in diesem Aufruf
+2. **Session:** gespeicherter Wert aus `state.json` (nur bei `-c`)
+3. **Umgebung:** `CLAUDEGRAVITY_<EINSTELLUNG>`, z. B. `CLAUDEGRAVITY_STRATEGY=hybrid` oder `CLAUDEGRAVITY_BUILDER_MODEL=qwen2.5-coder:7b`
+4. **Projekt-Profil:** `<projekt>/.dual-loop/profile.json` (git-ignoriert)
+5. **Globales Profil:** `~/.config/claudegravity/profile.json` (`$XDG_CONFIG_HOME` wird beachtet, unter Windows `%APPDATA%\claudegravity\profile.json`, abweichender Ordner mit `CLAUDEGRAVITY_CONFIG_DIR`)
+6. **Standard:** Wert des Flags bzw. des gewählten Presets, danach der CLI-Default des Backends
+
+Ein Profil ist ein flaches JSON-Objekt. Die Schlüssel sind die Flag-Namen ohne `--`, mit `-` oder `_` geschrieben, auch die deutschen Aliase:
+
+```json
+{
+  "_kommentar": "Schlüssel mit _ oder $ am Anfang werden übersprungen",
+  "strategy": "hybrid",
+  "proof": "python3 -m unittest discover -s tests",
+  "bauer-model": "qwen2.5-coder:7b",
+  "etappen": "auto",
+  "worktree": false
+}
+```
+
+Ja/Nein-Flags nehmen `true`/`false` (in der Umgebung auch `1`, `ja`, `an`, `0`, `nein`, `aus`). Bei `--no-worktree` und `--no-inspect` heißt der Schlüssel `worktree` bzw. `inspect`. Unbekannte Schlüssel und ungültige Werte werden mit einer Warnung übersprungen.
+
+Nicht aus Umgebung oder Profil kommen: Aufgabe, `--project`, `--resume`, `--info`, `--dry-run`, `--no-shield` (dafür gibt es `CLAUDEGRAVITY_SHIELD=off`) und `--api-key` (nur `CLAUDEGRAVITY_API_KEY`, nie in eine Datei). `yolo` wirkt nur aus der Umgebung oder dem globalen Profil, weil ein Bauleiter mit Schreibrechten in den Projektordner schreiben kann. Endpunkt-Bauleiter dürfen `.dual-loop/profile.json` gar nicht schreiben.
+
+Woher jeder Wert kommt, zeigt:
+
+```bash
+claudegravity --print-effective-config -p ~/Projekte/rechnung
+```
+
+Setzen zwei Quellen dieselbe Einstellung verschieden, markiert die Ausgabe das als **Konflikt** und nennt den überschriebenen Wert. Beim normalen Start zeigt der Loop in einer Zeile, welche Werte aus Umgebung oder Profil kommen, und meldet Konflikte.
 
 ## Beispiele
 

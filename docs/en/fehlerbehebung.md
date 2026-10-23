@@ -29,6 +29,5 @@ These points reflect the current state of the code:
 
 * **Effort only for Antigravity and Codex:** `--effort` and the role-specific effort flags are passed to `agy` and `codex`. For other CLIs they only appear in the audit report.
 * **Resuming the reviewer session only with Claude:** From review round 2 on, only a Claude reviewer receives the plan diff instead of the whole plan. Other reviewers receive the full plan.
-* **Strategy when resuming:** Because `--strategy` defaults to `balanced`, the saved strategy is not applied with `-c`. Specify the strategy again when resuming.
 * **Copilot:** Is called via `copilot suggest -t shell` and is therefore better suited to shell suggestions than to planning or building.
 * **Cost detection for endpoints:** `localhost`, private IPs and hostnames on the home network (without a dot or ending in `.local`, `.lan`, `.fritz.box`, `.home.arpa`, `.internal`) count as free. An intranet server with a public domain name appears in the audit as "API".

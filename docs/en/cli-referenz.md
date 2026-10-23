@@ -25,6 +25,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). See [Strategies](strategien.md). | `balanced` |
 | `--dry-run` | | Show the assignment, cost analysis and start command without running or creating anything. | off |
 | `--info` | `--check` | Show detected CLIs/endpoints and the default assignment. | off |
+| `--print-effective-config` | `--config` | Show the effective settings with their source (command line, session, environment, profile, default) and exit. See [Settings precedence](#settings-precedence). | off |
 | `--etappen <mode>` | `--stages` | `auto`, `an` (on), `aus` (off); `on`/`off` work too. The Architect cuts the plan into stages, the Builder implements them one by one, the loop checks each with `--proof`. `auto` turns the mode on for Builders without their own file access (Ollama, LM Studio, endpoints). See [Build loop](bau-loop.md#stage-mode). | `auto` |
 | `--plan-auto` | `--approve-plan` | Accept the plan without the approval menu as soon as the Reviewer reports `APPROVED`. If it does not, nothing is built. For runs without a terminal. | off |
 
@@ -102,10 +103,39 @@ Details: [Sessions & files](sessions-und-dateien.md#git-workspace-per-session).
 
 ## Settings precedence
 
-1. Explicit flag in this invocation
-2. Saved value from `state.json` (with `-c`)
-3. Default value of the selected preset
-4. CLI default of the backend
+Each setting comes from the first source that sets it:
+
+1. **Command line:** flag in this invocation
+2. **Session:** saved value from `state.json` (only with `-c`)
+3. **Environment:** `CLAUDEGRAVITY_<SETTING>`, e.g. `CLAUDEGRAVITY_STRATEGY=hybrid` or `CLAUDEGRAVITY_BUILDER_MODEL=qwen2.5-coder:7b`
+4. **Project profile:** `<project>/.dual-loop/profile.json` (git-ignored)
+5. **Global profile:** `~/.config/claudegravity/profile.json` (respects `$XDG_CONFIG_HOME`, on Windows `%APPDATA%\claudegravity\profile.json`, other folder via `CLAUDEGRAVITY_CONFIG_DIR`)
+6. **Default:** value of the flag or the selected preset, then the CLI default of the backend
+
+A profile is a flat JSON object. Keys are the flag names without `--`, written with `-` or `_`, German aliases included:
+
+```json
+{
+  "_kommentar": "keys starting with _ or $ are skipped",
+  "strategy": "hybrid",
+  "proof": "python3 -m unittest discover -s tests",
+  "bauer-model": "qwen2.5-coder:7b",
+  "etappen": "auto",
+  "worktree": false
+}
+```
+
+Yes/no flags take `true`/`false` (in the environment also `1`, `yes`, `on`, `0`, `no`, `off`). For `--no-worktree` and `--no-inspect` the key is `worktree` or `inspect`. Unknown keys and invalid values are skipped with a warning.
+
+Not taken from environment or profile: the task, `--project`, `--resume`, `--info`, `--dry-run`, `--no-shield` (use `CLAUDEGRAVITY_SHIELD=off`) and `--api-key` (only `CLAUDEGRAVITY_API_KEY`, never in a file). `yolo` only works from the environment or the global profile, because a builder with write access can write into the project folder. Endpoint builders may not write `.dual-loop/profile.json` at all.
+
+To see where each value comes from:
+
+```bash
+claudegravity --print-effective-config -p ~/Projekte/rechnung
+```
+
+If two sources set the same setting differently, the output marks it as a **conflict** and names the overridden value. On a normal start the loop shows in one line which values come from the environment or a profile, and reports conflicts.
 
 ## Examples
 

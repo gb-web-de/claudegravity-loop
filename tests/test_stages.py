@@ -274,7 +274,8 @@ class StageLoopEndToEndTest(unittest.TestCase):
                     "import unittest\n\nclass S(unittest.TestCase):\n    def test_ok(self):\n        pass\n", encoding="utf-8"
                 )
                 env = {k: v for k, v in os.environ.items()
-                       if k not in ("CLAUDEGRAVITY_ENDPOINT", "OPENAI_BASE_URL", "AI_ENDPOINT", "OLLAMA_HOST")}
+                       if not k.startswith("CLAUDEGRAVITY_") and k not in ("OPENAI_BASE_URL", "AI_ENDPOINT", "OLLAMA_HOST")}
+                env["CLAUDEGRAVITY_CONFIG_DIR"] = os.devnull  # kein globales Profil des Nutzers
                 env["PATH"] = tmp
                 env["OLLAMA_HOST"] = "127.0.0.1:9"
                 env["PYTHONIOENCODING"] = "utf-8"
