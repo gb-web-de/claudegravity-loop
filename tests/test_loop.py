@@ -263,6 +263,20 @@ class RolePickTest(unittest.TestCase):
             self.assertEqual(loop.normalize_strategy(alias), name)
 
 
+class RuntimeSettingsTest(unittest.TestCase):
+    def test_apply_runtime_settings_fills_settings(self):
+        saved = loop.dataclasses.replace(loop.SETTINGS)
+        self.addCleanup(lambda: loop.SETTINGS.__dict__.update(saved.__dict__))
+        args = loop.build_parser().parse_args(["--retries", "0", "--no-progress", "--log-format", "json", "--timeout", "77",
+                                               "--no-shield", "--budget-max", "10k", "x"])
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CLAUDEGRAVITY_TIMEOUT", None)
+            loop.apply_runtime_settings(args)
+        s = loop.SETTINGS
+        self.assertEqual((s.retries, s.progress, s.log_format, s.endpoint_timeout, s.shield), (0, False, "json", 77, False))
+        self.assertTrue(s.budget.active)
+
+
 class AgentDescriptionTest(unittest.TestCase):
     def test_describes_provider_model_and_effort(self):
         agent = loop.AgentCLI("Antigravity (agy)", "agy", None, model="gemini-2.5-pro", effort="high")

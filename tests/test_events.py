@@ -17,17 +17,17 @@ import run_smoke  # noqa: E402
 
 class LogEventTest(unittest.TestCase):
     def setUp(self):
-        self.addCleanup(setattr, loop, "LOG_FORMAT", loop.LOG_FORMAT)
+        self.addCleanup(setattr, loop.SETTINGS, "log_format", loop.SETTINGS.log_format)
 
     def test_text_format_writes_nothing(self):
-        loop.LOG_FORMAT = "text"
+        loop.SETTINGS.log_format = "text"
         with tempfile.TemporaryDirectory() as tmp:
             loop.log_event(Path(tmp), "call", role="builder")
             loop.append_log(Path(tmp), "Hallo")
             self.assertFalse((Path(tmp) / "events.jsonl").exists())
 
     def test_json_lines_masked_and_without_none(self):
-        loop.LOG_FORMAT = "json"
+        loop.SETTINGS.log_format = "json"
         with tempfile.TemporaryDirectory() as tmp:
             session = Path(tmp) / "20261023_x"
             session.mkdir()

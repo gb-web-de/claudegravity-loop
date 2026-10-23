@@ -45,13 +45,23 @@ if sys.platform == "win32":
 
 STOP_REQUESTED = False
 
-# Sekunden pro Runde für OpenAI-kompatible Endpunkte (None = automatisch, siehe endpoint_timeout)
-ENDPOINT_TIMEOUT: int | None = None
+
+@dataclasses.dataclass
+class RuntimeSettings:
+    """Einstellungen eines Laufs, die tief im Code gebraucht werden. main() setzt sie einmal (apply_runtime_settings)."""
+    endpoint_timeout: int | None = None  # Sekunden pro Runde für Endpunkte (None = automatisch, siehe endpoint_timeout)
+    shield: bool = True  # Datenschutzschild: Zugangsdaten vor dem Versand an Cloud-Modelle schwärzen
+    stage_planning: bool = False  # Architekt schneidet den Plan in Etappen
+    retries: int | None = None  # --retries
+    progress: bool = True  # --no-progress schaltet die Statuszeile ab
+    log_format: str = "text"  # --log-format: json schreibt zusätzlich events.jsonl
+    budget: "Budget | None" = None  # --budget-max/-warn/-roles
+
+
+SETTINGS = RuntimeSettings()
+
 CLOUD_TIMEOUT = 180
 LOCAL_TIMEOUT = 900
-
-# Datenschutzschild: Zugangsdaten werden vor dem Versand an Cloud-Modelle geschwärzt
-SHIELD_ENABLED = True
 
 PLANNING_DIRECTIVE = (
     "\n\nSTRIKTE VORGABE FÜR DIE PLANUNG:\n"
@@ -62,7 +72,6 @@ PLANNING_DIRECTIVE = (
 )
 
 # Etappen: Der Architekt schneidet den Plan in kleine Stücke, die der Bauleiter einzeln umsetzt
-STAGE_PLANNING = False
 STAGE_DIRECTIVE = (
     "- Schließe den Plan mit dem Abschnitt `## Etappen` ab: eine nummerierte Liste (`1.`, `2.`, …) mit 2 bis 8 Etappen,\n"
     "  die nacheinander umsetzbar sind. Jede Etappe ändert höchstens zwei Dateien, nennt deren relative Pfade\n"
@@ -72,7 +81,7 @@ STAGE_MAX_TRIES = 3
 
 
 def planning_directive() -> str:
-    return PLANNING_DIRECTIVE + (STAGE_DIRECTIVE if STAGE_PLANNING else "")
+    return PLANNING_DIRECTIVE + (STAGE_DIRECTIVE if SETTINGS.stage_planning else "")
 
 
 def sigint_handler(signum, frame):
@@ -148,8 +157,6 @@ RETRY_POLICIES = {
     "local": {"attempts": 3, "base": 2.0, "cap": 20.0},
     "cloud": {"attempts": 3, "base": 5.0, "cap": 60.0},
 }
-RETRY_OVERRIDE: int | None = None  # --retries
-PROGRESS_ENABLED = True  # --no-progress
 
 
 def is_transient_error(text: str, local: bool = False) -> bool:
@@ -162,8 +169,8 @@ def is_transient_error(text: str, local: bool = False) -> bool:
 
 def retry_policy(local: bool) -> dict:
     policy = dict(RETRY_POLICIES["local" if local else "cloud"])
-    if RETRY_OVERRIDE is not None:
-        policy["attempts"] = max(0, RETRY_OVERRIDE)
+    if SETTINGS.retries is not None:
+        policy["attempts"] = max(0, SETTINGS.retries)
     return policy
 
 
@@ -531,7 +538,7 @@ class AgentCLI:
     def run(self, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> str:
         if self.requested_model is None:
             self.requested_model = extract_flag_value(extra_flags, "--model") or self.model or DEFAULT_MODEL_LABEL
-        if SHIELD_ENABLED and not self.local:
+        if SETTINGS.shield and not self.local:
             prompt, found = redact_secrets(prompt)
             if found:
                 print(f"🛡️  Datenschutzschild: {', '.join(found)} vor dem Versand an {self.name} geschwärzt.")
@@ -940,8 +947,8 @@ def is_private_endpoint(url: str) -> bool:
 
 def endpoint_timeout(url: str) -> int:
     """Lokale Modelle laufen oft auf schwacher Hardware und bekommen deshalb mehr Zeit pro Runde."""
-    if ENDPOINT_TIMEOUT:
-        return ENDPOINT_TIMEOUT
+    if SETTINGS.endpoint_timeout:
+        return SETTINGS.endpoint_timeout
     return LOCAL_TIMEOUT if is_private_endpoint(url) else CLOUD_TIMEOUT
 
 
@@ -1645,12 +1652,11 @@ def mask_secrets(text: str) -> str:
 
 
 LOG_FORMATS = ("text", "json")
-LOG_FORMAT = "text"  # --log-format: json schreibt zusätzlich events.jsonl
 
 
 def log_event(session_dir: Path | None, event: str, **fields) -> None:
     """Eine JSON-Zeile pro Ereignis in events.jsonl (nur mit --log-format json); Texte werden geschwärzt."""
-    if LOG_FORMAT != "json" or session_dir is None:
+    if SETTINGS.log_format != "json" or session_dir is None:
         return
     record = {"time": datetime.datetime.now().isoformat(timespec="seconds"), "session": session_dir.name, "event": event}
     for key, value in fields.items():
@@ -1938,8 +1944,8 @@ def safe_agent_run(
             found = redact_secrets(res)[1] if isinstance(res, str) else []
             if found:
                 record_audit_event(session_dir, "secret_in_output", f"{agent.name} ({role}): {', '.join(found)}", tracker)
-            if BUDGET and BUDGET.active and tracker is not None:
-                for warning in BUDGET.check(tracker):
+            if SETTINGS.budget and SETTINGS.budget.active and tracker is not None:
+                for warning in SETTINGS.budget.check(tracker):
                     print(f"💶 Budget-Warnung: {warning}")
                     append_log(session_dir, f"Budget-Warnung: {warning}")
             delta = (tracker.total_tokens if tracker is not None else 0) - tokens_before
@@ -1949,8 +1955,8 @@ def safe_agent_run(
                       tokens_total=tracker.total_tokens if tracker is not None else None,
                       cost_usd_total=round(tracker.cost_usd, 4) if tracker is not None else None,
                       retries=attempt or None)
-            if PROGRESS_ENABLED:
-                for line in format_progress(role, agent.name, state, tracker, time.monotonic() - started, delta, BUDGET):
+            if SETTINGS.progress:
+                for line in format_progress(role, agent.name, state, tracker, time.monotonic() - started, delta, SETTINGS.budget):
                     print(line, flush=True)
             if attempt and metrics_tracker:
                 metrics_tracker.note_retry("recovered")
@@ -3542,12 +3548,10 @@ class Budget:
         return f"Budget {spent / value:.0%} von {format_budget(unit, value)}"
 
 
-BUDGET: Budget | None = None
-
 
 def handle_budget_exceeded(exc: BudgetExceeded) -> None:
     """Sichert Stand und Bericht mit Abbruchgrund, dann Ende mit CG-1404."""
-    ctx = BUDGET.context if BUDGET else {}
+    ctx = SETTINGS.budget.context if SETTINGS.budget else {}
     state, session_dir, metrics = ctx.get("state"), ctx.get("session_dir"), ctx.get("metrics")
     if state is not None and session_dir is not None:
         state["abort_reason"] = f"Budget: {exc}"
@@ -3991,9 +3995,6 @@ def print_welcome() -> None:
     print("  claudegravity --help                     Wichtigste Optionen (alle: --help-all)")
 
 
-LOCAL_BUILDER_KEYS = ("bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli")
-
-
 def normalize_strategy(name: str) -> str:
     """Strategie-Aliase auf ihren Hauptnamen abbilden (quality → best-code, economy → eco, free → local-free)."""
     strat = name.lower()
@@ -4112,17 +4113,16 @@ def load_cli_config(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.
 
 def apply_runtime_settings(args: argparse.Namespace) -> None:
     """Einstellungen, die tief im Code gebraucht werden (Zeitlimits, Schild, Budget, Ausgabe), modulweit setzen."""
-    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, RETRY_OVERRIDE, BUDGET, PROGRESS_ENABLED, LOG_FORMAT
-    RETRY_OVERRIDE = args.retries
-    PROGRESS_ENABLED = args.progress
-    LOG_FORMAT = args.log_format
+    SETTINGS.retries = args.retries
+    SETTINGS.progress = args.progress
+    SETTINGS.log_format = args.log_format
     try:
-        BUDGET = Budget(args.budget_max, args.budget_warn, args.budget_roles)
+        SETTINGS.budget = Budget(args.budget_max, args.budget_warn, args.budget_roles)
     except ValueError as exc:
         fail("CG-1103", str(exc))
     env_timeout = os.environ.get("CLAUDEGRAVITY_TIMEOUT", "")
-    ENDPOINT_TIMEOUT = args.timeout or (int(env_timeout) if env_timeout.isdigit() else None)
-    SHIELD_ENABLED = not args.no_shield and os.environ.get("CLAUDEGRAVITY_SHIELD", "").lower() != "off"
+    SETTINGS.endpoint_timeout = args.timeout or (int(env_timeout) if env_timeout.isdigit() else None)
+    SETTINGS.shield = not args.no_shield and os.environ.get("CLAUDEGRAVITY_SHIELD", "").lower() != "off"
 
 
 def setup_agents(args: argparse.Namespace) -> dict[str, AgentCLI]:
@@ -4167,7 +4167,7 @@ def print_system_check(agents: dict[str, AgentCLI]) -> None:
     def_planner = agents.get("claude") or next(iter(agents.values()))
     others = [a for a in agents.values() if a.binary != def_planner.binary]
     def_reviewer = next((a for a in others if a.binary == "agy"), others[0] if others else def_planner)
-    local_cand = next((agents[k] for k in LOCAL_BUILDER_KEYS if k in agents), None)
+    local_cand = next((agents[k] for k in LOCAL_BACKEND_ORDER if k in agents), None)
     eco_model = "claude-3-5-haiku" if def_planner.binary == "claude" else "gemini-2.5-flash"
 
     def default_effort(binary: str) -> str:
@@ -4259,7 +4259,7 @@ def show_dry_run(args: argparse.Namespace, agents: dict, project_path: Path, con
     default_r_effort = None
     default_b_effort = None
     default_b_model = None
-    local_cand = next((agents[k] for k in LOCAL_BUILDER_KEYS if k in agents), None)
+    local_cand = next((agents[k] for k in LOCAL_BACKEND_ORDER if k in agents), None)
 
     if strat == "best-code":
         default_p_effort = "high"
@@ -4372,7 +4372,7 @@ def show_dry_run(args: argparse.Namespace, agents: dict, project_path: Path, con
         print("   • Ausgewogenes Standard-Verhältnis zwischen starker Planung und stabiler Umsetzung.")
 
     estimate = estimate_run(collect_kpi_history(project_path), strat, args.max_iterations or 10)
-    for line in format_estimate(estimate, estimate_hints(estimate, strat, BUDGET, local_cand is not None, args.proof)):
+    for line in format_estimate(estimate, estimate_hints(estimate, strat, SETTINGS.budget, local_cand is not None, args.proof)):
         print(line)
 
     if config_warnings:
@@ -4486,10 +4486,10 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
     # ==========================================
     session_metrics = SessionMetrics.from_dict(state.get("metrics"))
     state.pop("abort_reason", None)
-    if BUDGET and BUDGET.active:
-        BUDGET.context = {"state": state, "session_dir": session_dir, "metrics": session_metrics}
-        print("[*] Budget            : " + ", ".join(f"{label} {format_budget(*limit)}" for _, label, limit, hard in BUDGET.limits() if hard)
-              + (f"; Warnung ab {format_budget(*BUDGET.warn_total)}" if BUDGET.warn_total else ""))
+    if SETTINGS.budget and SETTINGS.budget.active:
+        SETTINGS.budget.context = {"state": state, "session_dir": session_dir, "metrics": session_metrics}
+        print("[*] Budget            : " + ", ".join(f"{label} {format_budget(*limit)}" for _, label, limit, hard in SETTINGS.budget.limits() if hard)
+              + (f"; Warnung ab {format_budget(*SETTINGS.budget.warn_total)}" if SETTINGS.budget.warn_total else ""))
 
     planner = create_agent(planner_base.binary, agents, role="🏗️ Architekt (Planung & Entwurf)", metrics_tracker=session_metrics)
     reviewer = create_agent(reviewer_base.binary, agents, role="🧐 Prüfstatiker (Prüfung & Review)", metrics_tracker=session_metrics)
@@ -4539,7 +4539,7 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
         default_r_effort = "high"
         default_b_effort = "low"
         if not args.builder:
-            for k in LOCAL_BUILDER_KEYS:
+            for k in LOCAL_BACKEND_ORDER:
                 if k in agents:
                     builder_base = agents[k]
                     builder = create_agent(builder_base.binary, agents, role="🔨 Bauleiter (Bau & Umsetzung)", metrics_tracker=session_metrics)
@@ -4632,7 +4632,6 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
 
 def print_run_banner(run: "RunContext") -> None:
     """Kopf des Laufs: Rollen, Modi und Session; legt fest, ob der Architekt in Etappen plant."""
-    global STAGE_PLANNING
     args, project_path, session_dir, state, task = run.args, run.project_path, run.session_dir, run.state, run.task
     planner, reviewer, builder, strat = run.planner, run.reviewer, run.builder, run.strategy
     ask_mode, auto_switch, swap_roles, use_worktree, merge_worktree = run.ask_mode, run.auto_switch, run.swap_roles, run.use_worktree, run.merge_worktree
@@ -4672,7 +4671,7 @@ def print_run_banner(run: "RunContext") -> None:
     task_secrets = redact_secrets(task)[1]
     if task_secrets:
         cloud_roles = [a.name for a in (planner, reviewer, builder) if not a.local]
-        if SHIELD_ENABLED:
+        if SETTINGS.shield:
             print(f"🛡️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}); sie werden vor dem Versand an Cloud-Modelle geschwärzt.")
         elif cloud_roles:
             print(f"⚠️  Aufgabe enthält mögliche Zugangsdaten ({', '.join(task_secrets)}) und der Datenschutzschild ist aus: "
@@ -4683,8 +4682,8 @@ def print_run_banner(run: "RunContext") -> None:
     expected_builder = builder.binary if (args.builder or strat == "local-free") else planner.binary
     stage_pref = (state.get("stage_mode") if args.resume else None) or args.etappen
     state["stage_mode"] = stage_pref
-    STAGE_PLANNING = stages_wanted(stage_pref, expected_builder)
-    if STAGE_PLANNING:
+    SETTINGS.stage_planning = stages_wanted(stage_pref, expected_builder)
+    if SETTINGS.stage_planning:
         print("[*] Etappen-Modus     : 🧩 Plan in Etappen, Bauleiter setzt sie einzeln um (--etappen aus schaltet ab)")
     print(f"[*] Session-ID        : {session_dir.name}")
     print("=======================================================\n")

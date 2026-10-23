@@ -31,10 +31,10 @@ class PrivateEndpointTest(unittest.TestCase):
             self.assertFalse(loop.is_private_endpoint(url), url)
 
     def test_timeout_depends_on_endpoint(self):
-        with mock.patch.object(loop, "ENDPOINT_TIMEOUT", None):
+        with mock.patch.object(loop.SETTINGS, "endpoint_timeout", None):
             self.assertEqual(loop.endpoint_timeout("http://192.168.1.50:11434"), loop.LOCAL_TIMEOUT)
             self.assertEqual(loop.endpoint_timeout("https://api.openai.com/v1"), loop.CLOUD_TIMEOUT)
-        with mock.patch.object(loop, "ENDPOINT_TIMEOUT", 42):
+        with mock.patch.object(loop.SETTINGS, "endpoint_timeout", 42):
             self.assertEqual(loop.endpoint_timeout("http://localhost:11434"), 42)
         self.assertGreater(loop.LOCAL_TIMEOUT, loop.CLOUD_TIMEOUT)
 
@@ -83,12 +83,12 @@ class ShieldTest(unittest.TestCase):
         seen = []
         run_fn = lambda binary, prompt, cwd, flags: (seen.append(prompt) or "ok", {})
         secret = "token=abcdef123456"
-        with mock.patch.object(loop, "SHIELD_ENABLED", True):
+        with mock.patch.object(loop.SETTINGS, "shield", True):
             loop.AgentCLI("Cloud", "claude", run_fn).run(secret)
             loop.AgentCLI("Pi", "ollama", run_fn, local=True).run(secret)
         self.assertNotIn("abcdef123456", seen[0])
         self.assertEqual(seen[1], secret)
-        with mock.patch.object(loop, "SHIELD_ENABLED", False):
+        with mock.patch.object(loop.SETTINGS, "shield", False):
             loop.AgentCLI("Cloud", "claude", run_fn).run(secret)
         self.assertEqual(seen[2], secret)
 

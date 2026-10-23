@@ -63,9 +63,9 @@ class ParseStagesTest(unittest.TestCase):
         self.assertFalse(loop.stages_wanted("aus", "ollama"))
 
     def test_planning_directive_mentions_stages_only_when_on(self):
-        with mock.patch.object(loop, "STAGE_PLANNING", False):
+        with mock.patch.object(loop.SETTINGS, "stage_planning", False):
             self.assertNotIn("## Etappen", loop.planning_directive())
-        with mock.patch.object(loop, "STAGE_PLANNING", True):
+        with mock.patch.object(loop.SETTINGS, "stage_planning", True):
             self.assertIn("## Etappen", loop.planning_directive())
 
 

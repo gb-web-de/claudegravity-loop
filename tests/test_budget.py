@@ -80,7 +80,7 @@ class CheckTest(unittest.TestCase):
         agent.metrics_tracker = metrics
         agent.role = "🔨 Bauleiter"
         with tempfile.TemporaryDirectory() as tmp, \
-                unittest.mock.patch.object(loop, "BUDGET", loop.Budget(max_total="1k")):
+                unittest.mock.patch.object(loop.SETTINGS, "budget", loop.Budget(max_total="1k")):
             loop.safe_agent_run(agent, "p", Path(tmp), [], {}, Path(tmp), {}, False, role="builder", metrics_tracker=metrics)
             with self.assertRaises(loop.BudgetExceeded):
                 loop.safe_agent_run(agent, "p", Path(tmp), [], {}, Path(tmp), {}, False, role="builder", metrics_tracker=metrics)

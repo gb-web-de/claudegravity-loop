@@ -53,7 +53,7 @@ class ClassifyTest(unittest.TestCase):
 
     def test_policies(self):
         self.assertLess(loop.retry_policy(True)["base"], loop.retry_policy(False)["base"])
-        with mock.patch.object(loop, "RETRY_OVERRIDE", 0):
+        with mock.patch.object(loop.SETTINGS, "retries", 0):
             self.assertEqual(loop.retry_policy(False)["attempts"], 0)
 
 
@@ -115,7 +115,7 @@ class SafeAgentRunRetryTest(unittest.TestCase):
 
     def test_retries_can_be_disabled(self):
         agent, _ = flaky_agent([RuntimeError("HTTP 503")])
-        with mock.patch.object(loop, "RETRY_OVERRIDE", 0), \
+        with mock.patch.object(loop.SETTINGS, "retries", 0), \
                 mock.patch.object(loop, "handle_rate_limit", return_value=("wait", agent)) as menu:
             self.run_agent(agent)
         self.assertEqual(self.sleeps, [])
