@@ -1,0 +1,62 @@
+# Dateien im Session-Ordner
+.done
+INSPECTION_round1.md
+LOG.md
+PLAN_v1.md
+REVIEW_round1.md
+state.json
+state.json.bak
+
+# LOG.md
+
+## [<DATUM>] Session: <ZEIT>_Addition_mit_Test
+- **Aufgabe:** Addition mit Test
+- **🏗️ Architekt (Planung & Bau):** Architekt Endpoint (http://<SERVER>/v1) (`planer`) [Effort: 0€ Lokal/Intranet]
+- **🧐 Prüfstatiker (Prüfung & Review):** Prüfstatiker Endpoint (http://<SERVER>/v1) (`pruefer`) [Effort: high (nur für agy/codex wirksam)]
+- **Session-Pfad:** `.dual-loop/sessions/<ZEIT>_Addition_mit_Test`
+  - Review Runde 1: **VERDICT: APPROVED** (APPROVED, 0 Befund(e))
+- **Modelle:** Architekt Endpoint (http://<SERVER>/v1): angefordert `planer`, gemeldet `unbekannt`; Prüfstatiker Endpoint (http://<SERVER>/v1): angefordert `pruefer`, gemeldet `unbekannt`
+- **Ergebnis:** Genehmigt
+
+- [<UHR>] PLAN_v1.md automatisch freigegeben (--plan-auto)
+- [<UHR>] Etappe 1/2 erledigt: Funktion in src/calc.py
+- [<UHR>] Etappe 2/2 erledigt: Test in tests/test_calc.py
+- [<UHR>] Prüfbefehl `"<PYTHON>" -m unittest discover -s tests`: grün
+- [<UHR>] Abnahme Runde 1 durch Prüfstatiker Endpoint (http://<SERVER>/v1): angefordert `CLI-Default`, gemeldet `unbekannt`: APPROVED (APPROVED)
+
+
+# Kennzahlen
+{
+  "version": 1,
+  "success": true,
+  "phase": "completed",
+  "strategy": "local-free",
+  "duration_s": "<DAUER>",
+  "plan_review_rounds": 1,
+  "build_rounds": 2,
+  "build_rounds_to_success": 2,
+  "stages": 2,
+  "proof_runs": 3,
+  "proof_red": 0,
+  "inspection_rounds": 1,
+  "inspection_rejected": 0,
+  "rework_rounds": 0,
+  "rework_rate": 0.0,
+  "tokens_total": 600,
+  "tokens_by_role": {
+    "planner": 120,
+    "reviewer": 120,
+    "builder": 240,
+    "inspector": 120
+  },
+  "cost_usd_task": 0.0,
+  "cost_usd_inspection": 0.0,
+  "cost_usd_by_role": {
+    "planner": 0.0,
+    "reviewer": 0.0,
+    "builder": 0.0,
+    "inspector": 0.0
+  },
+  "cost_reported_by": [],
+  "retries": 0
+}

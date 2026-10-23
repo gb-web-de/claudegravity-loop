@@ -1,0 +1,46 @@
+⚙️  Wirksame Konfiguration (Kommandozeile > Session > Vorlage > Umgebung > Projekt-Profil > globales Profil > Standard)
+
+  Projekt-Profil  : <TMP>/projekt/.dual-loop/profile.json (geladen)
+  Globales Profil : <TMP>/cfg/profile.json (geladen)
+  Umgebung        : CLAUDEGRAVITY_<EINSTELLUNG>, z. B. CLAUDEGRAVITY_STRATEGY=hybrid
+  Vorlage         : typo3 (Projekt-Profil)
+
+  approve_plan           = false                        [Standard]
+  architekt_endpoint     = –                            [Standard]
+  ask                    = false                        [Standard]
+  auto_switch            = true                         [Globales Profil]
+  bauer_endpoint         = –                            [Standard]
+  builder                = –                            [Standard]
+  builder_effort         = –                            [Standard]
+  builder_model          = "qwen2.5-coder:7b"           [Kommandozeile]
+  delay                  = 3                            [Standard]
+  effort                 = –                            [Standard]
+  endpoint               = –                            [Standard]
+  etappen                = "an"                         [Vorlage]
+  guide                  = true                         [Standard]
+  inspect                = true                         [Standard]
+  inspector              = –                            [Standard]
+  inspector_effort       = –                            [Standard]
+  inspector_model        = –                            [Standard]
+  max_inspections        = 2                            [Standard]
+  max_iterations         = "10 (Etappen: 2 je Etappe + 2)" [Standard]
+  max_rounds             = 3                            [Globales Profil]
+  merge                  = false                        [Standard]
+  planner                = –                            [Standard]
+  planner_effort         = –                            [Standard]
+  planner_model          = –                            [Standard]
+  proof                  = "vendor/bin/phpunit"         [Projekt-Profil]
+  pruefstatiker_endpoint = –                            [Standard]
+  retries                = –                            [Standard]
+  reviewer               = –                            [Standard]
+  reviewer_effort        = –                            [Standard]
+  reviewer_model         = –                            [Standard]
+  strategy               = "eco"                        [Umgebung]  ⚠️ Konflikt
+  swap                   = false                        [Standard]
+  template               = "typo3"                      [Kommandozeile]
+  timeout                = –                            [Standard]
+  worktree               = true                         [Standard]
+  yolo                   = false                        [Standard]
+
+Konflikte:
+  ⚠️ strategy: Umgebung 'eco' überschreibt Projekt-Profil 'hybrid'

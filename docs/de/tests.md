@@ -53,6 +53,16 @@ python3 tests/smoke/run_smoke.py --strategy local-free --out smoke-artifacts
 
 Echte CLIs (`claude`, `codex`, `agy` …) laufen in CI nicht, weil dort keine Abos angemeldet sind.
 
+### Golden Fixtures
+
+`tests/test_golden.py` vergleicht zentrale Ausgaben mit Referenzdateien in `tests/golden/`: Kennzahlen-Block, Fehlerkatalog, `--print-effective-config` mit Profil, Vorlage und Umgebung, einen Trockenlauf mit `local-free` und den kompletten Smoke-Lauf (Dateien im Session-Ordner, `LOG.md`, Kennzahlen). Pfade, Zeiten und Ports werden vorher vereinheitlicht. Ändert ein Commit eine dieser Ausgaben, schlägt CI fehl und zeigt den Unterschied. Ist die Änderung gewollt:
+
+```bash
+UPDATE_GOLDEN=1 python3 -m unittest tests.test_golden
+```
+
+und die geänderten Dateien in `tests/golden/` mit committen.
+
 Ohne KI-Aufrufe und ohne Dateien zu ändern:
 
 ```bash

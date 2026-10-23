@@ -1,0 +1,41 @@
+
+====================================================================
+🔍 ClaudeGravity Loop — Trockenlauf (Dry Run)
+====================================================================
+📌 Aufgabe        : Addition mit Test
+🎯 Strategie      : LOCAL-FREE
+📁 Ziel-Projekt   : <TMP>
+
+1. 🏗️ Architekt (Phase 1: Planung & Entwurf):
+   • CLI/Endpoint  : Architekt Endpoint (http://<SERVER>/v1) (`architekt_ep`)
+   • Modell        : planer
+   • Effort        : high (nur für agy/codex wirksam)
+   • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)
+
+2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):
+   • CLI/Endpoint  : Prüfstatiker Endpoint (http://<SERVER>/v1) (`pruefstatiker_ep`)
+   • Modell        : pruefer
+   • Effort        : high (nur für agy/codex wirksam)
+   • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)
+
+3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):
+   • CLI/Endpoint  : Bauleiter Endpoint (http://<SERVER>/v1) (`bauer_ep`)
+   • Modell        : bauer
+   • Effort        : low (nur für agy/codex wirksam)
+   • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)
+
+4. 🔎 Abnahme (Phase 4: Prüfung des fertigen Codes):
+   • CLI/Endpoint  : Prüfstatiker Endpoint (http://<SERVER>/v1) (`pruefstatiker_ep`), nie der Bauleiter
+   • Modell        : pruefer
+   • Prüfbefehl    : make test
+
+🧩 Etappen-Modus: Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede (--etappen aus schaltet ab).
+
+💡 Wirtschaftlichkeits- & Qualitäts-Analyse:
+   • Spareffekt: 100% kostenlose Bau-Iterationen (0 € API-Kosten in Phase 3)!
+   • Grund: Phase 1 & 2 planen mit Architekt Endpoint (http://<SERVER>/v1) und Prüfstatiker Endpoint (http://<SERVER>/v1). Der rechenintensive Bau-Loop
+     läuft komplett auf Bauleiter Endpoint (http://<SERVER>/v1) (Modell: bauer).
+
+🚀 Generierter Shell-Befehl (zum Starten):
+   claudegravity 'Addition mit Test' --strategy local-free --architekt-endpoint http://<SERVER>/v1 --pruefstatiker-endpoint http://<SERVER>/v1 --bauer-endpoint http://<SERVER>/v1 --architekt architekt_ep --architekt-model planer --pruefstatiker pruefstatiker_ep --pruefstatiker-model pruefer --bauer bauer_ep --bauer-model bauer --proof 'make test' -p <TMP>
+====================================================================

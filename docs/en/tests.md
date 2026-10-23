@@ -53,6 +53,16 @@ python3 tests/smoke/run_smoke.py --strategy local-free --out smoke-artifacts
 
 Real CLIs (`claude`, `codex`, `agy` …) do not run in CI, because no subscriptions are signed in there.
 
+### Golden fixtures
+
+`tests/test_golden.py` compares central outputs with reference files in `tests/golden/`: key figures block, error catalog, `--print-effective-config` with profile, template and environment, a dry run with `local-free` and the complete smoke run (files in the session folder, `LOG.md`, key figures). Paths, times and ports are normalized first. If a commit changes one of these outputs, CI fails and shows the difference. If the change is intended:
+
+```bash
+UPDATE_GOLDEN=1 python3 -m unittest tests.test_golden
+```
+
+and commit the changed files in `tests/golden/`.
+
 Without AI calls and without changing files:
 
 ```bash
