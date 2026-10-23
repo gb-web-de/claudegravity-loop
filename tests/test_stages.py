@@ -227,6 +227,32 @@ class McpRolesTest(unittest.TestCase):
             self.assertIn("hybrid", props[name]["priority"]["enum"])
 
 
+class BuildPromptTest(unittest.TestCase):
+    def test_stage_prompt_names_only_the_current_stage(self):
+        prompt = loop.compose_build_prompt(
+            "CSV-Export", Path("PLAN_v1.md"), "make test", "Test x rot", endpoint=True,
+            plan_text="# Plan", file_ctx="```filepath: a.py\n```", stage=("Etappe 2/3", "Export", "- [x] Parser"),
+        )
+        for part in ("JETZT NUR ETAPPE 2/3: Export", "- [x] Parser", "`make test`", "Test x rot",
+                     "--- GENEHMIGTER PLAN ---", "BETROFFENEN DATEIEN", "FORMAT FÜR DATEI-ÄNDERUNGEN"):
+            self.assertIn(part, prompt)
+        self.assertIn("KEINE Fertigmeldung", prompt)
+
+    def test_full_plan_prompt_asks_for_done_marker(self):
+        prompt = loop.compose_build_prompt("CSV-Export", Path("PLAN_v1.md"), None, "", endpoint=False,
+                                           rel_done_path=Path("sess/.done"))
+        self.assertTrue(prompt.startswith("Führe den genehmigten Plan (PLAN_v1.md)"))
+        self.assertIn("'sess/.done'", prompt)
+        self.assertNotIn("GENEHMIGTER PLAN ---", prompt)
+        self.assertNotIn("Prüfbefehl", prompt)
+
+    def test_endpoint_full_plan_prompt_carries_plan_and_done_block(self):
+        prompt = loop.compose_build_prompt("CSV-Export", Path("PLAN_v1.md"), "make test", "", endpoint=True,
+                                           plan_text="# Plan", rel_done_path=Path("sess/.done"))
+        self.assertIn("--- GENEHMIGTER PLAN ---\n# Plan", prompt)
+        self.assertTrue(prompt.endswith("```filepath: sess/.done\n# Aufgabe abgeschlossen\n```"))
+
+
 class StageLoopEndToEndTest(unittest.TestCase):
     """Ganzer Lauf mit drei lokalen Fake-Endpunkten: Plan mit Etappen, Bau Etappe für Etappe, Abnahme."""
 

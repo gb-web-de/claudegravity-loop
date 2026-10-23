@@ -13,6 +13,8 @@ Supports:
 """
 
 import argparse
+import contextlib
+import dataclasses
 import datetime
 import hashlib
 import ipaddress
@@ -31,7 +33,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-import contextlib
 
 # Cross-Platform Console-Encoding (Windows CMD/PowerShell UTF-8 Fix)
 if sys.platform == "win32":
@@ -2461,6 +2462,145 @@ def stage_file_context(work_path: Path, text: str, extra: list[str] | None = Non
     return "\n".join(parts)
 
 
+ENDPOINT_FORMAT_HINT = "```filepath: relativer/pfad/zur/datei.ext\n<vollständiger neuer Dateiinhalt>\n```\n"
+
+
+def compose_build_prompt(
+    task: str,
+    plan_ref: Path,
+    proof_cmd: str | None,
+    feedback: str,
+    endpoint: bool,
+    plan_text: str = "",
+    file_ctx: str = "",
+    stage: tuple[str, str, str] | None = None,
+    rel_done_path: Path | None = None,
+) -> str:
+    """Prompt für eine Bau-Runde. `stage` = (Bezeichnung, Etappentext, Liste erledigter Etappen) im Etappen-Modus;
+    sonst baut der Bauleiter den ganzen Plan und legt selbst die Fertigmeldung unter `rel_done_path` an.
+    Endpunkte bekommen Plan und Dateistand als Text, weil sie keine Dateien öffnen können."""
+    if stage is not None:
+        label, text, done_list = stage
+        prompt = (
+            f"Gesamtaufgabe: {task}\n\n"
+            f"Du setzt den genehmigten Plan ({plan_ref}) Etappe für Etappe um. Bereits erledigt:\n{done_list}\n\n"
+            f"JETZT NUR {label.upper()}: {text}\n\n"
+            f"Ändere nur, was diese Etappe braucht, und lass erledigte Etappen funktionsfähig. "
+            f"Lege KEINE Fertigmeldung (.done) an: Der Loop prüft jede Etappe selbst und schließt nach der letzten ab.\n\n"
+        )
+        if proof_cmd:
+            prompt += f"Nach dieser Etappe führt der Loop `{proof_cmd}` aus; er muss grün sein.\n\n"
+        if feedback:
+            prompt += f"RÜCKMELDUNG AUS DER LETZTEN RUNDE (zuerst beheben):\n{feedback}\n\n"
+        if endpoint:
+            if plan_text:
+                prompt += f"--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---\n\n"
+            if file_ctx:
+                prompt += f"--- AKTUELLER STAND DER BETROFFENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---\n\n"
+            prompt += "FORMAT FÜR DATEI-ÄNDERUNGEN: Gib jede geänderte oder neue Datei vollständig aus als\n" + ENDPOINT_FORMAT_HINT
+        return prompt
+
+    prompt = (
+        f"Führe den genehmigten Plan ({plan_ref}) für folgende Aufgabe aus:\n{task}\n\n"
+        f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch.\n\n"
+    )
+    if proof_cmd:
+        prompt += f"Vereinbarter Prüfbefehl (der Loop führt ihn danach selbst aus): `{proof_cmd}`\n\n"
+    if feedback:
+        prompt += f"RÜCKMELDUNG AUS DER LETZTEN RUNDE (zuerst beheben):\n{feedback}\n\n"
+    prompt += (
+        f"WICHTIG ZUM ABSCHLUSS: Wenn alle Anforderungen vollständig erfüllt und getestet sind, "
+        f"erstelle die Fertigmeldungs-Datei genau im Session-Ordner unter: '{rel_done_path}' (NICHT im Projekt-Hauptverzeichnis). "
+        f"Danach prüft ein anderes Modell deine Änderungen."
+    )
+    if endpoint:
+        if plan_text:
+            prompt += f"\n\n--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---"
+        if file_ctx:
+            prompt += f"\n\n--- AKTUELLER STAND DER BISHER GESCHRIEBENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---"
+        prompt += (
+            "\n\nFORMATIERUNGS-HINWEIS FÜR DATEI-ÄNDERUNGEN:\n"
+            "Gib alle zu erstellenden oder zu ändernden Dateien im Format an:\n"
+            + ENDPOINT_FORMAT_HINT
+            + "Sobald alles fertig und getestet ist, erstelle die Fertigmeldung mit:\n"
+            f"```filepath: {rel_done_path}\n"
+            "# Aufgabe abgeschlossen\n"
+            "```"
+        )
+    return prompt
+
+
+@dataclasses.dataclass
+class BuildContext:
+    """Was jede Bau-Runde braucht und sich im Bau-Loop nicht ändert (außer der Liste geschriebener Dateien)."""
+    work_path: Path
+    session_dir: Path
+    session_log: Path
+    state: dict
+    metrics: "SessionMetrics"
+    agents: dict
+    auto_switch: bool
+    inspector: "AgentCLI | None"
+    written_so_far: list[str]
+
+
+def run_build_call(
+    ctx: BuildContext,
+    builder: "AgentCLI",
+    builder_flags: list[str],
+    prompt: str,
+    endpoint: bool,
+    wait_note: str,
+    label: str,
+    log_header: str,
+) -> tuple[str, "AgentCLI", list[str], list[str]]:
+    """Ein Aufruf des Bauleiters: Antwort zeigen, bei Endpunkten Dateien schreiben, Antwort ins Session-Log.
+    Liefert (Antwort, Bauleiter, Flags, geschriebene Dateien); Bauleiter und Flags können nach einem Limit-Wechsel neu sein."""
+    print(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) ({wait_note})...", flush=True)
+    res, builder, builder_flags = safe_agent_run(
+        agent=builder,
+        prompt=prompt,
+        cwd=ctx.work_path,
+        flags=builder_flags,
+        agents=ctx.agents,
+        session_dir=ctx.session_dir,
+        state=ctx.state,
+        auto_switch=ctx.auto_switch,
+        role="builder",
+        metrics_tracker=ctx.metrics,
+        exclude={ctx.inspector.binary} if ctx.inspector is not None else None
+    )
+    print(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [{label}]:")
+    print(res)
+    written: list[str] = []
+    if endpoint:
+        name = builder.name
+        written = apply_code_blocks(
+            ctx.work_path, res,
+            on_blocked=lambda rel: record_audit_event(ctx.session_dir, "blocked_write", f"{name} wollte {rel} schreiben", ctx.metrics),
+        )
+        for w in written:
+            if w not in ctx.written_so_far:
+                ctx.written_so_far.append(w)
+        ctx.state["written_files"] = ctx.written_so_far
+        if written:
+            print(f"\n📝 {len(written)} Datei(en) durch 🔨 Bauleiter ({builder.name}) aktualisiert:")
+            for w in written:
+                print(f"   • {w}")
+    with open(ctx.session_log, "a", encoding="utf-8") as f_log:
+        f_log.write(log_header)
+        f_log.write(mask_secrets(res) + "\n")
+    return res, builder, builder_flags, written
+
+
+def run_proof_check(ctx: BuildContext, proof_cmd: str) -> tuple[bool, str]:
+    """Prüfbefehl ausführen, zählen und als Ereignis protokollieren."""
+    ok, output = run_proof(proof_cmd, ctx.work_path)
+    ctx.metrics.count("proof_green" if ok else "proof_red")
+    log_event(ctx.session_dir, "proof", ok=ok, command=proof_cmd, iteration=ctx.state.get("last_iteration"))
+    return ok, output
+
+
 def run_proof(command: str, cwd: Path, timeout: int = 900) -> tuple[bool, str]:
     """Führt den vereinbarten Prüfbefehl selbst aus, ohne Shell. Liefert (grün, Ausgabe-Ende)."""
     argv = shlex.split(command, posix=os.name != "nt")
@@ -4699,9 +4839,7 @@ def main():
         proof_note = "Prüfbefehl: keiner vereinbart."
         if proof_cmd:
             print(f"🧪 Führe Prüfbefehl aus: {proof_cmd}", flush=True)
-            ok, output = run_proof(proof_cmd, work_path)
-            session_metrics.count("proof_green" if ok else "proof_red")
-            log_event(session_dir, "proof", ok=ok, command=proof_cmd, iteration=state.get("last_iteration"))
+            ok, output = run_proof_check(build_ctx, proof_cmd)
             append_log(session_dir, f"Prüfbefehl `{proof_cmd}`: {'grün' if ok else 'rot'}")
             if not ok:
                 print("❌ Prüfbefehl ist rot. Fertigmeldung zurückgewiesen.")
@@ -4780,7 +4918,11 @@ def main():
         max_iters = start_iter - 1 + (len(stages) - stage_index) * 2 + 2
     else:
         max_iters = 10
-    written_so_far: list[str] = list(state.get("written_files", []))
+    build_ctx = BuildContext(
+        work_path=work_path, session_dir=session_dir, session_log=session_log, state=state,
+        metrics=session_metrics, agents=agents, auto_switch=auto_switch, inspector=inspector,
+        written_so_far=list(state.get("written_files", [])),
+    )
     state["iteration_limit"] = max_iters
     state["stage_mode_active"] = stage_mode
 
@@ -4834,63 +4976,21 @@ def main():
             print(f"\n{'='*20} Iteration {iteration}/{max_iters} · {stage_label} {'='*20}\n{stage_text}\n", flush=True)
             done_list = "\n".join(f"- [x] {s}" for s in stages[:stage_index]) or "- (noch keine)"
             plan_ref = plan_file if in_worktree else plan_file.relative_to(project_path)
-            prompt_build = (
-                f"Gesamtaufgabe: {task}\n\n"
-                f"Du setzt den genehmigten Plan ({plan_ref}) Etappe für Etappe um. Bereits erledigt:\n{done_list}\n\n"
-                f"JETZT NUR {stage_label.upper()}: {stage_text}\n\n"
-                f"Ändere nur, was diese Etappe braucht, und lass erledigte Etappen funktionsfähig. "
-                f"Lege KEINE Fertigmeldung (.done) an: Der Loop prüft jede Etappe selbst und schließt nach der letzten ab.\n\n"
+            file_ctx = stage_file_context(work_path, stage_text + "\n" + pending_feedback, build_ctx.written_so_far) if is_endpoint_builder else ""
+            prompt_build = compose_build_prompt(
+                task, plan_ref, proof_cmd, pending_feedback, is_endpoint_builder,
+                plan_text=plan_text_now, file_ctx=file_ctx, stage=(stage_label, stage_text, done_list),
             )
-            if proof_cmd:
-                prompt_build += f"Nach dieser Etappe führt der Loop `{proof_cmd}` aus; er muss grün sein.\n\n"
-            if pending_feedback:
-                prompt_build += f"RÜCKMELDUNG AUS DER LETZTEN RUNDE (zuerst beheben):\n{pending_feedback}\n\n"
-            if is_endpoint_builder:
-                if plan_text_now:
-                    prompt_build += f"--- GENEHMIGTER PLAN ---\n{plan_text_now}\n--- ENDE PLAN ---\n\n"
-                file_ctx = stage_file_context(work_path, stage_text + "\n" + pending_feedback, written_so_far)
-                if file_ctx:
-                    prompt_build += f"--- AKTUELLER STAND DER BETROFFENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---\n\n"
-                prompt_build += (
-                    "FORMAT FÜR DATEI-ÄNDERUNGEN: Gib jede geänderte oder neue Datei vollständig aus als\n"
-                    "```filepath: relativer/pfad/zur/datei.ext\n<vollständiger neuer Dateiinhalt>\n```\n"
-                )
             ok = False
             output = ""
             try:
-                print(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) ({stage_label})...", flush=True)
-                res, builder, builder_flags = safe_agent_run(
-                    agent=builder,
-                    prompt=prompt_build,
-                    cwd=work_path,
-                    flags=builder_flags,
-                    agents=agents,
-                    session_dir=session_dir,
-                    state=state,
-                    auto_switch=auto_switch,
-                    role="builder",
-                    metrics_tracker=session_metrics,
-                    exclude={inspector.binary} if inspector is not None else None
+                res, builder, builder_flags, _ = run_build_call(
+                    build_ctx, builder, builder_flags, prompt_build, is_endpoint_builder,
+                    wait_note=stage_label, label=stage_label,
+                    log_header=f"\n{'='*20} Iteration {iteration} · {stage_label} {'='*20}\n",
                 )
-                print(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [{stage_label}]:")
-                print(res)
-                if is_endpoint_builder:
-                    written = apply_code_blocks(
-                        work_path, res,
-                        on_blocked=lambda rel: record_audit_event(session_dir, "blocked_write", f"{builder.name} wollte {rel} schreiben", session_metrics),
-                    )
-                    for w in written:
-                        if w not in written_so_far:
-                            written_so_far.append(w)
-                    if written:
-                        print(f"\n📝 {len(written)} Datei(en) geschrieben: {', '.join(written)}")
-                    state["written_files"] = written_so_far
-                with open(session_log, "a", encoding="utf-8") as f_log:
-                    f_log.write(f"\n{'='*20} Iteration {iteration} · {stage_label} {'='*20}\n{mask_secrets(res)}\n")
                 if proof_cmd:
-                    ok, output = run_proof(proof_cmd, work_path)
-                    session_metrics.count("proof_green" if ok else "proof_red")
-                    log_event(session_dir, "proof", ok=ok, command=proof_cmd, iteration=state.get("last_iteration"))
+                    ok, output = run_proof_check(build_ctx, proof_cmd)
                 else:
                     ok = True
             except Exception as exc:
@@ -4968,81 +5068,22 @@ def main():
         # Im Worktree liegt der (git-ignorierte) Session-Ordner außerhalb des Arbeitsverzeichnisses -> absolute Pfade
         rel_done_path = (session_dir / ".done") if in_worktree else (session_dir / ".done").relative_to(project_path)
         plan_ref = plan_file if in_worktree else plan_file.relative_to(project_path)
-        prompt_build = (
-            f"Führe den genehmigten Plan ({plan_ref}) für folgende Aufgabe aus:\n{task}\n\n"
-            f"Erstelle oder modifiziere die benötigten Dateien im Projektverzeichnis. Führe Tests durch.\n\n"
-        )
-        if proof_cmd:
-            prompt_build += f"Vereinbarter Prüfbefehl (der Loop führt ihn danach selbst aus): `{proof_cmd}`\n\n"
-        if pending_feedback:
-            prompt_build += f"RÜCKMELDUNG AUS DER LETZTEN RUNDE (zuerst beheben):\n{pending_feedback}\n\n"
-        prompt_build += (
-            f"WICHTIG ZUM ABSCHLUSS: Wenn alle Anforderungen vollständig erfüllt und getestet sind, "
-            f"erstelle die Fertigmeldungs-Datei genau im Session-Ordner unter: '{rel_done_path}' (NICHT im Projekt-Hauptverzeichnis). "
-            f"Danach prüft ein anderes Modell deine Änderungen."
-        )
-
         is_endpoint_builder = builder.binary in ENDPOINT_BINARIES
-        if is_endpoint_builder:
-            # Endpunkte können die Plan-Datei nicht selbst öffnen, deshalb geht der Plan als Text mit.
-            plan_text = plan_file.read_text(encoding="utf-8", errors="ignore") if plan_file.exists() else ""
-            if plan_text:
-                prompt_build += f"\n\n--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---"
-            file_ctx = stage_file_context(work_path, pending_feedback, written_so_far)
-            if file_ctx:
-                prompt_build += f"\n\n--- AKTUELLER STAND DER BISHER GESCHRIEBENEN DATEIEN ---\n{file_ctx}\n--- ENDE DATEISTAND ---"
-            prompt_build += (
-                f"\n\nFORMATIERUNGS-HINWEIS FÜR DATEI-ÄNDERUNGEN:\n"
-                f"Gib alle zu erstellenden oder zu ändernden Dateien im Format an:\n"
-                f"```filepath: relativer/pfad/zur/datei.ext\n"
-                f"<vollständiger neuer Dateiinhalt>\n"
-                f"```\n"
-                f"Sobald alles fertig und getestet ist, erstelle die Fertigmeldung mit:\n"
-                f"```filepath: {rel_done_path}\n"
-                f"# Aufgabe abgeschlossen\n"
-                f"```"
-            )
+        file_ctx = stage_file_context(work_path, pending_feedback, build_ctx.written_so_far) if is_endpoint_builder else ""
+        prompt_build = compose_build_prompt(
+            task, plan_ref, proof_cmd, pending_feedback, is_endpoint_builder,
+            plan_text=plan_text_now, file_ctx=file_ctx, rel_done_path=rel_done_path,
+        )
 
         call_failed = ""
         written = []
         try:
-            print(f"⏳ Warte auf 🔨 Bauleiter ({builder.name}) (führt genehmigten Plan aus)...", flush=True)
-            res, builder, builder_flags = safe_agent_run(
-                agent=builder,
-                prompt=prompt_build,
-                cwd=work_path,
-                flags=builder_flags,
-                agents=agents,
-                session_dir=session_dir,
-                state=state,
-                auto_switch=auto_switch,
-                role="builder",
-                metrics_tracker=session_metrics,
-                exclude={inspector.binary} if inspector is not None else None
+            res, builder, builder_flags, written = run_build_call(
+                build_ctx, builder, builder_flags, prompt_build, is_endpoint_builder,
+                wait_note="führt genehmigten Plan aus", label=f"Iteration {iteration}", log_header=log_header,
             )
-            print(f"\n📋 Zusammenfassung von 🔨 Bauleiter ({builder.name}) [Iteration {iteration}]:")
-            print(res)
             pending_feedback = ""
             state["pending_feedback"] = ""
-
-            if is_endpoint_builder:
-                written = apply_code_blocks(
-                    work_path, res,
-                    on_blocked=lambda rel: record_audit_event(session_dir, "blocked_write", f"{builder.name} wollte {rel} schreiben", session_metrics),
-                )
-                for w in written:
-                    if w not in written_so_far:
-                        written_so_far.append(w)
-                state["written_files"] = written_so_far
-                if written:
-                    print(f"\n📝 {len(written)} Datei(en) durch 🔨 Bauleiter ({builder.name}) aktualisiert:")
-                    for w in written:
-                        print(f"   • {w}")
-
-            with open(session_log, "a", encoding="utf-8") as f_log:
-                f_log.write(log_header)
-                f_log.write(mask_secrets(res) + "\n")
-
         except Exception as exc:
             print(f"[!] Fehler bei Iteration {iteration}: {exc}")
             call_failed = f"Fehler: {str(exc)[:120]}"
@@ -5059,9 +5100,7 @@ def main():
                 break
             note_build_round(False, "Fertigmeldung zurückgewiesen")
         elif proof_cmd and not STOP_REQUESTED:
-            ok, output = run_proof(proof_cmd, work_path)
-            session_metrics.count("proof_green" if ok else "proof_red")
-            log_event(session_dir, "proof", ok=ok, command=proof_cmd, iteration=state.get("last_iteration"))
+            ok, output = run_proof_check(build_ctx, proof_cmd)
             if not ok:
                 pending_feedback = f"Der Prüfbefehl `{proof_cmd}` schlägt noch fehl:\n```\n{output}\n```"
                 state["pending_feedback"] = pending_feedback
