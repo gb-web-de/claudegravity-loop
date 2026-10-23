@@ -31,6 +31,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--budget-roles <liste>` | `--budget-rollen` | Harte Grenzen je Rolle, z. B. `"bauleiter=300k,abnahme=0.50usd"`. | – |
 | `--template <name>` | `--vorlage` | Aufgaben-Vorlage `bugfix`, `feature`, `refactor` oder eine eigene aus dem Profil. Siehe [Aufgaben-Vorlagen](#aufgaben-vorlagen). | – |
 | `init`, `--init` | `--einrichten` | Einrichtung: erkennt System und KI-CLIs, fragt Ziel, Prüfbefehl und Speicherort und schreibt ein Profil. Siehe [Schnellstart](schnellstart.md#1-einrichten). | – |
+| `--no-progress` | | Keine Statuszeile nach jedem KI-Aufruf (im Profil `"progress": false`). | aus |
 | `--no-guide` | | Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil `"guide": false`). | aus |
 | `--print-effective-config` | `--config` | Wirksame Einstellungen mit Quelle (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden. Siehe [Vorrang der Einstellungen](#vorrang-der-einstellungen). | aus |
 | `--etappen <modus>` | `--stages` | `auto`, `an`, `aus`. Der Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede mit `--proof`. `auto` schaltet den Modus für Bauleiter ohne eigenen Dateizugriff ein (Ollama, LM Studio, Endpunkte). Siehe [Bau-Loop](bau-loop.md#etappen-modus). | `auto` |

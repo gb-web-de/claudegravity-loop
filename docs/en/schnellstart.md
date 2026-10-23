@@ -70,6 +70,15 @@ claudegravity "Create a Python script for weather queries" -p ~/Projekte/mein-pr
 4. **Permission prompt:** Without `--yolo`, ClaudeGravity asks whether the Builder gets full write and tool permissions.
 5. **🔨 Builder** implements the plan in up to 10 rounds (`-m` changes this) and finally creates `.dual-loop/sessions/<session>/.done`. ClaudeGravity additionally writes the token and cost report into this file.
 
+After every AI call a status line shows where the run stands and what comes next:
+
+```text
+📍 Bau-Runde 3/10 · 🔨 Bauleiter Claude Code fertig nach 1 min 15 s · +12k Tokens (gesamt 40k Tokens, 0.25 USD gemeldet)
+   Weiter: Prüfbefehl `make test` · Budget 40% von 100k Tokens
+```
+
+(The loop's terminal output is German: build round 3 of 10, finished after 1 min 15 s, next: proof command.) USD only appear if the provider reports costs, the budget share only with `--budget-max`. If the run ends without success, the last line names the **abort reason** (round limit, acceptance check limit, stage not green, budget, limit menu or Ctrl+C); it is also in the key figures block of `AUDIT.md`. `--no-progress` turns the status line off.
+
 Details on each step: [Workflow & roles](ablauf-und-rollen.md).
 
 ## Typical combinations

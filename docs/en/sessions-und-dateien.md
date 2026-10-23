@@ -110,6 +110,7 @@ Below it, the same values follow as one JSON line in a ` ```json ` block (`versi
 * **Costs** come only from what providers report (Claude Code, API endpoints with `usage.cost` such as OpenRouter). Subscription CLIs and local models report no costs; there is no price table, and the tokens per role are included so you can do the math yourself. The unit is USD, as reported by the providers.
 * **Rework** counts build rounds that followed a red proof command or a rejected acceptance check, at most all build rounds after the first.
 * **Build rounds to success** only exist for completed sessions.
+* **Abort reason** (`abort_reason`) only appears for open sessions: round limit, acceptance check limit, stage not green, budget, quitting in the limit menu or Ctrl+C. Resuming with `-c` clears it.
 
 ## Project context: `CLAUDE.md` & `knowledge/`
 

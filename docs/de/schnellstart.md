@@ -68,6 +68,15 @@ claudegravity "Erstelle ein Python-Skript für Wetterabfragen" -p ~/Projekte/mei
 4. **Rechte-Abfrage:** Ohne `--yolo` fragt ClaudeGravity, ob der Bauleiter volle Schreib- und Tool-Rechte bekommt.
 5. **🔨 Bauleiter** setzt den Plan in bis zu 10 Runden um (`-m` ändert das) und legt am Ende `.dual-loop/sessions/<session>/.done` an. In diese Datei schreibt ClaudeGravity zusätzlich den Token- und Kostenbericht.
 
+Nach jedem KI-Aufruf zeigt eine Statuszeile, wo der Lauf steht und was als Nächstes kommt:
+
+```text
+📍 Bau-Runde 3/10 · 🔨 Bauleiter Claude Code fertig nach 1 min 15 s · +12k Tokens (gesamt 40k Tokens, 0.25 USD gemeldet)
+   Weiter: Prüfbefehl `make test` · Budget 40% von 100k Tokens
+```
+
+USD erscheinen nur, wenn der Anbieter Kosten meldet, der Budget-Anteil nur mit `--budget-max`. Endet der Lauf ohne Erfolg, nennt die letzte Zeile den **Abbruchgrund** (Rundenlimit, Abnahme-Limit, Etappe nicht grün, Budget, Limit-Menü oder Strg+C); er steht auch im Kennzahlen-Block von `AUDIT.md`. `--no-progress` schaltet die Statuszeile ab.
+
 Details zu jedem Schritt: [Ablauf & Rollen](ablauf-und-rollen.md).
 
 ## Typische Kombinationen

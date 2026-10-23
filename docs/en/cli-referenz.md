@@ -31,6 +31,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--budget-roles <list>` | `--budget-rollen` | Hard limits per role, e.g. `"bauleiter=300k,abnahme=0.50usd"`. | – |
 | `--template <name>` | `--vorlage` | Task template `bugfix`, `feature`, `refactor` or your own from a profile. See [Task templates](#task-templates). | – |
 | `init`, `--init` | `--einrichten` | Setup: detects system and AI CLIs, asks for goal, proof command and location, and writes a profile. See [Quick start](schnellstart.md#1-set-up). | – |
+| `--no-progress` | | No status line after every AI call (in a profile: `"progress": false`). | off |
 | `--no-guide` | | Do not show the hint on the first run without a profile (in a profile: `"guide": false`). | off |
 | `--print-effective-config` | `--config` | Show the effective settings with their source (command line, session, environment, profile, default) and exit. See [Settings precedence](#settings-precedence). | off |
 | `--etappen <mode>` | `--stages` | `auto`, `an` (on), `aus` (off); `on`/`off` work too. The Architect cuts the plan into stages, the Builder implements them one by one, the loop checks each with `--proof`. `auto` turns the mode on for Builders without their own file access (Ollama, LM Studio, endpoints). See [Build loop](bau-loop.md#stage-mode). | `auto` |

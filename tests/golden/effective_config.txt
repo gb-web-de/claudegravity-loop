@@ -32,6 +32,7 @@
   planner                = –                            [Standard]
   planner_effort         = –                            [Standard]
   planner_model          = –                            [Standard]
+  progress               = true                         [Standard]
   proof                  = "vendor/bin/phpunit"         [Projekt-Profil]
   pruefstatiker_endpoint = –                            [Standard]
   retries                = –                            [Standard]

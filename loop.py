@@ -147,6 +147,7 @@ RETRY_POLICIES = {
     "cloud": {"attempts": 3, "base": 5.0, "cap": 60.0},
 }
 RETRY_OVERRIDE: int | None = None  # --retries
+PROGRESS_ENABLED = True  # --no-progress
 
 
 def is_transient_error(text: str, local: bool = False) -> bool:
@@ -1850,6 +1851,42 @@ def handle_rate_limit(
         return "exit", None
 
 
+PROGRESS_ROLE_LABELS = {"planner": "🏗️ Architekt", "reviewer": "🧐 Prüfstatiker", "builder": "🔨 Bauleiter", "inspector": "🔎 Abnahme"}
+
+
+def format_duration(seconds: float) -> str:
+    seconds = int(seconds)
+    return f"{seconds // 60} min {seconds % 60} s" if seconds >= 60 else f"{seconds} s"
+
+
+def format_progress(role: str, agent_name: str, state: dict, metrics: "SessionMetrics | None",
+                    elapsed: float, delta_tokens: int, budget: "Budget | None" = None) -> list[str]:
+    """Statuszeilen nach jedem KI-Aufruf: wo der Lauf steht, was er verbraucht hat und was als Nächstes kommt."""
+    if role == "builder":
+        where = f"Bau-Runde {state.get('last_iteration', 0)}/{state.get('iteration_limit') or state.get('max_iterations') or '?'}"
+        stages = state.get("stages") or []
+        if stages and state.get("stage_mode_active"):
+            where += f" · Etappe {min(state.get('stage_index', 0) + 1, len(stages))}/{len(stages)}"
+        proof = state.get("proof")
+        nxt = f"Prüfbefehl `{proof}`" if proof else "Fertigmeldung prüfen, sonst nächste Runde"
+    elif role == "inspector":
+        where = f"Abnahme-Runde {state.get('inspection_rounds', 0)}"
+        nxt = "Urteil auswerten: fertig oder Nacharbeit"
+    else:
+        where = f"Plan-Runde {state.get('rounds_completed', 0) + 1}"
+        nxt = "Prüfstatiker prüft den Plan" if role == "planner" else "Urteil auswerten: Freigabe oder Überarbeitung"
+    usage = f"+{format_budget('tokens', delta_tokens)}"
+    if metrics is not None:
+        usage += f" (gesamt {format_budget('tokens', metrics.total_tokens)}"
+        usage += f", {format_budget('usd', metrics.cost_usd)} gemeldet)" if metrics.cost_usd > 0 else ")"
+    label = PROGRESS_ROLE_LABELS.get(role, role)
+    # Endpunkte heißen schon nach ihrer Rolle ("Architekt Endpoint (...)"); dann nur das Symbol voranstellen
+    who = f"{label.split()[0]} {agent_name}" if agent_name.startswith(label.split()[-1]) else f"{label} {agent_name}"
+    line = f"📍 {where} · {who} fertig nach {format_duration(elapsed)} · {usage}"
+    status = budget.status(metrics) if budget and budget.active and metrics is not None else None
+    return [line, f"   Weiter: {nxt}" + (f" · {status}" if status else "")]
+
+
 def safe_agent_run(
     agent: AgentCLI,
     prompt: str,
@@ -1873,6 +1910,9 @@ def safe_agent_run(
         try:
             watch = role != "builder"
             before = workspace_fingerprint(cwd) if watch else None
+            tracker = metrics_tracker or agent.metrics_tracker
+            tokens_before = tracker.total_tokens if tracker is not None else 0
+            started = time.monotonic()
             res = agent.run(prompt, cwd=cwd, extra_flags=flags)
             tracker = metrics_tracker or agent.metrics_tracker
             if watch:
@@ -1887,6 +1927,10 @@ def safe_agent_run(
                 for warning in BUDGET.check(tracker):
                     print(f"💶 Budget-Warnung: {warning}")
                     append_log(session_dir, f"Budget-Warnung: {warning}")
+            if PROGRESS_ENABLED:
+                delta = (tracker.total_tokens if tracker is not None else 0) - tokens_before
+                for line in format_progress(role, agent.name, state, tracker, time.monotonic() - started, delta, BUDGET):
+                    print(line, flush=True)
             if attempt and metrics_tracker:
                 metrics_tracker.note_retry("recovered")
             if attempt:
@@ -1951,8 +1995,10 @@ def safe_agent_run(
             elif action == "wait":
                 continue
             else:
+                state["abort_reason"] = f"Beendet im Limit-Menü ({agent.name}: {mask_secrets(err.message.strip().splitlines()[0][:120]) if err.message.strip() else 'Limit'})"
                 save_session_state(session_dir, state)
-                print("\n💾 Sitzung gesichert. Setze jederzeit fort mit 'claudegravity -c'.")
+                print(f"\n⏹️ Abbruchgrund: {state['abort_reason']}")
+                print("💾 Sitzung gesichert. Setze jederzeit fort mit 'claudegravity -c'.")
                 sys.exit(0)
     return "", agent, flags
 
@@ -3663,6 +3709,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--budget-roles", "--budget-rollen", default=None, help="Harte Grenzen je Rolle, z. B. \"bauleiter=300k,abnahme=0.50usd\"")
     parser.add_argument("--template", "--vorlage", default=None, help="Aufgaben-Vorlage: bugfix, feature, refactor oder eigene aus dem Profil (\"templates\"); einzelne Flags überschreiben sie")
     parser.add_argument("--init", "--einrichten", action="store_true", help="Einrichtung: erkennt System und KI-CLIs, fragt Ziel und Prüfbefehl, speichert ein Profil (auch: claudegravity init)")
+    parser.add_argument("--no-progress", dest="progress", action="store_false", help="Keine Statuszeile nach jedem KI-Aufruf (im Profil: \"progress\": false)")
     parser.add_argument("--no-guide", dest="guide", action="store_false", help="Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil: \"guide\": false)")
     parser.add_argument("--print-effective-config", "--config", dest="print_effective_config", action="store_true", help="Wirksame Konfiguration mit Quelle je Einstellung (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden")
     return parser
@@ -3698,8 +3745,9 @@ def main():
             config_report["sources"]["proof"] = "template"
             print(f"   Prüfbefehl aus dem Projekt geraten: {guessed} (anderer mit --proof)")
 
-    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING, RETRY_OVERRIDE, BUDGET
+    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING, RETRY_OVERRIDE, BUDGET, PROGRESS_ENABLED
     RETRY_OVERRIDE = args.retries
+    PROGRESS_ENABLED = args.progress
     try:
         BUDGET = Budget(args.budget_max, args.budget_warn, args.budget_roles)
     except ValueError as exc:
@@ -4516,6 +4564,7 @@ def main():
             print(f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Offene Befunde stehen in {session_dir.relative_to(project_path)}/INSPECTION_round*.md.")
             append_log(session_dir, "Abnahme-Limit erreicht, Aufgabe bleibt offen")
             state["phase"] = "inspection_open"
+            state["abort_reason"] = f"Abnahme-Limit ({args.max_inspections}) erreicht, Befunde offen"
             save_session_state(session_dir, state)
             return "stop"
         inspections_used += 1
@@ -4537,6 +4586,7 @@ def main():
             print(f"🛑 Abnahme-Limit ({args.max_inspections}) erreicht. Befunde: {session_dir.relative_to(project_path)}/INSPECTION_round{round_no}.md")
             append_log(session_dir, "Abnahme-Limit erreicht, Aufgabe bleibt offen")
             state["phase"] = "inspection_open"
+            state["abort_reason"] = f"Abnahme-Limit ({args.max_inspections}) erreicht, Befunde offen"
             save_session_state(session_dir, state)
             return "stop"
         return "retry"
@@ -4581,6 +4631,8 @@ def main():
     else:
         max_iters = 10
     written_so_far: list[str] = list(state.get("written_files", []))
+    state["iteration_limit"] = max_iters
+    state["stage_mode_active"] = stage_mode
 
     for iteration in range(start_iter, max_iters + 1):
         if STOP_REQUESTED:
@@ -4689,6 +4741,7 @@ def main():
                 print(f"❌ {stage_label} noch nicht fertig (Versuch {stage_tries}/{STAGE_MAX_TRIES}).")
                 if stage_tries >= STAGE_MAX_TRIES:
                     print(f"🛑 {stage_label} ist nach {STAGE_MAX_TRIES} Versuchen nicht grün. Stand gesichert; weiter mit 'claudegravity -c'.")
+                    state["abort_reason"] = f"{stage_label} nach {STAGE_MAX_TRIES} Versuchen nicht grün"
                     append_log(session_dir, f"{stage_label} nach {STAGE_MAX_TRIES} Versuchen offen")
                     tail = "\n".join((output or "").strip().splitlines()[-30:])
                     append_log(session_dir, f"Letzte Ausgabe des Prüfbefehls:\n```\n{tail}\n```")
@@ -4841,14 +4894,19 @@ def main():
         if in_worktree:
             print(f"🌿 Git-Workspace bleibt für die Fortsetzung erhalten: {work_path}")
         if STOP_REQUESTED:
+            state["abort_reason"] = "Abgebrochen (Strg+C)"
             print("\n[+] Abgebrochen. Stand gesichert, weiter mit 'claudegravity -c'.")
         else:
+            state["abort_reason"] = f"Rundenlimit erreicht ({max_iters} Bau-Runden)"
             print(f"\n[+] Maximale Rundenanzahl ({max_iters}) erreicht. Stand gesichert.")
             print(format_error("CG-1401", f"{max_iters} Runden"))
+        save_session_state(session_dir, state)
         # Kein .done anlegen: Das würde eine unfertige Aufgabe beim Fortsetzen als fertig melden.
         (session_dir / "AUDIT.md").write_text(format_metrics_report(session_metrics, state), encoding="utf-8")
         print(format_metrics_report(session_metrics, state))
 
+    if state.get("phase") != "completed" and state.get("abort_reason"):
+        print(f"\n⏹️ Abbruchgrund: {state['abort_reason']}")
     print("\n[*] ClaudeGravity Loop beendet.")
 
 

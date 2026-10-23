@@ -110,6 +110,7 @@ Darunter folgen dieselben Werte als eine JSON-Zeile in einem ` ```json `-Block (
 * **Kosten** stammen nur aus Angaben der Anbieter (Claude Code, API-Endpunkte mit `usage.cost` wie OpenRouter). Abo-CLIs und lokale Modelle melden keine Kosten; es gibt keine Preistabelle, die Tokens je Rolle stehen zum Nachrechnen dabei. Einheit ist USD, wie die Anbieter sie melden.
 * **Nacharbeit** zählt Bau-Runden, die auf einen roten Prüfbefehl oder eine verweigerte Abnahme folgten, höchstens alle Bau-Runden nach der ersten.
 * **Bau-Runden bis Erfolg** gibt es nur bei abgeschlossenen Sessions.
+* **Abbruchgrund** (`abort_reason`) steht nur bei offenen Sessions: Rundenlimit, Abnahme-Limit, Etappe nicht grün, Budget, Beenden im Limit-Menü oder Strg+C. Beim Fortsetzen mit `-c` wird er gelöscht.
 
 ## Projektkontext: `CLAUDE.md` & `knowledge/`
 

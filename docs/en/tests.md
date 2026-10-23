@@ -43,6 +43,7 @@ python3 -m unittest discover -s tests
 | `test_config.py`, `test_templates.py`, `test_wizard.py` | Profiles, environment, templates, setup |
 | `test_retry.py`, `test_audit.py`, `test_errors.py`, `test_kpi.py` | Retries, audit, error codes, key figures |
 | `test_budget.py`, `test_estimate.py` | Budget limits, cost estimate from earlier sessions |
+| `test_progress.py` | Status line after every AI call, abort reason at the round limit |
 
 ### Smoke matrix
 
