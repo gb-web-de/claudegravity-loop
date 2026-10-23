@@ -69,6 +69,10 @@ Built-in templates: bugfix, feature, refactor. Your own templates live in a prof
 **CG-1102 · Template needs a proof command**  
 Pass --proof "<test command>" or put `proof` in a profile (`claudegravity init` helps).
 
+<a id="cg-1103"></a>
+**CG-1103 · Invalid budget**  
+Examples: --budget-max 500k (tokens), --budget-max 2.50usd, --budget-roles "bauleiter=300k,abnahme=0.50usd".
+
 <a id="cg-1201"></a>
 **CG-1201 · Connection to endpoint failed**  
 Is the server running (Ollama: `ollama serve`)? Check URL and port with `curl <url>/models`, check VPN/firewall.
@@ -112,6 +116,10 @@ Read the findings in INSPECTION_round*.md and let the builder rework them with `
 <a id="cg-1403"></a>
 **CG-1403 · Stage not green after three attempts**  
 Read the proof output in LOG.md, adjust the plan or stage and continue with `claudegravity -c`.
+
+<a id="cg-1404"></a>
+**CG-1404 · Hard budget reached**  
+The report with the abort reason is in AUDIT.md. Continue with a higher budget: `claudegravity -c --budget-max <value>`, or cheaper with --strategy hybrid/eco or fewer rounds (-m).
 
 <a id="cg-1501"></a>
 **CG-1501 · Write attempt blocked**  

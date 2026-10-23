@@ -69,6 +69,10 @@ Eingebaute Vorlagen: bugfix, feature, refactor. Eigene Vorlagen stehen im Profil
 **CG-1102 · Vorlage braucht einen Prüfbefehl**  
 --proof "<testbefehl>" angeben oder `proof` ins Profil schreiben (`claudegravity init` hilft).
 
+<a id="cg-1103"></a>
+**CG-1103 · Budget-Angabe ungültig**  
+Beispiele: --budget-max 500k (Tokens), --budget-max 2.50usd, --budget-roles "bauleiter=300k,abnahme=0.50usd".
+
 <a id="cg-1201"></a>
 **CG-1201 · Verbindung zum Endpunkt fehlgeschlagen**  
 Läuft der Server (Ollama: `ollama serve`)? URL und Port mit `curl <url>/models` prüfen, VPN/Firewall prüfen.
@@ -112,6 +116,10 @@ Befunde in INSPECTION_round*.md lesen und mit `claudegravity -c` nacharbeiten la
 <a id="cg-1403"></a>
 **CG-1403 · Etappe nach drei Versuchen nicht grün**  
 Ausgabe des Prüfbefehls in LOG.md lesen, Plan oder Etappe anpassen und mit `claudegravity -c` weitermachen.
+
+<a id="cg-1404"></a>
+**CG-1404 · Hartes Budget erreicht**  
+Bericht mit Abbruchgrund steht in AUDIT.md. Weiter mit höherem Budget: `claudegravity -c --budget-max <wert>`, oder günstiger mit --strategy hybrid/eco bzw. weniger Runden (-m).
 
 <a id="cg-1501"></a>
 **CG-1501 · Schreibversuch blockiert**  

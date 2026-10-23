@@ -22,6 +22,10 @@
    👉 --proof "<testbefehl>" angeben oder `proof` ins Profil schreiben (`claudegravity init` hilft).
    📖 docs/de/fehlerbehebung.md#cg-1102
 
+❌ [CG-1103] Budget-Angabe ungültig
+   👉 Beispiele: --budget-max 500k (Tokens), --budget-max 2.50usd, --budget-roles "bauleiter=300k,abnahme=0.50usd".
+   📖 docs/de/fehlerbehebung.md#cg-1103
+
 ❌ [CG-1201] Verbindung zum Endpunkt fehlgeschlagen
    👉 Läuft der Server (Ollama: `ollama serve`)? URL und Port mit `curl <url>/models` prüfen, VPN/Firewall prüfen.
    📖 docs/de/fehlerbehebung.md#cg-1201
@@ -65,6 +69,10 @@
 ❌ [CG-1403] Etappe nach drei Versuchen nicht grün
    👉 Ausgabe des Prüfbefehls in LOG.md lesen, Plan oder Etappe anpassen und mit `claudegravity -c` weitermachen.
    📖 docs/de/fehlerbehebung.md#cg-1403
+
+❌ [CG-1404] Hartes Budget erreicht
+   👉 Bericht mit Abbruchgrund steht in AUDIT.md. Weiter mit höherem Budget: `claudegravity -c --budget-max <wert>`, oder günstiger mit --strategy hybrid/eco bzw. weniger Runden (-m).
+   📖 docs/de/fehlerbehebung.md#cg-1404
 
 ❌ [CG-1501] Schreibversuch blockiert
    👉 Ein Modell wollte außerhalb des Projekts oder in eine Geheimnis-Datei schreiben. Plan und Aufgabe prüfen.

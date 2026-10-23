@@ -406,6 +406,7 @@ def build_kpis(state: dict, metrics: SessionMetrics, now: datetime.datetime | No
         "cost_usd_by_role": {k: round(v, 4) for k, v in cost.items()},
         "cost_reported_by": reporting,
         "retries": metrics.retries.get("attempts", 0),
+        "abort_reason": state.get("abort_reason"),
     }
 
 
@@ -428,6 +429,7 @@ def format_kpi_block(kpi: dict) -> str:
         + f" · Abnahme {kpi['inspection_rounds']}",
         f"* **Nacharbeit:** {kpi['rework_rounds']} von {kpi['build_rounds']} Bau-Runden (Quote {kpi['rework_rate']:.0%}); "
         f"Prüfbefehl rot {kpi['proof_red']}/{kpi['proof_runs']}, Abnahme verweigert {kpi['inspection_rejected']}",
+        *([f"* **Abbruchgrund:** {kpi['abort_reason']}"] if kpi.get("abort_reason") else []),
         "",
         "```json",
         json.dumps(kpi, ensure_ascii=False),
@@ -1881,6 +1883,10 @@ def safe_agent_run(
             found = redact_secrets(res)[1] if isinstance(res, str) else []
             if found:
                 record_audit_event(session_dir, "secret_in_output", f"{agent.name} ({role}): {', '.join(found)}", tracker)
+            if BUDGET and BUDGET.active and tracker is not None:
+                for warning in BUDGET.check(tracker):
+                    print(f"💶 Budget-Warnung: {warning}")
+                    append_log(session_dir, f"Budget-Warnung: {warning}")
             if attempt and metrics_tracker:
                 metrics_tracker.note_retry("recovered")
             if attempt:
@@ -2783,6 +2789,7 @@ ERROR_CODES = {
     "CG-1003": ("Projektordner existiert nicht", "Pfad bei -p prüfen oder in den Projektordner wechseln."),
     "CG-1004": ("Keine Sitzung zum Fortsetzen", "Mit -p das richtige Projekt angeben oder eine neue Aufgabe starten."),
     "CG-1101": ("Unbekannte Vorlage", "Eingebaute Vorlagen: bugfix, feature, refactor. Eigene Vorlagen stehen im Profil unter `templates`."),
+    "CG-1103": ("Budget-Angabe ungültig", "Beispiele: --budget-max 500k (Tokens), --budget-max 2.50usd, --budget-roles \"bauleiter=300k,abnahme=0.50usd\"."),
     "CG-1102": ("Vorlage braucht einen Prüfbefehl", "--proof \"<testbefehl>\" angeben oder `proof` ins Profil schreiben (`claudegravity init` hilft)."),
     "CG-1201": ("Verbindung zum Endpunkt fehlgeschlagen", "Läuft der Server (Ollama: `ollama serve`)? URL und Port mit `curl <url>/models` prüfen, VPN/Firewall prüfen."),
     "CG-1202": ("Zeitüberschreitung beim Endpunkt", "Mehr Zeit mit --timeout <sekunden> bzw. CLAUDEGRAVITY_TIMEOUT, ein kleineres Modell oder kleinere Etappen (--etappen an)."),
@@ -2795,6 +2802,7 @@ ERROR_CODES = {
     "CG-1401": ("Rundenlimit ohne Fertigmeldung", "Mit `claudegravity -c -m 20` weitere Runden anhängen; ein --proof hilft dem Bauleiter, das Ziel zu erkennen."),
     "CG-1402": ("Abnahme-Limit erreicht, Befunde offen", "Befunde in INSPECTION_round*.md lesen und mit `claudegravity -c` nacharbeiten lassen; mehr Runden mit --max-inspections."),
     "CG-1403": ("Etappe nach drei Versuchen nicht grün", "Ausgabe des Prüfbefehls in LOG.md lesen, Plan oder Etappe anpassen und mit `claudegravity -c` weitermachen."),
+    "CG-1404": ("Hartes Budget erreicht", "Bericht mit Abbruchgrund steht in AUDIT.md. Weiter mit höherem Budget: `claudegravity -c --budget-max <wert>`, oder günstiger mit --strategy hybrid/eco bzw. weniger Runden (-m)."),
     "CG-1501": ("Schreibversuch blockiert", "Ein Modell wollte außerhalb des Projekts oder in eine Geheimnis-Datei schreiben. Plan und Aufgabe prüfen."),
     "CG-1502": ("Lesende Rolle hat Dateien geändert", "Änderungen mit `git status` prüfen und bei Bedarf zurücknehmen; für diese CLI nur als Bauleiter einsetzen."),
     "CG-1503": ("Mögliche Zugangsdaten in einer Modellantwort", "Antwort prüfen; Zugangsdaten nur über Umgebungsvariablen nutzen und kompromittierte Schlüssel erneuern."),
@@ -3175,6 +3183,142 @@ def format_effective_config(report: dict) -> str:
 
 
 # ==========================================
+# Budget: harte und weiche Grenzen für Tokens und gemeldete Kosten
+# ==========================================
+class BudgetExceeded(BaseException):
+    """BaseException, damit allgemeine `except Exception`-Blöcke im Bau-Loop den Abbruch nicht schlucken."""
+
+
+BUDGET_ROLE_ALIASES = {
+    "architekt": "planner", "planner": "planner",
+    "pruefstatiker": "reviewer", "prüfstatiker": "reviewer", "reviewer": "reviewer",
+    "bauleiter": "builder", "bauer": "builder", "builder": "builder",
+    "abnahme": "inspector", "inspector": "inspector",
+}
+BUDGET_ROLE_LABELS = {"planner": "Architekt", "reviewer": "Prüfstatiker", "builder": "Bauleiter", "inspector": "Abnahme"}
+BUDGET_AUTO_WARN = 0.8  # ohne --budget-warn: Warnung bei 80 % einer harten Grenze
+
+
+def parse_budget(text: str) -> tuple[str, float]:
+    """'2.50usd', '$2.50' -> ('usd', 2.5); '500k', '1.2m', '80000 tokens' -> ('tokens', ...)."""
+    raw = str(text).strip().lower().replace(" ", "").replace(",", ".")
+    if raw.startswith("$") or raw.endswith("usd") or raw.endswith("$"):
+        number = raw.strip("$").removesuffix("usd").strip("$")
+        unit = "usd"
+    else:
+        number = raw.removesuffix("tokens").removesuffix("token")
+        unit = "tokens"
+    factor = 1.0
+    if unit == "tokens" and number[-1:] in ("k", "m"):
+        factor = 1_000 if number[-1] == "k" else 1_000_000
+        number = number[:-1]
+    try:
+        value = float(number) * factor
+    except ValueError:
+        raise ValueError(f"Budget {text!r} nicht lesbar (Beispiele: 500k, 1.5m, 80000, 2.50usd, $2.50)")
+    if value <= 0:
+        raise ValueError(f"Budget {text!r} muss größer als 0 sein")
+    return unit, value
+
+
+def format_budget(unit: str, value: float) -> str:
+    if unit == "usd":
+        return f"{value:.2f} USD" if value >= 0.1 else f"{value:.4f} USD"
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M Tokens"
+    return f"{value / 1000:.0f}k Tokens" if value >= 10_000 else f"{value:.0f} Tokens"
+
+
+class Budget:
+    """Prüft nach jedem KI-Aufruf den Verbrauch gegen die Grenzen. USD zählt nur, was Anbieter melden."""
+
+    def __init__(self, max_total: str | None = None, warn_total: str | None = None, roles: str | None = None):
+        self.max_total = parse_budget(max_total) if max_total else None
+        self.warn_total = parse_budget(warn_total) if warn_total else None
+        self.roles: dict[str, tuple[str, float]] = {}
+        for part in filter(None, (p.strip() for p in (roles or "").split(","))):
+            if "=" not in part:
+                raise ValueError(f"Rollen-Budget {part!r}: erwartet ROLLE=WERT, z. B. bauleiter=300k")
+            name, value = part.split("=", 1)
+            role = BUDGET_ROLE_ALIASES.get(name.strip().lower())
+            if not role:
+                raise ValueError(f"Rollen-Budget {part!r}: unbekannte Rolle (architekt, pruefstatiker, bauleiter, abnahme)")
+            self.roles[role] = parse_budget(value)
+        self.warned: set[str] = set()
+        self.context: dict = {}
+
+    @property
+    def active(self) -> bool:
+        return bool(self.max_total or self.warn_total or self.roles)
+
+    @staticmethod
+    def usage(metrics: "SessionMetrics") -> dict:
+        used = {"total": {"tokens": metrics.total_tokens, "usd": metrics.cost_usd}}
+        for entry in metrics.by_agent.values():
+            role = role_key(entry.get("role", ""))
+            if role:
+                bucket = used.setdefault(role, {"tokens": 0, "usd": 0.0})
+                bucket["tokens"] += entry.get("total_tokens", 0)
+                bucket["usd"] += entry.get("cost_usd", 0.0)
+        return used
+
+    def limits(self) -> list[tuple[str, str, tuple[str, float], bool]]:
+        """(Schlüssel, Bezeichnung, Grenze, hart?)"""
+        out = []
+        if self.max_total:
+            out.append(("total", "Gesamtbudget", self.max_total, True))
+            if not self.warn_total:
+                out.append(("total", "Gesamtbudget (80 %)", (self.max_total[0], self.max_total[1] * BUDGET_AUTO_WARN), False))
+        if self.warn_total:
+            out.append(("total", "Warnschwelle", self.warn_total, False))
+        for role, limit in self.roles.items():
+            out.append((role, f"Budget {BUDGET_ROLE_LABELS[role]}", limit, True))
+            out.append((role, f"Budget {BUDGET_ROLE_LABELS[role]} (80 %)", (limit[0], limit[1] * BUDGET_AUTO_WARN), False))
+        return out
+
+    def check(self, metrics: "SessionMetrics") -> list[str]:
+        """Liefert neue Warnungen; wirft BudgetExceeded, sobald eine harte Grenze erreicht ist."""
+        used = self.usage(metrics)
+        warnings = []
+        for key, label, (unit, value), hard in self.limits():
+            spent = used.get(key, {}).get(unit, 0)
+            if spent < value:
+                continue
+            text = f"{label} {format_budget(unit, value)} erreicht (verbraucht: {format_budget(unit, spent)})"
+            if hard:
+                raise BudgetExceeded(text)
+            if label not in self.warned:
+                self.warned.add(label)
+                warnings.append(text)
+        return warnings
+
+    def status(self, metrics: "SessionMetrics") -> str | None:
+        if not self.max_total:
+            return None
+        unit, value = self.max_total
+        spent = self.usage(metrics)["total"][unit]
+        return f"Budget {spent / value:.0%} von {format_budget(unit, value)}"
+
+
+BUDGET: Budget | None = None
+
+
+def handle_budget_exceeded(exc: BudgetExceeded) -> None:
+    """Sichert Stand und Bericht mit Abbruchgrund, dann Ende mit CG-1404."""
+    ctx = BUDGET.context if BUDGET else {}
+    state, session_dir, metrics = ctx.get("state"), ctx.get("session_dir"), ctx.get("metrics")
+    if state is not None and session_dir is not None:
+        state["abort_reason"] = f"Budget: {exc}"
+        if metrics is not None:
+            state["metrics"] = metrics.to_dict()
+            (session_dir / "AUDIT.md").write_text(format_metrics_report(metrics, state), encoding="utf-8")
+        save_session_state(session_dir, state)
+        append_log(session_dir, f"Abbruch: Budget: {exc}")
+    print(f"\n🛑 Hartes Budget erreicht, Lauf beendet. Stand gesichert.")
+    fail("CG-1404", str(exc), exit_code=3)
+
+
+# ==========================================
 # Einrichtung (claudegravity init), geführter Erstlauf und Warnungen
 # ==========================================
 WIZARD_GOALS = {
@@ -3384,6 +3528,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--etappen", "--stages", default="auto", choices=["auto", "an", "aus", "on", "off"], help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)")
 
     parser.add_argument("--retries", "--neuversuche", type=int, default=None, help="Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, 5xx, Verbindungsabbruch) mit Backoff und Jitter (Standard: 3, 0 schaltet ab)")
+    parser.add_argument("--budget-max", default=None, help="Harte Grenze für die Session: Tokens (500k, 1.5m) oder gemeldete Kosten (2.50usd); der Lauf endet nach dem Aufruf, der sie erreicht")
+    parser.add_argument("--budget-warn", default=None, help="Weiche Grenze: nur Warnung (Standard: 80 %% von --budget-max)")
+    parser.add_argument("--budget-roles", "--budget-rollen", default=None, help="Harte Grenzen je Rolle, z. B. \"bauleiter=300k,abnahme=0.50usd\"")
     parser.add_argument("--template", "--vorlage", default=None, help="Aufgaben-Vorlage: bugfix, feature, refactor oder eigene aus dem Profil (\"templates\"); einzelne Flags überschreiben sie")
     parser.add_argument("--init", "--einrichten", action="store_true", help="Einrichtung: erkennt System und KI-CLIs, fragt Ziel und Prüfbefehl, speichert ein Profil (auch: claudegravity init)")
     parser.add_argument("--no-guide", dest="guide", action="store_false", help="Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil: \"guide\": false)")
@@ -3421,8 +3568,12 @@ def main():
             config_report["sources"]["proof"] = "template"
             print(f"   Prüfbefehl aus dem Projekt geraten: {guessed} (anderer mit --proof)")
 
-    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING, RETRY_OVERRIDE
+    global ENDPOINT_TIMEOUT, SHIELD_ENABLED, STAGE_PLANNING, RETRY_OVERRIDE, BUDGET
     RETRY_OVERRIDE = args.retries
+    try:
+        BUDGET = Budget(args.budget_max, args.budget_warn, args.budget_roles)
+    except ValueError as exc:
+        fail("CG-1103", str(exc))
     env_timeout = os.environ.get("CLAUDEGRAVITY_TIMEOUT", "")
     ENDPOINT_TIMEOUT = args.timeout or (int(env_timeout) if env_timeout.isdigit() else None)
     SHIELD_ENABLED = not args.no_shield and os.environ.get("CLAUDEGRAVITY_SHIELD", "").lower() != "off"
@@ -3840,6 +3991,11 @@ def main():
     # Metriken (Token & Kosten-Tracking)
     # ==========================================
     session_metrics = SessionMetrics.from_dict(state.get("metrics"))
+    state.pop("abort_reason", None)
+    if BUDGET and BUDGET.active:
+        BUDGET.context = {"state": state, "session_dir": session_dir, "metrics": session_metrics}
+        print(f"[*] Budget            : " + ", ".join(f"{label} {format_budget(*limit)}" for _, label, limit, hard in BUDGET.limits() if hard)
+              + (f"; Warnung ab {format_budget(*BUDGET.warn_total)}" if BUDGET.warn_total else ""))
 
     planner = create_agent(planner_base.binary, agents, role="🏗️ Architekt (Planung & Entwurf)", metrics_tracker=session_metrics)
     reviewer = create_agent(reviewer_base.binary, agents, role="🧐 Prüfstatiker (Prüfung & Review)", metrics_tracker=session_metrics)
@@ -4566,6 +4722,8 @@ def run_cli():
     """Einstieg: unerwartete Fehler mit Fehlercode, Lösungshinweis und Doku-Verweis statt Traceback."""
     try:
         main()
+    except BudgetExceeded as exc:
+        handle_budget_exceeded(exc)
     except (RuntimeError, ValueError, OSError) as exc:
         if os.environ.get("CLAUDEGRAVITY_DEBUG"):
             raise

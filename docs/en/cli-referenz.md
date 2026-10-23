@@ -26,6 +26,9 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). See [Strategies](strategien.md). | `balanced` |
 | `--dry-run` | | Show the assignment, cost analysis and start command without running or creating anything. | off |
 | `--info` | `--check` | Show detected CLIs/endpoints and the default assignment. | off |
+| `--budget-max <value>` | | Hard limit for the session in tokens (`500k`, `1.5m`) or reported costs (`2.50usd`). See [Budget](#budget). | – |
+| `--budget-warn <value>` | | Soft limit, warning only. | 80 % of `--budget-max` |
+| `--budget-roles <list>` | `--budget-rollen` | Hard limits per role, e.g. `"bauleiter=300k,abnahme=0.50usd"`. | – |
 | `--template <name>` | `--vorlage` | Task template `bugfix`, `feature`, `refactor` or your own from a profile. See [Task templates](#task-templates). | – |
 | `init`, `--init` | `--einrichten` | Setup: detects system and AI CLIs, asks for goal, proof command and location, and writes a profile. See [Quick start](schnellstart.md#1-set-up). | – |
 | `--no-guide` | | Do not show the hint on the first run without a profile (in a profile: `"guide": false`). | off |
@@ -141,6 +144,18 @@ claudegravity --print-effective-config -p ~/Projekte/rechnung
 ```
 
 If two sources set the same setting differently, the output marks it as a **conflict** and names the overridden value. On a normal start the loop shows in one line which values come from the environment or a profile, and reports conflicts.
+
+## Budget
+
+```bash
+claudegravity "New export function" --budget-max 400k --budget-warn 250k --budget-roles "abnahme=0.50usd"
+```
+
+After every AI call the loop compares the session's usage with the limits. A soft limit produces one 💶 warning (also in `LOG.md`); without `--budget-warn` it warns at 80 % of every hard limit. Once usage reaches a hard limit, the run ends after that call (a running call is not interrupted), the state is saved and `AUDIT.md` names the **abort reason** in the key figures block (error code CG-1404). Continue with `claudegravity -c --budget-max <higher value>`; the budget applies to the whole session, across resumes.
+
+* **Tokens** are counted for all providers (estimated for CLIs that report no usage).
+* **USD** only counts what providers report (Claude Code, API endpoints with `usage.cost`). Subscription CLIs and local models therefore use no USD budget.
+* Like all settings, `budget_max`, `budget_warn` and `budget_roles` can also go into a profile or a template.
 
 ## Task templates
 

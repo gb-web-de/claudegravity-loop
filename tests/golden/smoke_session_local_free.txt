@@ -58,5 +58,6 @@ state.json.bak
     "inspector": 0.0
   },
   "cost_reported_by": [],
-  "retries": 0
+  "retries": 0,
+  "abort_reason": null
 }

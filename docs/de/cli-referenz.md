@@ -26,6 +26,9 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--strategy` | `--preset` | `balanced`, `best-code` (`quality`), `eco` (`economy`, `cost`), `local-free` (`free`, `local`), `hybrid` (`mixed`). Siehe [Strategien](strategien.md). | `balanced` |
 | `--dry-run` | | Belegung, Kostenanalyse und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |
 | `--info` | `--check` | Erkannte CLIs/Endpunkte und Standard-Belegung anzeigen. | aus |
+| `--budget-max <wert>` | | Harte Grenze für die Session in Tokens (`500k`, `1.5m`) oder gemeldeten Kosten (`2.50usd`). Siehe [Budget](#budget). | – |
+| `--budget-warn <wert>` | | Weiche Grenze, nur Warnung. | 80 % von `--budget-max` |
+| `--budget-roles <liste>` | `--budget-rollen` | Harte Grenzen je Rolle, z. B. `"bauleiter=300k,abnahme=0.50usd"`. | – |
 | `--template <name>` | `--vorlage` | Aufgaben-Vorlage `bugfix`, `feature`, `refactor` oder eine eigene aus dem Profil. Siehe [Aufgaben-Vorlagen](#aufgaben-vorlagen). | – |
 | `init`, `--init` | `--einrichten` | Einrichtung: erkennt System und KI-CLIs, fragt Ziel, Prüfbefehl und Speicherort und schreibt ein Profil. Siehe [Schnellstart](schnellstart.md#1-einrichten). | – |
 | `--no-guide` | | Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil `"guide": false`). | aus |
@@ -141,6 +144,18 @@ claudegravity --print-effective-config -p ~/Projekte/rechnung
 ```
 
 Setzen zwei Quellen dieselbe Einstellung verschieden, markiert die Ausgabe das als **Konflikt** und nennt den überschriebenen Wert. Beim normalen Start zeigt der Loop in einer Zeile, welche Werte aus Umgebung oder Profil kommen, und meldet Konflikte.
+
+## Budget
+
+```bash
+claudegravity "Neue Exportfunktion" --budget-max 400k --budget-warn 250k --budget-roles "abnahme=0.50usd"
+```
+
+Nach jedem KI-Aufruf vergleicht der Loop den Verbrauch der Session mit den Grenzen. Eine weiche Grenze erzeugt einmal eine 💶-Warnung (auch in `LOG.md`); ohne `--budget-warn` warnt er bei 80 % jeder harten Grenze. Erreicht der Verbrauch eine harte Grenze, endet der Lauf nach diesem Aufruf (ein laufender Aufruf wird nicht abgebrochen), der Stand wird gesichert und `AUDIT.md` nennt im Kennzahlen-Block den **Abbruchgrund** (Fehlercode CG-1404). Weiter geht es mit `claudegravity -c --budget-max <höherer wert>`; das Budget gilt für die ganze Session, auch über Fortsetzungen.
+
+* **Tokens** zählt der Loop bei allen Anbietern (bei CLIs ohne Verbrauchsangabe geschätzt).
+* **USD** zählt nur, was Anbieter melden (Claude Code, API-Endpunkte mit `usage.cost`). Abo-CLIs und lokale Modelle verbrauchen damit kein USD-Budget.
+* Wie alle Einstellungen gehen `budget_max`, `budget_warn` und `budget_roles` auch ins Profil oder in eine Vorlage.
 
 ## Aufgaben-Vorlagen
 
