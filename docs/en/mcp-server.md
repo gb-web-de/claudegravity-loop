@@ -51,7 +51,7 @@ Check with `claude mcp list` or `codex mcp list`. For JSON clients (Claude Deskt
 | Claude Desktop | macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows `%APPDATA%\Claude\claude_desktop_config.json` |
 | Cursor | `~/.cursor/mcp.json` |
 | Gemini CLI | `~/.gemini/settings.json` |
-| Antigravity (app) | `~/.gemini/antigravity/mcp_config.json` |
+| Antigravity (app) | `~/.gemini/config/mcp_config.json` (not `~/.gemini/antigravity/`; the installer removes an old entry there) |
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` |
 | Codex CLI and Codex app | `~/.codex/config.toml` (shared by both), section `[mcp_servers.claudegravity]` with `command`, `args`, `env` |
 

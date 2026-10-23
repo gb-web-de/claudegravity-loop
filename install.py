@@ -151,6 +151,23 @@ def json_client(path: Path, key: str = "mcpServers", extra: dict | None = None, 
     return install, uninstall, status
 
 
+def antigravity_client(gemini_dir: Path):
+    """Antigravity-App: liest ~/.gemini/config/mcp_config.json. Ältere Einträge in ~/.gemini/antigravity/ werden aufgeräumt."""
+    install, uninstall_new, status = json_client(gemini_dir / "config" / "mcp_config.json", host="agy")
+    _, uninstall_old, status_old = json_client(gemini_dir / "antigravity" / "mcp_config.json", host="agy")
+
+    def uninstall() -> bool:
+        return uninstall_new() and uninstall_old()
+
+    def install_and_clean() -> bool:
+        # Früher schrieb der Installer nach ~/.gemini/antigravity/; dieser Eintrag wird von der App nicht gelesen
+        if status_old():
+            uninstall_old()
+        return install()
+
+    return install_and_clean, uninstall, status
+
+
 # --------------------------------------------------------------------
 # Codex CLI (~/.codex/config.toml) – Block zwischen Markern
 # --------------------------------------------------------------------
@@ -282,8 +299,8 @@ def clients() -> dict[str, tuple[str, bool, tuple]]:
         ),
         "antigravity": (
             "Google Antigravity",
-            bool(shutil.which("agy")) or agy_dir.is_dir(),
-            json_client(agy_dir / "mcp_config.json", host="agy"),
+            bool(shutil.which("agy")) or agy_dir.is_dir() or (gemini_dir / "config").is_dir(),
+            antigravity_client(gemini_dir),
         ),
         "codex": ("OpenAI Codex CLI", bool(shutil.which("codex")) or (HOME / ".codex").is_dir(), codex_client()),
         "copilot": (
