@@ -2728,7 +2728,7 @@ def handle_plan_approval_and_changes(
 CONFIG_ENV_PREFIX = "CLAUDEGRAVITY_"
 PROFILE_FILE = "profile.json"
 # Nicht über Umgebung oder Profil setzbar: Aufgabe/Ziel, einmalige Aktionen und Geheimnisse
-CONFIG_EXCLUDED = {"help", "task", "project", "resume", "check", "dry_run", "print_effective_config", "api_key", "no_shield"}
+CONFIG_EXCLUDED = {"help", "task", "project", "resume", "check", "dry_run", "print_effective_config", "api_key", "no_shield", "init"}
 # Das Projekt-Profil liegt im Projektordner, in den ein Bauleiter schreiben kann: keine Rechte daraus
 PROJECT_PROFILE_FORBIDDEN = {"yolo"}
 # Standardwerte, die erst später im Lauf gesetzt werden (für --print-effective-config)
@@ -2982,6 +2982,172 @@ def format_effective_config(report: dict) -> str:
     return "\n".join(lines)
 
 
+# ==========================================
+# Einrichtung (claudegravity init), geführter Erstlauf und Warnungen
+# ==========================================
+WIZARD_GOALS = {
+    "1": ("schnell", "Schnell: Standard-Belegung, ein Lauf ohne Umwege"),
+    "2": ("guenstig", "Günstig: Cloud nur für Plan und Abnahme, Bau lokal (falls vorhanden)"),
+    "3": ("qualitaet", "Maximale Qualität: alle Rollen mit hohem Effort"),
+}
+
+PROOF_HINTS = [
+    ("composer.json", "vendor/bin/phpunit"),
+    ("phpunit.xml.dist", "vendor/bin/phpunit"),
+    ("phpunit.xml", "vendor/bin/phpunit"),
+    ("package.json", "npm test"),
+    ("pytest.ini", "python3 -m pytest"),
+    ("pyproject.toml", "python3 -m pytest"),
+    ("go.mod", "go test ./..."),
+    ("Cargo.toml", "cargo test"),
+    ("tests", "python3 -m unittest discover -s tests"),
+]
+
+
+def suggest_proof_command(project_path: Path) -> str | None:
+    """Rät den Prüfbefehl aus typischen Projektdateien; None, wenn nichts passt."""
+    for marker, command in PROOF_HINTS:
+        if (project_path / marker).exists():
+            if marker == "pyproject.toml" and "pytest" not in (project_path / marker).read_text(encoding="utf-8", errors="ignore"):
+                continue
+            return command
+    return None
+
+
+def strategy_for_goal(goal: str, agents: dict) -> tuple[str, str]:
+    """Strategie zum Ziel des Nutzers, abhängig davon, was installiert ist. Liefert (Strategie, Begründung)."""
+    cloud = [k for k in CLOUD_PLANNER_ORDER if k in agents]
+    local = [k for k, a in agents.items() if a.local]
+    if goal == "qualitaet":
+        return "best-code", "alle Phasen mit Effort high"
+    if goal == "guenstig":
+        if cloud and local:
+            return "hybrid", f"{agents[cloud[0]].name} plant und nimmt ab, {agents[local[0]].name} prüft und baut"
+        if local:
+            return "local-free", f"Bau-Loop lokal mit {agents[local[0]].name}"
+        return "eco", "kein lokales Modell gefunden, daher Sparmodelle und Effort medium"
+    return "balanced", "ausgewogene Standard-Belegung"
+
+
+def write_profile(path: Path, updates: dict) -> dict:
+    """Übernimmt `updates` in ein bestehendes Profil (andere Schlüssel bleiben) und speichert es."""
+    data, warnings = load_profile(path)
+    if warnings:
+        raise ValueError(warnings[0])
+    data.update(updates)
+    data["_erstellt_von"] = f"claudegravity init, {datetime.date.today().isoformat()}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return data
+
+
+def run_setup_wizard(project_path: Path, agents: dict, input_fn=input, global_path: Path | None = None) -> Path | None:
+    """`claudegravity init`: erkennt Umgebung, fragt drei Dinge, schreibt ein Profil und zeigt den Startbefehl."""
+    def ask(question: str, default: str, allowed: tuple[str, ...] | None = None) -> str:
+        while True:
+            try:
+                answer = input_fn(f"{question} [{default}]: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                raise SystemExit("\nEinrichtung abgebrochen, nichts gespeichert.")
+            answer = answer or default
+            if not allowed or answer in allowed:
+                return answer
+            print(f"   Bitte eine der Möglichkeiten wählen: {', '.join(allowed)}")
+
+    print("🧭 ClaudeGravity einrichten\n")
+    print(f"🖥️  System : {platform.system()} {platform.release()}, Python {platform.python_version()}")
+    print(f"📁 Projekt: {project_path}")
+    cloud = [k for k in CLOUD_PLANNER_ORDER if k in agents]
+    local = [k for k, a in agents.items() if a.local]
+    print("🔍 Gefunden:")
+    for key, agent in agents.items():
+        print(f"   [x] {agent.name} (`{key}`, {'lokal' if agent.local else 'Cloud'})")
+    if not agents:
+        print("   (nichts) Installiere zuerst eine KI-CLI (z. B. `claude`, `codex`, `agy`) oder starte Ollama.")
+        return None
+    if len(cloud) + len(local) < 2:
+        print("⚠️  Nur ein Anbieter gefunden: Architekt und Prüfstatiker wären dasselbe Modell, das sich selbst prüft.")
+        print("   Besser: eine zweite CLI installieren oder Ollama/LM Studio starten.")
+
+    print("\nWas ist dir am wichtigsten?")
+    for key, (_, text) in WIZARD_GOALS.items():
+        print(f"  [{key}] {text}")
+    default_goal = "2" if local else "1"
+    goal = WIZARD_GOALS[ask("Auswahl", default_goal, tuple(WIZARD_GOALS))][0]
+    strategy, why = strategy_for_goal(goal, agents)
+    print(f"   → Strategie `{strategy}`: {why}")
+
+    suggested = suggest_proof_command(project_path)
+    print("\nMit welchem Befehl prüft der Loop jede Bau-Runde selbst (Tests)? Ohne Prüfbefehl entscheidet nur die Abnahme.")
+    proof = ask("Prüfbefehl (- für keinen)", suggested or "-")
+    proof = None if proof.strip() == "-" else proof.strip()
+
+    g_path = global_path or global_profile_path()
+    p_path = project_profile_path(project_path)
+    print("\nWo speichern? Das Projekt-Profil gilt nur hier und schlägt das globale.")
+    print(f"  [1] Projekt: {p_path}")
+    print(f"  [2] Global : {g_path}")
+    where = ask("Auswahl", "1", ("1", "2"))
+    target = p_path if where == "1" else g_path
+
+    updates: dict = {"strategy": strategy}
+    if proof:
+        updates["proof"] = proof
+    if strategy == "hybrid" or (strategy == "local-free" and local):
+        updates["etappen"] = "auto"
+    try:
+        write_profile(target, updates)
+    except (OSError, ValueError) as exc:
+        print(f"❌ Profil nicht gespeichert: {exc}")
+        return None
+
+    print("\n" + "=" * 68)
+    print(f"✅ Profil gespeichert: {target}")
+    for key, value in updates.items():
+        print(f"   {key} = {value}")
+    print("\nSo geht es weiter:")
+    print("  1. Erst ansehen, was passieren würde (legt nichts an):")
+    print('     claudegravity --dry-run "Deine Aufgabe"')
+    print("  2. Dann starten:")
+    print('     claudegravity "Deine Aufgabe"')
+    print("  Wirksame Einstellungen und ihre Herkunft: claudegravity --print-effective-config")
+    print("=" * 68)
+    return target
+
+
+def unsafe_config_warnings(args, project_path: Path, git_repo: bool) -> list[str]:
+    """Hinweise auf Einstellungen, bei denen Fehler teuer oder schwer rückgängig zu machen sind."""
+    warnings: list[str] = []
+    if args.yolo and not git_repo:
+        warnings.append("⚠️  --yolo ohne Git: Der Bauleiter schreibt mit vollen Rechten, Änderungen lassen sich nicht per Git zurückholen.")
+    elif args.yolo and not args.worktree:
+        warnings.append("⚠️  --yolo mit --no-worktree: Der Bauleiter schreibt mit vollen Rechten direkt in deinen Arbeitsstand.")
+    if not args.proof:
+        warnings.append("ℹ️  Kein --proof: Der Loop führt keine Tests aus; über „fertig“ entscheidet nur die Abnahme.")
+    if not args.inspect:
+        warnings.append("⚠️  --no-inspect: Kein zweiter Anbieter prüft den fertigen Code.")
+    if args.no_shield:
+        warnings.append("⚠️  --no-shield: Zugangsdaten in Prompts gehen ungeschwärzt an Cloud-Modelle.")
+    for ep in (args.endpoint, args.architekt_endpoint, args.pruefstatiker_endpoint, args.bauer_endpoint):
+        if ep and ep.startswith("http://") and not is_private_endpoint(ep) and (args.api_key or os.environ.get("CLAUDEGRAVITY_API_KEY")):
+            warnings.append(f"⚠️  API-Key wird unverschlüsselt (http://) an {ep} geschickt. Besser https:// verwenden.")
+    return warnings
+
+
+def first_run_guide(args, input_fn=input) -> str:
+    """Erstlauf ohne Profil: Trockenlauf vorschlagen. Liefert dry-run, init, run oder quiet."""
+    print("\n👋 Erster Lauf ohne Profil. Empfohlen: erst ansehen, welche Modelle welche Rolle bekommen.")
+    print("  [1] Trockenlauf zeigen, nichts ausführen (Standard)")
+    print("  [2] Einrichtung starten (claudegravity init)")
+    print("  [3] Jetzt starten")
+    print("  [4] Jetzt starten und diesen Hinweis nicht mehr zeigen")
+    try:
+        choice = input_fn("Auswahl [1]: ").strip() or "1"
+    except (EOFError, KeyboardInterrupt):
+        choice = "1"
+    return {"1": "dry-run", "2": "init", "3": "run", "4": "quiet"}.get(choice, "dry-run")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="ClaudeGravity Loop - Cross-Model Adversarial & Autonomous Execution Loop")
     parser.add_argument("task", nargs="?", default="", help="Die Aufgabe für den Loop")
@@ -3026,6 +3192,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--etappen", "--stages", default="auto", choices=["auto", "an", "aus", "on", "off"], help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)")
 
     parser.add_argument("--retries", "--neuversuche", type=int, default=None, help="Automatische Neuversuche bei vorübergehenden Fehlern (Überlastung, 5xx, Verbindungsabbruch) mit Backoff und Jitter (Standard: 3, 0 schaltet ab)")
+    parser.add_argument("--init", "--einrichten", action="store_true", help="Einrichtung: erkennt System und KI-CLIs, fragt Ziel und Prüfbefehl, speichert ein Profil (auch: claudegravity init)")
+    parser.add_argument("--no-guide", dest="guide", action="store_false", help="Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil: \"guide\": false)")
     parser.add_argument("--print-effective-config", "--config", dest="print_effective_config", action="store_true", help="Wirksame Konfiguration mit Quelle je Einstellung (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden")
     return parser
 
@@ -3078,6 +3246,10 @@ def main():
             _exec_endpoint_runner(args.bauer_endpoint, args.builder_model or "qwen2.5-coder:32b", args.api_key),
             local=is_private_endpoint(args.bauer_endpoint)
         )
+
+    if args.init or (args.task.strip().lower() == "init" and not args.resume):
+        run_setup_wizard(Path(args.project).resolve(), agents)
+        return
 
     if args.check:
         os_name = f"{platform.system()} {platform.release()}"
@@ -3161,6 +3333,26 @@ def main():
             "Installiere z.B. `claude` oder `agy`, oder gib einen OpenAI-kompatiblen Server an: "
             "--endpoint http://localhost:11434/v1 (Details: claudegravity --info)"
         )
+
+    guided_dry_run = False
+    no_profile = not any(config_report["loaded"].values())
+    if (args.task and not args.resume and not args.dry_run and args.guide and no_profile
+            and sys.stdin.isatty() and sys.stdout.isatty()):
+        choice = first_run_guide(args)
+        if choice == "init":
+            run_setup_wizard(project_path, agents)
+            return
+        if choice == "dry-run":
+            args.dry_run = guided_dry_run = True
+        if choice == "quiet":
+            try:
+                saved = write_profile(global_profile_path(), {"guide": False})
+                print(f"   Hinweis abgeschaltet ({global_profile_path()}, guide = {saved['guide']}).")
+            except (OSError, ValueError) as exc:
+                print(f"   Konnte das globale Profil nicht schreiben: {exc}")
+
+    for warning in unsafe_config_warnings(args, project_path, is_git_repo(project_path)):
+        print(warning)
 
     if args.dry_run:
         dry_task = args.task or "Refaktoriere das Modul und erstelle Unit-Tests"
@@ -3321,7 +3513,16 @@ def main():
         print("\n🚀 Generierter Shell-Befehl (zum Starten):")
         print(f"   {shlex.join(dry_run_command(args, dry_task, strat, default_b_model))}")
         print("=" * 68)
-        return
+        if not guided_dry_run:
+            return
+        try:
+            go = input("\nSo starten? [j/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            go = ""
+        if go not in ("j", "ja", "y", "yes"):
+            print("Nichts ausgeführt. Tipp: `claudegravity init` speichert deine Wahl als Profil.")
+            return
+        args.dry_run = False
 
     loop_dir = project_path / ".dual-loop"
     loop_dir.mkdir(exist_ok=True)

@@ -4,7 +4,22 @@
 
 Voraussetzung: ClaudeGravity ist [installiert](installation.md) und mindestens eine KI-CLI ist angemeldet.
 
-## 1. Prüfen, was verfügbar ist
+## 1. Einrichten
+
+```bash
+cd ~/Projekte/mein-projekt
+claudegravity init
+```
+
+Die Einrichtung erkennt Betriebssystem, KI-CLIs und lokale Modelle und fragt drei Dinge, jeweils mit Vorschlag (Enter übernimmt ihn):
+
+1. **Ziel:** Schnell (`balanced`), Günstig (`hybrid`, wenn Cloud-CLI und lokales Modell da sind, sonst `local-free` oder `eco`) oder maximale Qualität (`best-code`).
+2. **Prüfbefehl:** aus dem Projekt geraten (`vendor/bin/phpunit` bei `composer.json`, `npm test` bei `package.json`, `python3 -m unittest …` bei `tests/` usw.).
+3. **Speicherort:** Projekt-Profil `.dual-loop/profile.json` oder globales Profil `~/.config/claudegravity/profile.json`.
+
+Am Ende stehen das Profil und die beiden Befehle für den Start. Alles lässt sich später im Profil ändern, siehe [Vorrang der Einstellungen](cli-referenz.md#vorrang-der-einstellungen).
+
+Nur nachsehen, was erkannt wird, ohne etwas zu speichern:
 
 ```bash
 claudegravity --info
@@ -26,6 +41,8 @@ Der Trockenlauf zeigt, welche CLI und welches Modell jede Rolle bekommt, und gib
 cd ~/Projekte/mein-projekt
 claudegravity "Erstelle ein Python-Skript für Wetterabfragen mit Fehlerbehandlung"
 ```
+
+Gibt es noch kein Profil, fragt der erste Lauf im Terminal nach: Trockenlauf zeigen (Standard, danach „So starten? [j/N]“), Einrichtung starten, direkt starten oder direkt starten und nicht mehr fragen (schreibt `"guide": false` ins globale Profil; einmalig: `--no-guide`). Beim Start warnt der Loop außerdem vor riskanten Einstellungen, etwa `--yolo` ohne Git, fehlendem `--proof`, `--no-inspect` oder einem API-Key über unverschlüsseltes `http://`.
 
 Oder mit Zielordner, ohne vorher zu wechseln:
 

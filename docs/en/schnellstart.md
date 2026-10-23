@@ -4,7 +4,22 @@
 
 Prerequisite: ClaudeGravity is [installed](installation.md) and at least one AI CLI is signed in.
 
-## 1. Check what is available
+## 1. Set up
+
+```bash
+cd ~/Projekte/mein-projekt
+claudegravity init
+```
+
+Setup detects the operating system, AI CLIs and local models and asks three things, each with a suggestion (Enter accepts it):
+
+1. **Goal:** fast (`balanced`), cheap (`hybrid` when a cloud CLI and a local model are available, otherwise `local-free` or `eco`) or maximum quality (`best-code`).
+2. **Proof command:** guessed from the project (`vendor/bin/phpunit` for `composer.json`, `npm test` for `package.json`, `python3 -m unittest …` for `tests/` and so on).
+3. **Location:** project profile `.dual-loop/profile.json` or global profile `~/.config/claudegravity/profile.json`.
+
+At the end you get the profile and the two commands to start. Everything can be changed in the profile later, see [Settings precedence](cli-referenz.md#settings-precedence).
+
+To only see what is detected, without saving anything:
 
 ```bash
 claudegravity --info
@@ -26,6 +41,8 @@ The dry run shows which CLI and which model each role gets, and prints the ready
 cd ~/Projekte/mein-projekt
 claudegravity "Create a Python script for weather queries with error handling"
 ```
+
+If there is no profile yet, the first run asks in the terminal: show a dry run (default, followed by "So starten? [j/N]"), start setup, start right away, or start right away and stop asking (writes `"guide": false` to the global profile; once only: `--no-guide`). At start the loop also warns about risky settings, such as `--yolo` without Git, a missing `--proof`, `--no-inspect` or an API key sent over unencrypted `http://`.
 
 Or with a target folder, without changing into it first:
 
