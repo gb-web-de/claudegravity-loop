@@ -12,7 +12,7 @@ Tests ziehen sich durch alle drei Phasen. Diese Seite beschreibt, wie ClaudeGrav
 | 🧐 **Prüfstatiker** | Prüft den Plan ausdrücklich auf **fehlende Tests** und fordert sie per `VERDICT: REVISE` nach. |
 | 🔨 **Bauleiter** | Soll in jeder Runde Tests ausführen und `.done` erst anlegen, wenn alles getestet ist. |
 
-ClaudeGravity führt selbst **keine** Tests aus und prüft nicht, ob sie grün sind. Es verlässt sich auf den Bauleiter und auf den freigegebenen Plan.
+Mit `--proof "<testbefehl>"` führt ClaudeGravity den Testbefehl nach jeder Bau-Runde bzw. Etappe **selbst** aus; eine Fertigmeldung zählt erst, wenn er grün ist und die Abnahme zustimmt. Ohne `--proof` verlässt sich der Loop auf Bauleiter, Plan und Abnahme (siehe [Bau-Loop](bau-loop.md)).
 
 ## Tests zuverlässig machen
 
@@ -24,7 +24,7 @@ ClaudeGravity führt selbst **keine** Tests aus und prüft nicht, ob sie grün s
 
 ### Endpunkt-Bauleiter und Tests
 
-Ollama-, LM-Studio- und eigene Server-Bauleiter können **keine Befehle ausführen**. Sie schreiben nur Dateien über `filepath:`-Blöcke. Tests laufen in diesem Fall nicht automatisch. Für Aufgaben, bei denen Tests im Loop laufen müssen, eine CLI als Bauleiter wählen (`claude`, `agy`, `gemini`), oder die Tests nach dem Lauf selbst starten.
+Ollama-, LM-Studio- und eigene Server-Bauleiter können **keine Befehle ausführen**. Sie schreiben nur Dateien über `filepath:`-Blöcke. Mit `--proof` führt der Loop die Tests für sie aus und gibt die Ausgabe in der nächsten Runde zurück; ohne `--proof` laufen keine Tests.
 
 ## ClaudeGravity selbst prüfen
 
@@ -33,6 +33,25 @@ Die Unit-Tests brauchen nur Python und keine KI:
 ```bash
 python3 -m unittest discover -s tests
 ```
+
+| Suite | Prüft |
+| :--- | :--- |
+| `test_adapters.py` | Vertrag aller Backend-Adapter: Text- und Müll-Ausgaben, Fehler, Ratenlimits, Zeitlimits, HTTP-Fehler |
+| `test_resume.py` | Atomarer Sitzungsstand, beschädigte `state.json`, Absturz per SIGKILL mitten im Bau und nach der Fertigmeldung |
+| `test_smoke.py` | Ganzer Ablauf mit Fake-Server für `balanced` und `local-free` |
+| `test_review_safety.py`, `test_stages.py` | Ende-zu-Ende mit Fake-CLIs bzw. Fake-Endpunkten, Abnahme, Etappen |
+| `test_config.py`, `test_templates.py`, `test_wizard.py` | Profile, Umgebung, Vorlagen, Einrichtung |
+| `test_retry.py`, `test_audit.py`, `test_errors.py`, `test_kpi.py` | Neuversuche, Audit, Fehlercodes, Kennzahlen |
+
+### Smoke-Matrix
+
+Der CI-Job `smoke` (`.github/workflows/tests.yml`) läuft auf Linux, macOS und Windows je mit `balanced` und `local-free`. Ein Fake-Server spielt über die OpenAI-kompatible API alle Rollen, der Loop baut, führt `--proof` aus und nimmt ab. Stdout, Session-Ordner, Bau-Logs und `summary.json` mit den Kennzahlen hängen als Artefakt `smoke-<os>-<strategie>` am Lauf. Lokal:
+
+```bash
+python3 tests/smoke/run_smoke.py --strategy local-free --out smoke-artifacts
+```
+
+Echte CLIs (`claude`, `codex`, `agy` …) laufen in CI nicht, weil dort keine Abos angemeldet sind.
 
 Ohne KI-Aufrufe und ohne Dateien zu ändern:
 

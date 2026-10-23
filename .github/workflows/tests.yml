@@ -24,3 +24,28 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: python -m unittest discover -s tests -v
+
+  smoke:
+    # Ganzer Ablauf (Plan, Review, Bau, Prüfbefehl, Abnahme) mit einem Fake-Server statt KI-Abos
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        strategy: [balanced, local-free]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Smoke run (${{ matrix.strategy }})
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python tests/smoke/run_smoke.py --strategy ${{ matrix.strategy }} --out smoke-artifacts
+      - name: Upload logs and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.os }}-${{ matrix.strategy }}
+          path: smoke-artifacts/
+          if-no-files-found: warn

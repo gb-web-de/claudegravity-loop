@@ -12,7 +12,7 @@ Tests run through all three phases. This page describes how ClaudeGravity handle
 | 🧐 **Reviewer** | Explicitly checks the plan for **missing tests** and requests them with `VERDICT: REVISE`. |
 | 🔨 **Builder** | Should run tests every round and only create `.done` once everything is tested. |
 
-ClaudeGravity itself does **not** run any tests and does not check whether they pass. It relies on the Builder and on the approved plan.
+With `--proof "<test command>"` ClaudeGravity runs the test command **itself** after every build round or stage; a completion signal only counts once it is green and the acceptance check agrees. Without `--proof` the loop relies on builder, plan and acceptance check (see [Build loop](bau-loop.md)).
 
 ## Making tests reliable
 
@@ -24,7 +24,7 @@ ClaudeGravity itself does **not** run any tests and does not check whether they 
 
 ### Endpoint Builders and tests
 
-Ollama, LM Studio and custom server Builders **cannot run commands**. They only write files via `filepath:` blocks. In this case tests do not run automatically. For tasks where tests must run inside the loop, choose a CLI as Builder (`claude`, `agy`, `gemini`), or run the tests yourself after the run.
+Ollama, LM Studio and custom server Builders **cannot run commands**. They only write files via `filepath:` blocks. With `--proof` the loop runs the tests for them and returns the output in the next round; without `--proof` no tests run.
 
 ## Testing ClaudeGravity itself
 
@@ -33,6 +33,25 @@ The unit tests only need Python and no AI:
 ```bash
 python3 -m unittest discover -s tests
 ```
+
+| Suite | Checks |
+| :--- | :--- |
+| `test_adapters.py` | Contract of all backend adapters: plain and garbage output, errors, rate limits, time limits, HTTP errors |
+| `test_resume.py` | Atomic session state, damaged `state.json`, crash via SIGKILL during the build and after the completion signal |
+| `test_smoke.py` | Full run with a fake server for `balanced` and `local-free` |
+| `test_review_safety.py`, `test_stages.py` | End to end with fake CLIs or fake endpoints, acceptance check, stages |
+| `test_config.py`, `test_templates.py`, `test_wizard.py` | Profiles, environment, templates, setup |
+| `test_retry.py`, `test_audit.py`, `test_errors.py`, `test_kpi.py` | Retries, audit, error codes, key figures |
+
+### Smoke matrix
+
+The CI job `smoke` (`.github/workflows/tests.yml`) runs on Linux, macOS and Windows, each with `balanced` and `local-free`. A fake server plays all roles via the OpenAI-compatible API; the loop builds, runs `--proof` and does the acceptance check. Stdout, session folder, build logs and `summary.json` with the key figures are attached to the run as artifact `smoke-<os>-<strategy>`. Locally:
+
+```bash
+python3 tests/smoke/run_smoke.py --strategy local-free --out smoke-artifacts
+```
+
+Real CLIs (`claude`, `codex`, `agy` …) do not run in CI, because no subscriptions are signed in there.
 
 Without AI calls and without changing files:
 

@@ -4400,6 +4400,8 @@ def main():
                 if stage_tries >= STAGE_MAX_TRIES:
                     print(f"🛑 {stage_label} ist nach {STAGE_MAX_TRIES} Versuchen nicht grün. Stand gesichert; weiter mit 'claudegravity -c'.")
                     append_log(session_dir, f"{stage_label} nach {STAGE_MAX_TRIES} Versuchen offen")
+                    tail = "\n".join((output or "").strip().splitlines()[-30:])
+                    append_log(session_dir, f"Letzte Ausgabe des Prüfbefehls:\n```\n{tail}\n```")
                     state["phase"] = "stage_open"
                     state["stage_index"] = stage_index
                     state["metrics"] = session_metrics.to_dict()
