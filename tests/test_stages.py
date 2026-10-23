@@ -242,7 +242,7 @@ class BuildPromptTest(unittest.TestCase):
         prompt = loop.compose_build_prompt("CSV-Export", Path("PLAN_v1.md"), None, "", endpoint=False,
                                            rel_done_path=Path("sess/.done"))
         self.assertTrue(prompt.startswith("Führe den genehmigten Plan (PLAN_v1.md)"))
-        self.assertIn("'sess/.done'", prompt)
+        self.assertIn(f"'{Path('sess/.done')}'", prompt)
         self.assertNotIn("GENEHMIGTER PLAN ---", prompt)
         self.assertNotIn("Prüfbefehl", prompt)
 
@@ -250,7 +250,7 @@ class BuildPromptTest(unittest.TestCase):
         prompt = loop.compose_build_prompt("CSV-Export", Path("PLAN_v1.md"), "make test", "", endpoint=True,
                                            plan_text="# Plan", rel_done_path=Path("sess/.done"))
         self.assertIn("--- GENEHMIGTER PLAN ---\n# Plan", prompt)
-        self.assertTrue(prompt.endswith("```filepath: sess/.done\n# Aufgabe abgeschlossen\n```"))
+        self.assertTrue(prompt.endswith(f"```filepath: {Path('sess/.done')}\n# Aufgabe abgeschlossen\n```"))
 
 
 class StageLoopEndToEndTest(unittest.TestCase):
