@@ -72,7 +72,7 @@ and commit the changed files in `tests/golden/`.
 
 ### Lint
 
-CI checks the code with [Ruff](https://docs.astral.sh/ruff/) (rules in `ruff.toml`: syntax, Pyflakes, Bugbear, simplifications). Ruff is only a tool for development and CI; the loop itself still needs nothing but the standard library. CI checks the formatting with `ruff format --check .`. Locally: `pip install ruff`, then `ruff format .` and `ruff check .`.
+CI checks the code with [Ruff](https://docs.astral.sh/ruff/) (rules in `ruff.toml`: syntax, Pyflakes, Bugbear, simplifications). Ruff is only a tool for development and CI; the loop itself still needs nothing but the standard library. CI checks the formatting with `ruff format --check .`. Locally: `uvx ruff check . && uvx ruff format --check .` (or inside a venv: `pip install ruff`, then `ruff format .` and `ruff check .`).
 
 The code lives in the package `claudegravity/` (one module per concern); `loop.py` is only the entry point. A test that replaces a function patches the module where it is called, for example `mock.patch.object(loop.runner, "interruptible_sleep")`; a patch on `loop.<name>` does not reach it.
 

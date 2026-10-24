@@ -6,7 +6,7 @@
 - **Tests vor jedem Commit:**
   - `python -m unittest discover -s tests -v`
   - `python tests/smoke/run_smoke.py --strategy balanced --out /tmp/smoke`
-  - `ruff check .` und `ruff format --check .`
+  - `uvx ruff check .` und `uvx ruff format --check .` (oder im venv: `ruff check .` und `ruff format --check .`)
 - **Plattformen:** Windows, macOS und Linux. Prozesse mit Argumentlisten, nie `shell=True`; Pfade mit `pathlib`; UTF-8 erzwingen (`PYTHONIOENCODING=utf-8`).
 - **Plugins/MCP:** Manifeste (`plugin.json`, `mcp.json`, `mcp_config.json`, `gemini-extension.json`, `.claude-plugin/`, `.cursor-plugin/`, `.vscode/mcp.json`) und Befehle (`commands/*.md` samt `commands/claudegravity/*.toml`) bleiben konsistent. Versionen gemeinsam erhöhen; `tests/test_plugins.py` prüft das.
 - **Doku:** `docs/de/` und `docs/en/` immer beide anpassen.

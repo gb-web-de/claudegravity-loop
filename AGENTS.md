@@ -7,6 +7,7 @@ Leitfaden für Mitwirkende und KI-Agenten (siehe auch `CLAUDE.md` und `.github/c
 python -m unittest discover -s tests -v
 python tests/smoke/run_smoke.py --strategy balanced --out /tmp/smoke
 pip install ruff==0.16.9 && ruff check . && ruff format --check .
+# oder ohne venv: uvx ruff==0.16.9 check . && uvx ruff==0.16.9 format --check .
 ```
 
 ## Wo liegt was
