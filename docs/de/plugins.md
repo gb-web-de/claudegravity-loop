@@ -6,9 +6,9 @@ Das Repository ist selbst ein Plugin. Ein Befehl im jeweiligen Client lädt den 
 
 | Befehl | Wirkung |
 | :--- | :--- |
-| `run <Aufgabe>` | Rollen ermitteln, nach deinem OK im Hintergrund starten, Ergebnis berichten |
-| `optimize <Aufgabe>` | Beste Rollenverteilung und fertigen `claudegravity`-Befehl zeigen, ohne zu starten |
-| `status` | Stand des letzten Laufs im aktuellen Projekt, auf Wunsch abbrechen |
+| `claudegravity-run <Aufgabe>` | Rollen ermitteln, nach deinem OK im Hintergrund starten, Ergebnis berichten |
+| `claudegravity-optimize <Aufgabe>` | Beste Rollenverteilung und fertigen `claudegravity`-Befehl zeigen, ohne zu starten |
+| `claudegravity-status` | Stand des letzten Laufs im aktuellen Projekt, auf Wunsch abbrechen |
 
 Voraussetzung ist wie beim Loop nur **Python 3.10+** als `python3` im PATH. Die Rollen-CLIs (`claude`, `agy`, `codex`, `ollama`, …) brauchst du wie gewohnt.
 
@@ -16,12 +16,12 @@ Voraussetzung ist wie beim Loop nur **Python 3.10+** als `python3` im PATH. Die 
 
 | Client | Befehl | Aufruf danach |
 | :--- | :--- | :--- |
-| **Claude Code** | `/plugin marketplace add gb-web-de/claudegravity-loop` und `/plugin install claudegravity@claudegravity` | `/claudegravity:run …`, `/claudegravity:optimize …`, `/claudegravity:status` |
+| **Claude Code** | `/plugin marketplace add gb-web-de/claudegravity-loop` und `/plugin install claudegravity@claudegravity` | `/claudegravity-run …`, `/claudegravity-optimize …`, `/claudegravity-status` (oder `/claudegravity:…`) |
 | **Codex** (CLI und App) | `codex plugin marketplace add gb-web-de/claudegravity-loop`, dann in Codex unter Plugins installieren | Skill `claudegravity` oder `@claudegravity` |
 | **Antigravity** (`agy`, App, IDE) | `agy plugin install https://github.com/gb-web-de/claudegravity-loop` | Skill `claudegravity`, Tools im Agenten |
 | **GitHub Copilot CLI** | `copilot plugin marketplace add gb-web-de/claudegravity-loop` und `copilot plugin install claudegravity@claudegravity` | Skill `claudegravity` |
-| **Cursor** | Repository als Plugin-Quelle bzw. Team-Marketplace eintragen (`.cursor-plugin/marketplace.json`) | `/run`, `/optimize`, `/status` |
-| **Gemini CLI** | `gemini extensions install https://github.com/gb-web-de/claudegravity-loop` | `/claudegravity:run …`, `/claudegravity:optimize …` |
+| **Cursor** | Repository als Plugin-Quelle bzw. Team-Marketplace eintragen (`.cursor-plugin/marketplace.json`) | `/claudegravity-run`, `/claudegravity-optimize`, `/claudegravity-status` |
+| **Gemini CLI** | `gemini extensions install https://github.com/gb-web-de/claudegravity-loop` | `/claudegravity:claudegravity-run …`, `/claudegravity:claudegravity-optimize …`, `/claudegravity:claudegravity-status` |
 
 Für Claude Desktop, VS Code und Windsurf gibt es kein passendes Plugin-Format. Dort trägt der [Installer](mcp-server.md#am-einfachsten-installer) den MCP-Server ein.
 

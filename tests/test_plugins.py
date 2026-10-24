@@ -88,7 +88,7 @@ class PluginCommandTest(unittest.TestCase):
     def test_every_command_has_gemini_twin(self):
         markdown = sorted(path.stem for path in (ROOT / "commands").glob("*.md"))
         toml = sorted(path.stem for path in (ROOT / "commands" / PLUGIN_NAME).glob("*.toml"))
-        self.assertEqual(markdown, ["optimize", "run", "status"])
+        self.assertEqual(markdown, ["claudegravity-optimize", "claudegravity-run", "claudegravity-status"])
         self.assertEqual(markdown, toml)
 
     def test_commands_have_description(self):
