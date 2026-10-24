@@ -72,7 +72,7 @@ Ollama selbst ist kein MCP-Client: Die Ollama-App ruft keine MCP-Server auf, sie
 Desktop-Apps starten den Server anders als ein Terminal. Der Server fängt das so ab:
 
 * **Kein Shell-PATH:** Unter macOS sieht eine Desktop-App meist nur `/usr/bin:/bin`. Der Server ergänzt beim Start vorhandene Ordner wie die CLI-Ordner der Codex-, Antigravity- und Ollama-App unter `/Applications`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.volta/bin`, `~/.cargo/bin` und die `bin`-Ordner von nvm (unter Windows `%APPDATA%\npm` und `%LOCALAPPDATA%\Programs\Ollama`), damit `claude`, `codex`, `gemini` oder `ollama` gefunden werden. Liegt eine CLI woanders, den Ordner in `env` → `PATH` eintragen. `claudegravity_info` zeigt, welche Ordner ergänzt wurden.
-* **Falsches Arbeitsverzeichnis:** Der Server läuft dort meist in `/` oder im Home-Ordner. Ein relativer `project_path` wird dann abgelehnt; entweder einen absoluten Pfad übergeben oder `CLAUDEGRAVITY_PROJECT` setzen, das gilt, wenn `project_path` fehlt oder `.` ist. `~` wird aufgelöst.
+* **Falsches Arbeitsverzeichnis:** Der Server läuft dort meist in `/` oder im Home-Ordner. Ein relativer `project_path` wird mit dem zuletzt genutzten Projekt oder `CLAUDEGRAVITY_PROJECT` aufgelöst; fehlt beides, bittet der Server um einen absoluten Pfad. `~` wird aufgelöst.
 * **Zu altes Python:** `command` muss auf Python 3.10+ zeigen (unter macOS ist `/usr/bin/python3` oft 3.9). Sonst bricht der Server mit einer klaren Meldung im Client-Log ab.
 * **Kein Terminal:** Läufe aus Desktop-Apps mit `claudegravity_run` und `background: true` starten, mit `claudegravity_status` verfolgen und bei Bedarf mit `claudegravity_stop` abbrechen.
 

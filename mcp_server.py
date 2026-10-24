@@ -125,26 +125,78 @@ def extend_search_path(env: dict | None = None, home: Path | None = None) -> lis
     return added
 
 
+LAST_USED_PROJECT: Path | None = None
+
+
+def last_project_file() -> Path:
+    """Pfad zur Datei mit dem zuletzt genutzten Projektordner."""
+    cfg = os.environ.get("CLAUDEGRAVITY_CONFIG_DIR")
+    if cfg:
+        base = Path(cfg).expanduser()
+    elif os.name == "nt" and os.environ.get("APPDATA"):
+        base = Path(os.environ["APPDATA"]) / "claudegravity"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "claudegravity"
+    return base / "last_project.txt"
+
+
+def get_last_project() -> Path | None:
+    """Zuletzt genutztes Projekt aus dem Speicher oder aus last_project.txt."""
+    global LAST_USED_PROJECT
+    if LAST_USED_PROJECT is not None and LAST_USED_PROJECT.is_dir():
+        return LAST_USED_PROJECT
+    f = last_project_file()
+    try:
+        if f.is_file():
+            p = Path(f.read_text(encoding="utf-8").strip())
+            if p.is_dir():
+                LAST_USED_PROJECT = p
+                return p
+    except OSError:
+        pass
+    return None
+
+
+def save_last_project(path: Path) -> None:
+    """Speichert den zuletzt genutzten Projektordner persistent ab."""
+    global LAST_USED_PROJECT
+    LAST_USED_PROJECT = path
+    try:
+        f = last_project_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(str(path), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def resolve_project_dir(raw: str | None) -> tuple[Path | None, str | None]:
-    """Projektordner aus project_path, sonst CLAUDEGRAVITY_PROJECT, sonst cwd. Liefert (Pfad, None) oder (None, Fehlertext).
+    """Projektordner aus project_path, sonst CLAUDEGRAVITY_PROJECT, sonst letztem aktiven Projekt, sonst cwd.
+    Liefert (Pfad, None) oder (None, Fehlertext).
 
     Desktop-Apps starten den Server meist in `/` oder im Home-Ordner; ein relativer Pfad wäre dort fast immer falsch.
     """
-    raw = (raw or "").strip()
-    if raw in ("", ".", "./"):
-        raw = os.environ.get(PROJECT_ENV, "").strip() or raw or "."
-    path = Path(os.path.expandvars(os.path.expanduser(raw)))
+    raw_str = (raw or "").strip()
+    if raw_str in ("", ".", "./"):
+        raw_str = os.environ.get(PROJECT_ENV, "").strip() or raw_str or "."
+    path = Path(os.path.expandvars(os.path.expanduser(raw_str)))
     if not path.is_absolute():
         cwd = Path.cwd()
         if cwd == Path(cwd.anchor) or cwd == Path.home():
+            last_p = get_last_project()
+            if last_p and (raw_str in ("", ".", "./") or (last_p / path).is_dir()):
+                target = (last_p / path).resolve() if raw_str not in ("", ".", "./") else last_p
+                if target.is_dir():
+                    save_last_project(target)
+                    return target, None
             return None, (
-                f"Fehler: project_path `{raw}` ist relativ, der MCP-Server läuft aber in `{cwd}` (typisch für Desktop-Apps). "
+                f"Fehler: project_path `{raw_str}` ist relativ, der MCP-Server läuft aber in `{cwd}` (typisch für Desktop-Apps). "
                 f"Bitte einen absoluten Pfad angeben oder {PROJECT_ENV} in der MCP-Konfiguration setzen."
             )
         path = cwd / path
     path = path.resolve()
     if not path.is_dir():
         return None, f"Fehler: Projektpfad '{path}' existiert nicht."
+    save_last_project(path)
     return path, None
 
 

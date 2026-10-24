@@ -182,6 +182,9 @@ class BackgroundRunTest(unittest.TestCase):
 class DesktopEnvironmentTest(unittest.TestCase):
     """Desktop-Apps starten den Server mit kleinem PATH und cwd / bzw. Home."""
 
+    def setUp(self):
+        mcp_server.LAST_USED_PROJECT = None
+
     def test_extend_search_path_adds_existing_dirs_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -199,10 +202,24 @@ class DesktopEnvironmentTest(unittest.TestCase):
 
     def test_relative_project_in_root_cwd_is_rejected(self):
         root = Path(Path.cwd().anchor)
-        with mock.patch.object(mcp_server.Path, "cwd", return_value=root), mock.patch.dict(os.environ, {mcp_server.PROJECT_ENV: ""}):
+        with mock.patch.object(mcp_server.Path, "cwd", return_value=root), mock.patch.dict(os.environ, {mcp_server.PROJECT_ENV: ""}), mock.patch.object(mcp_server, "get_last_project", return_value=None):
             path, error = mcp_server.resolve_project_dir(".")
         self.assertIsNone(path)
         self.assertIn(mcp_server.PROJECT_ENV, error)
+
+    def test_last_project_fallback_in_root_or_home(self):
+        root = Path(Path.cwd().anchor)
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp) / "mein-projekt"
+            proj.mkdir()
+            mcp_server.save_last_project(proj)
+            with mock.patch.object(mcp_server.Path, "cwd", return_value=root), mock.patch.dict(os.environ, {mcp_server.PROJECT_ENV: ""}):
+                path, error = mcp_server.resolve_project_dir(".")
+                self.assertEqual(path, proj)
+                self.assertIsNone(error)
+                path, error = mcp_server.resolve_project_dir(None)
+                self.assertEqual(path, proj)
+                self.assertIsNone(error)
 
     def test_project_env_and_tilde(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {mcp_server.PROJECT_ENV: tmp}):
