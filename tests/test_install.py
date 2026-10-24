@@ -49,5 +49,39 @@ class AntigravityTest(unittest.TestCase):
             self.assertEqual(set(json.loads(new_file.read_text(encoding="utf-8"))["mcpServers"]), {"sentry"})
 
 
+class SkillInstallTest(unittest.TestCase):
+    def test_skill_targets_structure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            targets = install.skill_targets(Path(tmp))
+            self.assertIn("claude", targets)
+            self.assertIn("antigravity", targets)
+            self.assertIn("codex", targets)
+            for _, _, target in targets.values():
+                self.assertEqual(target.name, "claudegravity")
+
+    def test_install_and_uninstall_skill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_home = Path(tmp) / "home"
+            fake_home.mkdir()
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "SKILL.md").write_text("# ClaudeGravity Skill", encoding="utf-8")
+            target = fake_home / ".claude" / "skills" / "claudegravity"
+
+            self.assertFalse(install.is_skill_installed(target, source))
+            with mock.patch.object(install, "say"):
+                self.assertTrue(install.install_skill(target, source))
+                self.assertTrue(install.is_skill_installed(target, source))
+                self.assertTrue((target / "SKILL.md").is_file())
+
+                # Erneuter Aufruf ist idempotent
+                self.assertTrue(install.install_skill(target, source))
+
+                # Deinstallation
+                self.assertTrue(install.uninstall_skill(target))
+                self.assertFalse(install.is_skill_installed(target, source))
+                self.assertFalse(target.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

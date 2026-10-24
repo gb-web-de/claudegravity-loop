@@ -16,7 +16,7 @@ ClaudeGravity consists of two entry scripts (`loop.py` and `mcp_server.py`) and 
 Supported CLIs (searched for automatically on the `PATH`): `claude`, `agy`, `gemini`, `codex`, `copilot` (or `gh`), `ollama`. The CLIs are signed in with your existing subscriptions – ClaudeGravity itself needs no API keys.
 
 > [!TIP]
-> **Everything in one step:** After cloning, run `./install.sh` (Linux/macOS), `install.bat` (CMD) or `.\install.ps1` (PowerShell). This registers the MCP server in all clients found (Claude Code, Claude Desktop, Gemini CLI, Antigravity, Codex, Copilot CLI, Cursor, Windsurf, VS Code) and makes `claudegravity`, `claudegravity-loop` and `claudegravity-mcp` callable globally. `--project <path>` sets a default project for desktop apps (`CLAUDEGRAVITY_PROJECT`), `--status` shows the current state, `--dry-run` simulates, `--uninstall` removes everything again. The manual steps below are then not needed.
+> **Everything in one step:** After cloning, run `./install.sh` (Linux/macOS), `install.bat` (CMD) or `.\install.ps1` (PowerShell). This registers the MCP server and the skill in all clients found (Claude Code, Claude Desktop, Gemini CLI, Antigravity, Codex, Copilot CLI, Cursor, Windsurf, VS Code) and makes `claudegravity`, `claudegravity-loop` and `claudegravity-mcp` callable globally. `--project <path>` sets a default project for desktop apps (`CLAUDEGRAVITY_PROJECT`), `--status` shows the current state, `--dry-run` simulates, `--uninstall` removes everything again. The manual steps below are then not needed.
 
 ## 🍏 macOS & 🐧 Linux
 

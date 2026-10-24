@@ -323,6 +323,88 @@ def clients() -> dict[str, tuple[str, bool, tuple]]:
 
 
 # --------------------------------------------------------------------
+# Globale Skills (Claude Code, Google Antigravity, OpenAI Codex)
+# --------------------------------------------------------------------
+
+SKILL_SOURCE = REPO_DIR / "skills" / "claudegravity"
+
+
+def skill_targets(home: Path | None = None) -> dict[str, tuple[str, bool, Path]]:
+    """Globale Skill-Ordner für Clients, die Skills unterstützen."""
+    h = home or HOME
+    gemini_dir = h / ".gemini"
+    claude_dir = h / ".claude"
+    codex_dir = h / ".codex"
+    return {
+        "claude": (
+            "Claude Code",
+            bool(shutil.which("claude")) or claude_dir.is_dir(),
+            claude_dir / "skills" / "claudegravity",
+        ),
+        "antigravity": (
+            "Google Antigravity",
+            bool(shutil.which("agy")) or (gemini_dir / "config").is_dir() or (gemini_dir / "antigravity").is_dir(),
+            gemini_dir / "config" / "skills" / "claudegravity",
+        ),
+        "codex": (
+            "OpenAI Codex CLI",
+            bool(shutil.which("codex")) or codex_dir.is_dir(),
+            codex_dir / "skills" / "claudegravity",
+        ),
+    }
+
+
+def is_skill_installed(target: Path, source: Path = SKILL_SOURCE) -> bool:
+    if target.is_symlink():
+        try:
+            return target.resolve() == source.resolve()
+        except OSError:
+            return False
+    return (target / "SKILL.md").is_file()
+
+
+def install_skill(target: Path, source: Path = SKILL_SOURCE) -> bool:
+    if not source.is_dir():
+        say("!", f"Skill-Quelle {source} existiert nicht.")
+        return False
+    if is_skill_installed(target, source):
+        say("=", f"{target} -> {source}")
+        return True
+    try:
+        if not DRY_RUN:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            elif target.is_dir():
+                shutil.rmtree(target)
+            try:
+                target.symlink_to(source, target_is_directory=True)
+            except OSError:
+                shutil.copytree(source, target)
+        say("+", f"{target} -> {source}")
+        return True
+    except OSError as exc:
+        say("!", f"Fehler bei Skill-Installation {target}: {exc}")
+        return False
+
+
+def uninstall_skill(target: Path) -> bool:
+    if not target.exists() and not target.is_symlink():
+        return True
+    try:
+        if not DRY_RUN:
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            elif target.is_dir():
+                shutil.rmtree(target)
+        say("-", f"{target}")
+        return True
+    except OSError as exc:
+        say("!", f"Fehler beim Entfernen von {target}: {exc}")
+        return False
+
+
+# --------------------------------------------------------------------
 # Globale Befehle
 # --------------------------------------------------------------------
 
@@ -484,6 +566,7 @@ def main() -> int:
     parser.add_argument("--only", default=None, help="Nur diese Clients (kommagetrennt), z. B. claude,gemini,codex")
     parser.add_argument("--all-clients", action="store_true", help="Auch nicht erkannte Clients konfigurieren")
     parser.add_argument("--no-mcp", action="store_true", help="MCP-Clients nicht anfassen")
+    parser.add_argument("--no-skills", action="store_true", help="Keine Skills in Agenten-Ordner installieren")
     parser.add_argument("--no-commands", action="store_true", help="Keine globalen Befehle anlegen")
     parser.add_argument("--no-path", action="store_true", help="PATH nicht verändern")
     parser.add_argument("--project", default=None, help="Standardprojekt für Desktop-Apps (CLAUDEGRAVITY_PROJECT), wenn project_path fehlt")
@@ -520,6 +603,11 @@ def main() -> int:
             label, detected, (_, _, status) = registry[key]
             mark = "✓ eingetragen" if status() else ("○ nicht eingetragen" if detected else "· nicht gefunden")
             print(f"  {mark:22} {label} [{key}]")
+        print("\nSkills:")
+        skills = skill_targets()
+        for key, (label, detected, target) in skills.items():
+            mark = "✓ verlinkt" if is_skill_installed(target) else ("○ nicht verlinkt" if detected else "· nicht gefunden")
+            print(f"  {mark:22} {label} [{key}] -> {target}")
         print("\nGlobale Befehle:")
         for name in COMMANDS:
             found = shutil.which(name)
@@ -539,6 +627,20 @@ def main() -> int:
             elif detected or args.all_clients or args.only:
                 print(f" {label}")
                 failures += not install()
+            else:
+                say("·", f"{label} nicht gefunden – übersprungen")
+
+    if not args.no_skills:
+        print("\nSkills:" if not args.uninstall else "\nSkills entfernen:")
+        skills = skill_targets()
+        for key, (label, detected, target) in skills.items():
+            if args.uninstall:
+                if is_skill_installed(target):
+                    print(f" {label}")
+                    failures += not uninstall_skill(target)
+            elif detected or args.all_clients or (args.only and key in selected):
+                print(f" {label}")
+                failures += not install_skill(target)
             else:
                 say("·", f"{label} nicht gefunden – übersprungen")
 
