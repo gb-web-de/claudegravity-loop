@@ -27,6 +27,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+try:
+    from claudegravity.backends import check_cli_auth
+except ImportError:
+    def check_cli_auth(binary: str) -> tuple[bool, str]:  # type: ignore[misc]
+        return True, "bereit"
+
 # Cross-Platform Console-Encoding (Windows CMD/PowerShell UTF-8 Fix)
 if sys.platform == "win32":
     try:
@@ -1048,14 +1054,17 @@ def format_info() -> str:
         "",
     ]
     for k, a in agents.items():
-        lines.append(f"* **{a}** (`{k}`)")
+        bin_name = "gh" if k == "copilot" and not shutil.which("copilot") else k
+        ok, msg = check_cli_auth(bin_name)
+        status_tag = f" – {msg}" if msg else ""
+        lines.append(f"* **{a}** (`{k}`){status_tag}")
     if not agents:
         lines.append("⚠️ Keine unterstützten AI-CLIs oder lokalen Server gefunden. Bei Desktop-Apps fehlt oft der Shell-PATH: ")
         lines.append("   Ordner der CLIs in der MCP-Konfiguration unter `env` → `PATH` eintragen.")
     lines += [
         "",
         "💡 **Empfohlene Strategien:**",
-        "1. **best-code:** Maximale Codequalität mit Claude Sonnet 3.7 & Gemini 2.5 Pro.",
+        "1. **best-code:** Maximale Codequalität mit Claude Sonnet & Gemini.",
         "2. **eco:** Bis zu 70% Ersparnis (Architekt=Sonnet, Bauleiter=Haiku oder Flash).",
         "3. **local-free:** 0 € Kosten im Bau-Loop! Cloud-Architekt plant, lokaler Server (Ollama, LM Studio oder ein Rechner im Heimnetz) baut autonom.",
     ]

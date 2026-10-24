@@ -17,7 +17,7 @@ from .common import (
 )
 from .safety import mask_secrets, redact_secrets
 from .metrics import SessionMetrics
-from .backends import AgentCLI, describe_agent
+from .backends import AgentCLI, check_cli_auth, describe_agent
 from .session import (
     append_log,
     fingerprint_changes,
@@ -33,19 +33,33 @@ if TYPE_CHECKING:
     from .budget import Budget
 
 
-def get_alternative_agent(current_agent: AgentCLI, agents: dict[str, AgentCLI], exclude: set[str] | None = None) -> AgentCLI | None:
+def get_alternative_agent(
+    current_agent: AgentCLI,
+    agents: dict[str, AgentCLI],
+    exclude: set[str] | None = None,
+    require_auth: bool = False,
+) -> AgentCLI | None:
     """Findet eine alternative installierte CLI für Modell-Wechsel bei Limits.
 
     `exclude` enthält die Anbieter der Gegenrolle: Ein Wechsel darf nie dazu führen,
     dass derselbe Anbieter plant und prüft (bzw. baut und abnimmt).
+    Ist `require_auth` wahr, werden nur authentifizierte / einsatzbereite CLIs gewählt.
     """
     blocked = {current_agent.binary} | set(exclude or ())
+    candidates = []
     preferred = {"claude": "agy", "agy": "claude"}.get(current_agent.binary)
     if preferred and preferred in agents and preferred not in blocked:
-        return agents[preferred]
+        candidates.append(agents[preferred])
     for a in agents.values():
-        if a.binary not in blocked:
-            return a
+        if a.binary not in blocked and a not in candidates:
+            candidates.append(a)
+
+    for cand in candidates:
+        if require_auth:
+            ready, _ = check_cli_auth(cand.binary)
+            if not ready:
+                continue
+        return cand
     return None
 
 
@@ -59,7 +73,9 @@ def handle_rate_limit(
     exclude: set[str] | None = None,
 ) -> tuple[str, AgentCLI | None]:
     """Behandelt RateLimit-Fehler interaktiv oder per automatischem Modell-Wechsel."""
-    alt_agent = get_alternative_agent(current_agent, agents, exclude)
+    alt_agent = get_alternative_agent(current_agent, agents, exclude, require_auth=True)
+    if alt_agent is None:
+        alt_agent = get_alternative_agent(current_agent, agents, exclude, require_auth=False)
 
     if auto_switch and alt_agent:
         say(f"\n🔄 Auto-Switch aktiv: Wechsle automatisch von {describe_agent(current_agent)} zu {alt_agent.name}...")

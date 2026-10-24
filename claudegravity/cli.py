@@ -22,6 +22,7 @@ from .backends import (
     AgentCLI,
     DEFAULT_MODEL_LABEL,
     _exec_endpoint_runner,
+    check_cli_auth,
     detect_installed_agents,
     effort_label,
     is_private_endpoint,
@@ -463,7 +464,10 @@ def print_system_check(agents: dict[str, AgentCLI]) -> None:
     say(f"🖥️  Betriebssystem: {os_name} (Python {platform.python_version()})")
     say("🔍 Erkannte KI-Systeme & Endpoints auf deinem System:")
     for key, agent in agents.items():
-        say(f"  [x] {agent.name} (`{key}` / `{agent.binary}`)")
+        ok, msg = check_cli_auth(agent.binary)
+        indicator = "[x]" if ok else "[!]"
+        suffix = f" – {msg}" if msg else ""
+        say(f"  {indicator} {agent.name} (`{key}` / `{agent.binary}`){suffix}")
     if not agents:
         say("  (keine) Installiere z.B. `claude` oder `agy`, oder gib --endpoint <url> an.")
         return

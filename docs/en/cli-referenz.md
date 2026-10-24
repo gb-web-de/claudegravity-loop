@@ -29,7 +29,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--dry-run` | | Show the assignment, a cost estimate from earlier sessions, notes (e.g. missing `--proof`) and the start command without running or creating anything. | off |
 | `-h`, `--help` | | Most important options in groups. | – |
 | `--help-all` | | Every option with aliases. | – |
-| `--info` | `--check` | Show detected CLIs/endpoints and the default assignment. | off |
+| `--info` | `--check` | Show detected CLIs/endpoints, authentication status, and default assignment. | off |
 | `--budget-max <value>` | | Hard limit for the session in tokens (`500k`, `1.5m`) or reported costs (`2.50usd`). See [Budget](#budget). | – |
 | `--budget-warn <value>` | | Soft limit, warning only. | 80 % of `--budget-max` |
 | `--budget-roles <list>` | `--budget-rollen` | Hard limits per role, e.g. `"bauleiter=300k,abnahme=0.50usd"`. | – |

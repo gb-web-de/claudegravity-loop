@@ -192,5 +192,64 @@ class EndpointContractTest(unittest.TestCase):
         self.assertEqual(ctx.exception.reset_seconds, 30)
 
 
+class CliAuthTest(unittest.TestCase):
+    def test_claude_auth_check(self):
+        with mock.patch("subprocess.run") as m_run:
+            m_run.return_value = completed(stdout='{"loggedIn": true}')
+            ok, msg = loop.check_cli_auth("claude")
+            self.assertTrue(ok)
+            self.assertEqual(msg, "angemeldet")
+
+            m_run.return_value = completed(stdout='{"loggedIn": false}')
+            ok, msg = loop.check_cli_auth("claude")
+            self.assertFalse(ok)
+            self.assertIn("claude login", msg)
+
+    def test_gemini_auth_check(self):
+        with mock.patch("subprocess.run") as m_run:
+            m_run.return_value = completed(stdout="ok", code=0)
+            ok, msg = loop.check_cli_auth("gemini")
+            self.assertTrue(ok)
+            self.assertEqual(msg, "angemeldet")
+
+            m_run.return_value = completed(stderr="Invalid auth method selected.", code=41)
+            ok, msg = loop.check_cli_auth("gemini")
+            self.assertFalse(ok)
+            self.assertIn("gemini auth login", msg)
+
+    def test_gh_copilot_check(self):
+        with mock.patch("subprocess.run") as m_run:
+            m_run.return_value = completed(stdout="unknown command copilot", code=1)
+            ok, msg = loop.check_cli_auth("gh")
+            self.assertFalse(ok)
+            self.assertIn("gh extension install", msg)
+
+            m_run.return_value = completed(stdout="gh copilot help", code=0)
+            ok, msg = loop.check_cli_auth("gh")
+            self.assertTrue(ok)
+            self.assertEqual(msg, "bereit")
+
+    def test_copilot_missing_check(self):
+        with mock.patch("subprocess.run") as m_run:
+            m_run.return_value = completed(stdout="", stderr="GitHub Copilot CLI was not found", code=127)
+            ok, msg = loop.check_cli_auth("copilot")
+            self.assertFalse(ok)
+            self.assertIn("copilot setup", msg)
+
+    def test_timeout_or_missing_binary(self):
+        with mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["test"], timeout=2.0)):
+            ok, msg = loop.check_cli_auth("gemini")
+            self.assertFalse(ok)
+            self.assertEqual(msg, "nicht erreichbar")
+
+    def test_get_alternative_agent_require_auth(self):
+        agents = {k: loop.AgentCLI(k, k, lambda *a: ("", {})) for k in ("claude", "gemini", "agy")}
+        with mock.patch.object(loop.backends, "check_cli_auth", side_effect=lambda b: (True, "angemeldet") if b == "agy" else (False, "unauth")):
+            alt = loop.get_alternative_agent(agents["claude"], agents, require_auth=True)
+            self.assertIsNotNone(alt)
+            self.assertEqual(alt.binary, "agy")
+
+
 if __name__ == "__main__":
     unittest.main()
+

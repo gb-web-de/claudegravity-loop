@@ -29,7 +29,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--dry-run` | | Belegung, Kostenschätzung aus früheren Sessions, Hinweise (z. B. fehlendes `--proof`) und Startbefehl anzeigen, ohne etwas auszuführen oder anzulegen. | aus |
 | `-h`, `--help` | | Wichtigste Optionen in Gruppen. | – |
 | `--help-all` | | Alle Optionen mit Aliasen. | – |
-| `--info` | `--check` | Erkannte CLIs/Endpunkte und Standard-Belegung anzeigen. | aus |
+| `--info` | `--check` | Erkannte CLIs/Endpunkte, Anmeldestatus und Standard-Belegung anzeigen. | aus |
 | `--budget-max <wert>` | | Harte Grenze für die Session in Tokens (`500k`, `1.5m`) oder gemeldeten Kosten (`2.50usd`). Siehe [Budget](#budget). | – |
 | `--budget-warn <wert>` | | Weiche Grenze, nur Warnung. | 80 % von `--budget-max` |
 | `--budget-roles <liste>` | `--budget-rollen` | Harte Grenzen je Rolle, z. B. `"bauleiter=300k,abnahme=0.50usd"`. | – |

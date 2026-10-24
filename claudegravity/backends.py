@@ -715,3 +715,50 @@ def detect_installed_agents(
         )
 
     return agents
+
+
+def check_cli_auth(binary: str) -> tuple[bool, str]:
+    """Schnelle Prüfung, ob eine CLI einsatzbereit und angemeldet ist.
+
+    Liefert (is_ready: bool, status_message: str).
+    """
+    try:
+        if binary == "claude":
+            res = subprocess.run(["claude", "auth", "status"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=2.0)
+            if res.returncode == 0 and '"loggedIn":true' in res.stdout.replace(" ", ""):
+                return True, "angemeldet"
+            return False, "nicht angemeldet (claude login)"
+        elif binary == "gemini":
+            res = subprocess.run(["gemini", "-p", "check"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=4.0)
+            err_text = (res.stderr + res.stdout).lower()
+            if "invalid auth method" in err_text or res.returncode == 41:
+                return False, "nicht angemeldet (gemini auth login)"
+            if res.returncode == 0:
+                return True, "angemeldet"
+            msg = (res.stderr or res.stdout).strip().splitlines()[-1] if (res.stderr or res.stdout).strip() else "nicht bereit"
+            return False, msg
+        elif binary == "gh":
+            res = subprocess.run(["gh", "copilot", "--help"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=2.0)
+            if "unknown command" in (res.stderr + res.stdout).lower() or res.returncode != 0:
+                return False, "Erweiterung 'gh-copilot' fehlt (gh extension install github/gh-copilot)"
+            return True, "bereit"
+        elif binary == "copilot":
+            res = subprocess.run(["copilot", "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=2.0)
+            if res.returncode == 0:
+                return True, "bereit"
+            return False, "nicht installiert (copilot setup)"
+        elif binary == "agy":
+            acc_file = Path.home() / ".gemini" / "antigravity" / "google_accounts.json"
+            if acc_file.exists():
+                return True, "angemeldet"
+            res = subprocess.run(["agy", "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=2.0)
+            return (True, "bereit") if res.returncode == 0 else (False, "nicht bereit")
+        elif binary == "codex":
+            res = subprocess.run(["codex", "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=2.0)
+            return (True, "bereit") if res.returncode == 0 else (False, "nicht bereit")
+        elif binary in ("ollama", "ollama-cli"):
+            return True, "lokal"
+    except (subprocess.TimeoutExpired, OSError, Exception):
+        return False, "nicht erreichbar"
+    return True, "bereit"
+
