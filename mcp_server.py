@@ -448,9 +448,9 @@ def optimize_claudegravity_command(
 
     if p_norm == "best-code":
         strategy_flag = "best-code"
-        planner_model = "claude-3-7-sonnet" if planner_cli == "claude" else "gemini-2.5-pro"
+        planner_model = "sonnet" if planner_cli == "claude" else "gemini-4-argon"
         planner_effort = "high"
-        reviewer_model = "gemini-2.5-pro" if reviewer_cli in ["agy", "gemini"] else "claude-3-7-sonnet"
+        reviewer_model = "gemini-4-argon" if reviewer_cli in ["agy", "gemini"] else "sonnet"
         reviewer_effort = "high"
         builder_cli = planner_cli
         builder_model = planner_model
@@ -462,12 +462,12 @@ def optimize_claudegravity_command(
         )
     elif p_norm == "lowest-cost":
         strategy_flag = "eco"
-        planner_model = "claude-3-7-sonnet" if planner_cli == "claude" else "gemini-2.5-pro"
+        planner_model = "sonnet" if planner_cli == "claude" else "gemini-4-argon"
         planner_effort = "medium"
-        reviewer_model = "gemini-2.5-pro" if reviewer_cli in ["agy", "gemini"] else "claude-3-7-sonnet"
+        reviewer_model = "gemini-4-argon" if reviewer_cli in ["agy", "gemini"] else "sonnet"
         reviewer_effort = "medium"
         builder_cli = planner_cli
-        builder_model = "claude-3-5-haiku" if builder_cli == "claude" else "gemini-2.5-flash"
+        builder_model = "haiku" if builder_cli == "claude" else "gemini-3.8-flash"
         builder_effort = "low"
         cost_benefit = (
             "💰 Maximale Kosten- & Tokenersparnis (bis zu 70% Ersparnis!):\n"
@@ -493,9 +493,9 @@ def optimize_claudegravity_command(
         )
     elif p_norm == "local-free":
         strategy_flag = "local-free"
-        planner_model = "claude-3-7-sonnet" if planner_cli == "claude" else "gemini-2.5-pro"
+        planner_model = "sonnet" if planner_cli == "claude" else "gemini-4-argon"
         planner_effort = "high"
-        reviewer_model = "gemini-2.5-pro" if reviewer_cli in ["agy", "gemini"] else "claude-3-7-sonnet"
+        reviewer_model = "gemini-4-argon" if reviewer_cli in ["agy", "gemini"] else "sonnet"
         reviewer_effort = "high"
 
         if endpoint:
@@ -522,9 +522,9 @@ def optimize_claudegravity_command(
         )
     else:  # balanced
         strategy_flag = "balanced"
-        planner_model = "claude-sonnet (Standard)" if planner_cli == "claude" else "gemini-2.5-pro (Standard)"
+        planner_model = "sonnet (Standard)" if planner_cli == "claude" else "gemini-4-argon (Standard)"
         planner_effort = "high" if planner_cli == "agy" else None
-        reviewer_model = "gemini-2.5-pro (Standard)" if reviewer_cli in ["agy", "gemini"] else "claude-sonnet (Standard)"
+        reviewer_model = "gemini-4-argon (Standard)" if reviewer_cli in ["agy", "gemini"] else "sonnet (Standard)"
         reviewer_effort = "high" if reviewer_cli == "agy" else None
         builder_cli = planner_cli
         builder_model = planner_model

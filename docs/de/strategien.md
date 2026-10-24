@@ -10,7 +10,7 @@ Statt jede Rolle einzeln einzustellen, wählst du mit `--strategy <name>` (Alias
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `balanced` *(Standard)* | – | `high` nur bei `agy` | `high` nur bei `agy` | CLI-Default | wie Architekt | Alltag |
 | `best-code` | `quality` | `high` | `high` | `high` | wie Architekt | Kernsysteme, Sicherheit, große Umbauten |
-| `eco` | `economy`, `cost` | `medium` | `medium` | `low` | `claude-3-5-haiku` (bei `claude`), `gemini-2.5-flash` (bei `agy`/`gemini`), sonst CLI-Default | Bis zu ~70 % Token-Ersparnis |
+| `eco` | `economy`, `cost` | `medium` | `medium` | `low` | `haiku` (bei `claude`), `gemini-3.8-flash` (bei `agy`/`gemini`), sonst CLI-Default | Bis zu ~70 % Token-Ersparnis |
 | `local-free` | `free`, `local` | `high` | `high` | `low` | Ollama: automatisch aus den installierten Modellen; Endpunkt: `qwen2.5-coder:32b`; sonst `local-model` | 0 € API-Kosten im Bau-Loop |
 | `hybrid` | `mixed` | CLI-Default | – | – | Ollama: automatisch | Cloud plant und nimmt ab, lokal wird geprüft und in Etappen gebaut |
 

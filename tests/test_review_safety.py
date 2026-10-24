@@ -62,11 +62,18 @@ class RoleRightsTest(unittest.TestCase):
             self.assertNotIn("--dangerously-skip-permissions", flags)
             self.assertIn("dontAsk", flags)
         self.assertEqual(loop.role_flags("codex", "reviewer", True), ["-s", "read-only"])
+        self.assertEqual(loop.role_flags("agy", "reviewer", True), ["--mode", "plan"])
+        self.assertEqual(loop.role_flags("gemini", "reviewer", True), ["--approval-mode", "plan"])
+        self.assertNotIn("--dangerously-skip-permissions", loop.role_flags("agy", "reviewer", True))
         self.assertNotIn("-y", loop.role_flags("gemini", "reviewer", True))
 
     def test_builder_writes_only_after_approval(self):
         self.assertEqual(loop.role_flags("claude", "builder", False), [])
         self.assertIn("--dangerously-skip-permissions", loop.role_flags("claude", "builder", True))
+        self.assertEqual(loop.role_flags("agy", "builder", False), [])
+        self.assertIn("--dangerously-skip-permissions", loop.role_flags("agy", "builder", True))
+        self.assertEqual(loop.role_flags("gemini", "builder", False), [])
+        self.assertIn("-y", loop.role_flags("gemini", "builder", True))
 
     def test_switch_never_lands_on_counter_role(self):
         agents = {k: agent(k) for k in ("claude", "agy", "codex")}

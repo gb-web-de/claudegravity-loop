@@ -70,9 +70,9 @@ Gültige Schlüssel: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `o
 
 | Flag | Aliase | Beschreibung |
 | :--- | :--- | :--- |
-| `--architekt-model <name>` | `--planner-model` | z. B. `sonnet`, `opus`, `gemini-2.5-pro` |
-| `--pruefstatiker-model <name>` | `--reviewer-model` | z. B. `gemini-2.5-pro`, `sonnet` |
-| `--bauer-model <name>` | `--builder-model` | z. B. `claude-3-5-haiku`, `gemini-2.5-flash`, `qwen2.5-coder:32b` |
+| `--architekt-model <name>` | `--planner-model` | z. B. `sonnet`, `opus`, `gemini-4-argon` |
+| `--pruefstatiker-model <name>` | `--reviewer-model` | z. B. `gemini-4-argon`, `sonnet` |
+| `--bauer-model <name>` | `--builder-model` | z. B. `haiku`, `gemini-3.8-flash`, `qwen2.5-coder:32b` |
 
 Der Modellname wird als `--model <name>` an die CLI bzw. als `model` an den Endpunkt übergeben.
 
@@ -204,7 +204,7 @@ Vorlagen ändern oder eigene anlegen geht im globalen oder im Projekt-Profil unt
 # Alles getrennt einstellen
 claudegravity "Sicherheits-Audit und Auth-Refactoring" \
   --architekt claude --architekt-model opus \
-  --pruefstatiker agy --pruefstatiker-model gemini-2.5-pro --pruefstatiker-effort max \
+  --pruefstatiker agy --pruefstatiker-model gemini-4-argon --pruefstatiker-effort max \
   --bauer-endpoint http://192.168.1.50:11434/v1 --bauer bauer_ep --bauer-model qwen2.5-coder:7b
 
 # Lange Aufgabe: mehr Runden, ohne Pause, Fallback bei Limit

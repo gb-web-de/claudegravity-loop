@@ -214,6 +214,10 @@ def get_readonly_flags(binary: str) -> list[str]:
         return list(CLAUDE_READONLY_FLAGS)
     if binary == "codex":
         return ["-s", "read-only"]
+    if binary == "agy":
+        return ["--mode", "plan"]
+    if binary == "gemini":
+        return ["--approval-mode", "plan"]
     return []
 
 

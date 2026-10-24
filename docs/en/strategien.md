@@ -10,7 +10,7 @@ Instead of configuring each role individually, you pick a preset with `--strateg
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `balanced` *(default)* | – | `high` only with `agy` | `high` only with `agy` | CLI default | same as Architect | Everyday work |
 | `best-code` | `quality` | `high` | `high` | `high` | same as Architect | Core systems, security, large refactorings |
-| `eco` | `economy`, `cost` | `medium` | `medium` | `low` | `claude-3-5-haiku` (with `claude`), `gemini-2.5-flash` (with `agy`/`gemini`), otherwise CLI default | Up to ~70% token savings |
+| `eco` | `economy`, `cost` | `medium` | `medium` | `low` | `haiku` (with `claude`), `gemini-3.8-flash` (with `agy`/`gemini`), otherwise CLI default | Up to ~70% token savings |
 | `local-free` | `free`, `local` | `high` | `high` | `low` | Ollama: picked automatically from the installed models; endpoint: `qwen2.5-coder:32b`; otherwise `local-model` | €0 API cost in the build loop |
 | `hybrid` | `mixed` | CLI default | – | – | Ollama: automatic | Cloud plans and accepts, local model reviews and builds in stages |
 

@@ -222,13 +222,13 @@ def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
         action="store_true",
         help="Rollen tauschen: Antigravity wird Architekt (Planung), Claude wird Prüfstatiker (Review)",
     )
-    add("--planner-model", "--architekt-model", default=None, help="Modell für den Architekten (z.B. sonnet, opus, gemini-2.5-pro)")
-    add("--reviewer-model", "--pruefstatiker-model", default=None, help="Modell für den Prüfstatiker (z.B. gemini-2.5-pro, sonnet, opus)")
+    add("--planner-model", "--architekt-model", default=None, help="Modell für den Architekten (z.B. sonnet, gemini-4-argon, opus)")
+    add("--reviewer-model", "--pruefstatiker-model", default=None, help="Modell für den Prüfstatiker (z.B. gemini-4-argon, sonnet, opus)")
     add(
         "--builder-model",
         "--bauer-model",
         default=None,
-        help="Modell für den Bauleiter in Phase 3 (z.B. claude-3-5-haiku, gemini-2.5-flash, sonnet)",
+        help="Modell für den Bauleiter in Phase 3 (z.B. haiku, gemini-3.8-flash, sonnet)",
     )
     add("--inspector-model", "--abnahme-model", default=None, help="Modell für die Abnahme")
     add("--effort", default=None, choices=EFFORT_CHOICES, help="Reasoning-Intensität / Thinking Effort (für agy)")
@@ -471,7 +471,7 @@ def print_system_check(agents: dict[str, AgentCLI]) -> None:
     others = [a for a in agents.values() if a.binary != def_planner.binary]
     def_reviewer = next((a for a in others if a.binary == "agy"), others[0] if others else def_planner)
     local_cand = next((agents[k] for k in LOCAL_BACKEND_ORDER if k in agents), None)
-    eco_model = "claude-3-5-haiku" if def_planner.binary == "claude" else "gemini-2.5-flash"
+    eco_model = "haiku" if def_planner.binary == "claude" else "gemini-3.8-flash"
 
     def default_effort(binary: str) -> str:
         return "high (CLI-Default)" if binary == "agy" else "Voreinstellung der CLI (via --effort nur für agy/codex steuerbar)"
@@ -517,7 +517,7 @@ def print_system_check(agents: dict[str, AgentCLI]) -> None:
     say("  - Eigener Endpunkt       : --endpoint <url> (z.B. http://localhost:11434/v1 oder http://192.168.1.50:11434/v1)")
     say("  - Bauleiter-Endpunkt     : --bauer-endpoint <url> (z.B. http://localhost:11434/v1)")
     say("  - Bauleiter festlegen    : --bauer / --builder <claude|agy|ollama|lmstudio|endpoint|codex|copilot>")
-    say("  - Bauleiter-Modell       : --bauer-model <name> (z.B. qwen2.5-coder:32b, claude-3-5-haiku)")
+    say("  - Bauleiter-Modell       : --bauer-model <name> (z.B. qwen2.5-coder:32b, haiku, gemini-3.8-flash)")
     say("  - Auto-Fallback bei Limit: --auto-switch / --fallback (wechselt bei Limit nahtlos zum Alternativmodell)")
     say("  - Fragen-Modus aktivieren: -i / --ask (Agenten stellen bei Unklarheiten gezielte Fragen an dich)")
     say('  - Prüfbefehl             : --proof "python -m unittest" (Loop führt ihn nach jeder Bau-Runde selbst aus)')
@@ -575,7 +575,7 @@ def show_dry_run(args: argparse.Namespace, agents: dict, project_path: Path, con
         default_b_effort = "low"
         builder_choice = args.builder or planner.binary
         builder = agents.get(builder_choice, planner)
-        default_b_model = {"claude": "claude-3-5-haiku", "agy": "gemini-2.5-flash", "gemini": "gemini-2.5-flash"}.get(builder.binary)
+        default_b_model = {"claude": "haiku", "agy": "gemini-3.8-flash", "gemini": "gemini-2.5-flash"}.get(builder.binary)
     elif strat == "local-free":
         default_p_effort = "high"
         default_r_effort = "high"

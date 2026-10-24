@@ -236,7 +236,7 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
         default_p_effort = "medium"
         default_r_effort = "medium"
         default_b_effort = "low"
-        default_b_model = {"claude": "claude-3-5-haiku", "agy": "gemini-2.5-flash", "gemini": "gemini-2.5-flash"}.get(builder.binary)
+        default_b_model = {"claude": "haiku", "agy": "gemini-3.8-flash", "gemini": "gemini-2.5-flash"}.get(builder.binary)
     elif strat == "local-free":
         default_p_effort = "high"
         default_r_effort = "high"

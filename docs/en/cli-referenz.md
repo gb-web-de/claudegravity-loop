@@ -70,9 +70,9 @@ Valid keys: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `ollama-cli
 
 | Flag | Aliases | Description |
 | :--- | :--- | :--- |
-| `--architekt-model <name>` | `--planner-model` | e.g. `sonnet`, `opus`, `gemini-2.5-pro` |
-| `--pruefstatiker-model <name>` | `--reviewer-model` | e.g. `gemini-2.5-pro`, `sonnet` |
-| `--bauer-model <name>` | `--builder-model` | e.g. `claude-3-5-haiku`, `gemini-2.5-flash`, `qwen2.5-coder:32b` |
+| `--architekt-model <name>` | `--planner-model` | e.g. `sonnet`, `opus`, `gemini-4-argon` |
+| `--pruefstatiker-model <name>` | `--reviewer-model` | e.g. `gemini-4-argon`, `sonnet` |
+| `--bauer-model <name>` | `--builder-model` | e.g. `haiku`, `gemini-3.8-flash`, `qwen2.5-coder:32b` |
 
 The model name is passed as `--model <name>` to the CLI, or as `model` to the endpoint.
 
@@ -204,7 +204,7 @@ Templates are changed or added in the global or project profile under `templates
 # Configure everything separately
 claudegravity "Security audit and auth refactoring" \
   --architekt claude --architekt-model opus \
-  --pruefstatiker agy --pruefstatiker-model gemini-2.5-pro --pruefstatiker-effort max \
+  --pruefstatiker agy --pruefstatiker-model gemini-4-argon --pruefstatiker-effort max \
   --bauer-endpoint http://192.168.1.50:11434/v1 --bauer bauer_ep --bauer-model qwen2.5-coder:7b
 
 # Long task: more rounds, no pause, fallback on limit
