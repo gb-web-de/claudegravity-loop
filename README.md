@@ -54,7 +54,7 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 * **Token- & Kosten-Audit** pro Rolle, Modell und Effort in der `.done`-Datei, mit Kennzahlen (Kosten je Aufgabe, Runden bis Erfolg, Nacharbeitsquote) zum Vergleichen von Sessions.
 * **Robust & nachvollziehbar:** automatische Neuversuche mit Backoff bei Überlastung und Netzfehlern; geschwärzte Logs und ein Audit, wenn eine lesende Rolle doch schreibt.
 * **MCP-Server** (`mcp_server.py`), mit dem Claude Code & Co. den optimalen Befehl berechnen und starten. → [MCP-Server](docs/de/mcp-server.md)
-* **Plugins** für Claude Code, Codex, Antigravity, Copilot CLI, Cursor und Gemini CLI: ein Befehl, z. B. `/plugin marketplace add gb-web-de/claudegravity-loop`, bringt MCP-Server, Skill und `/claudegravity-run`. → [Plugins](docs/de/plugins.md)
+* **Plugins** für Claude Code, Codex, Antigravity, Copilot CLI, Cursor und Gemini CLI: ein Befehl, z. B. `/plugin marketplace add gb-web-de/claudegravity-loop`, bringt MCP-Server, Skill und `/loop_run`. → [Plugins](docs/de/plugins.md)
 
 ## Dokumentation
 

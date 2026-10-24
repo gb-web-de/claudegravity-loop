@@ -6,9 +6,9 @@ The repository is a plugin itself. One command in each client loads the [MCP ser
 
 | Command | What it does |
 | :--- | :--- |
-| `claudegravity-run <task>` | Pick the roles, start in the background after your OK, report the result |
-| `claudegravity-optimize <task>` | Show the best role split and the ready `claudegravity` command without starting |
-| `claudegravity-status` | State of the last run in the current project, stop it on request |
+| `loop_run <task>` | Pick the roles, start in the background after your OK, report the result |
+| `loop_optimize <task>` | Show the best role split and the ready `claudegravity` command without starting |
+| `loop_status` | State of the last run in the current project, stop it on request |
 
 As with the loop, the only requirement is **Python 3.10+** as `python3` on the PATH. You still need the role CLIs (`claude`, `agy`, `codex`, `ollama`, …) as usual.
 
@@ -16,12 +16,12 @@ As with the loop, the only requirement is **Python 3.10+** as `python3` on the P
 
 | Client | Command | Use afterwards |
 | :--- | :--- | :--- |
-| **Claude Code** | `/plugin marketplace add gb-web-de/claudegravity-loop` and `/plugin install claudegravity@claudegravity` | `/claudegravity-run …`, `/claudegravity-optimize …`, `/claudegravity-status` (or `/claudegravity:…`) |
+| **Claude Code** | `/plugin marketplace add gb-web-de/claudegravity-loop` and `/plugin install claudegravity@claudegravity` (or `python3 install.py`) | `/loop_run …`, `/loop_optimize …`, `/loop_status` (or `/claudegravity:loop_…`) |
 | **Codex** (CLI and app) | `codex plugin marketplace add gb-web-de/claudegravity-loop`, then install it under Plugins in Codex | skill `claudegravity` or `@claudegravity` |
 | **Antigravity** (`agy`, app, IDE) | `agy plugin install https://github.com/gb-web-de/claudegravity-loop` | skill `claudegravity`, tools in the agent |
 | **GitHub Copilot CLI** | `copilot plugin marketplace add gb-web-de/claudegravity-loop` and `copilot plugin install claudegravity@claudegravity` | skill `claudegravity` |
-| **Cursor** | add the repository as a plugin source or team marketplace (`.cursor-plugin/marketplace.json`) | `/claudegravity-run`, `/claudegravity-optimize`, `/claudegravity-status` |
-| **Gemini CLI** | `gemini extensions install https://github.com/gb-web-de/claudegravity-loop` | `/claudegravity:claudegravity-run …`, `/claudegravity:claudegravity-optimize …`, `/claudegravity:claudegravity-status` |
+| **Cursor** | add the repository as a plugin source or team marketplace (`.cursor-plugin/marketplace.json`) | `/loop_run`, `/loop_optimize`, `/loop_status` |
+| **Gemini CLI** | `gemini extensions install https://github.com/gb-web-de/claudegravity-loop` | `/claudegravity:loop_run …`, `/claudegravity:loop_optimize …`, `/claudegravity:loop_status` |
 
 Claude Desktop, VS Code and Windsurf have no matching plugin format. There the [installer](mcp-server.md#easiest-the-installer) registers the MCP server.
 

@@ -404,6 +404,69 @@ def uninstall_skill(target: Path) -> bool:
         return False
 
 
+COMMANDS_DIR = REPO_DIR / "commands"
+
+
+def claude_command_targets(home: Path | None = None) -> list[tuple[Path, Path]]:
+    """Gibt (Quelle, Ziel) Paare für globale Claude-Code-Befehlsvorlagen zurück."""
+    h = home or HOME
+    dest_dir = h / ".claude" / "commands"
+    if not COMMANDS_DIR.is_dir():
+        return []
+    return [(src, dest_dir / src.name) for src in sorted(COMMANDS_DIR.glob("*.md"))]
+
+
+def is_claude_command_installed(target: Path, source: Path) -> bool:
+    if target.is_symlink():
+        try:
+            return target.resolve() == source.resolve()
+        except OSError:
+            return False
+    return target.is_file()
+
+
+def install_claude_commands(home: Path | None = None) -> bool:
+    pairs = claude_command_targets(home)
+    if not pairs:
+        return True
+    dest_dir = (home or HOME) / ".claude" / "commands"
+    all_ok = True
+    for src, dst in pairs:
+        if is_claude_command_installed(dst, src):
+            say("=", f"{dst} -> {src}")
+            continue
+        try:
+            if not DRY_RUN:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                if dst.is_symlink() or dst.is_file():
+                    dst.unlink()
+                try:
+                    dst.symlink_to(src)
+                except OSError:
+                    shutil.copy2(src, dst)
+            say("+", f"{dst} -> {src}")
+        except OSError as exc:
+            say("!", f"Fehler bei Befehls-Installation {dst}: {exc}")
+            all_ok = False
+    return all_ok
+
+
+def uninstall_claude_commands(home: Path | None = None) -> bool:
+    pairs = claude_command_targets(home)
+    all_ok = True
+    for _, dst in pairs:
+        if not dst.exists() and not dst.is_symlink():
+            continue
+        try:
+            if not DRY_RUN:
+                dst.unlink()
+            say("-", f"{dst}")
+        except OSError as exc:
+            say("!", f"Fehler beim Entfernen von {dst}: {exc}")
+            all_ok = False
+    return all_ok
+
+
 # --------------------------------------------------------------------
 # Globale Befehle
 # --------------------------------------------------------------------
@@ -603,11 +666,15 @@ def main() -> int:
             label, detected, (_, _, status) = registry[key]
             mark = "✓ eingetragen" if status() else ("○ nicht eingetragen" if detected else "· nicht gefunden")
             print(f"  {mark:22} {label} [{key}]")
-        print("\nSkills:")
+        print("\nSkills & Befehle:")
         skills = skill_targets()
         for key, (label, detected, target) in skills.items():
             mark = "✓ verlinkt" if is_skill_installed(target) else ("○ nicht verlinkt" if detected else "· nicht gefunden")
             print(f"  {mark:22} {label} [{key}] -> {target}")
+            if key == "claude" and detected:
+                for src, dst in claude_command_targets():
+                    cmark = "✓ verlinkt" if is_claude_command_installed(dst, src) else "○ nicht verlinkt"
+                    print(f"  {cmark:22} Claude Slash-Command /{src.stem} -> {dst}")
         print("\nGlobale Befehle:")
         for name in COMMANDS:
             found = shutil.which(name)
@@ -631,16 +698,20 @@ def main() -> int:
                 say("·", f"{label} nicht gefunden – übersprungen")
 
     if not args.no_skills:
-        print("\nSkills:" if not args.uninstall else "\nSkills entfernen:")
+        print("\nSkills & Slash-Befehle:" if not args.uninstall else "\nSkills & Slash-Befehle entfernen:")
         skills = skill_targets()
         for key, (label, detected, target) in skills.items():
             if args.uninstall:
                 if is_skill_installed(target):
                     print(f" {label}")
                     failures += not uninstall_skill(target)
+                if key == "claude":
+                    uninstall_claude_commands()
             elif detected or args.all_clients or (args.only and key in selected):
                 print(f" {label}")
                 failures += not install_skill(target)
+                if key == "claude":
+                    failures += not install_claude_commands()
             else:
                 say("·", f"{label} nicht gefunden – übersprungen")
 

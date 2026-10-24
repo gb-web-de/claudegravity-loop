@@ -83,5 +83,36 @@ class SkillInstallTest(unittest.TestCase):
                 self.assertFalse(target.exists())
 
 
+class ClaudeCommandsInstallTest(unittest.TestCase):
+    def test_claude_command_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pairs = install.claude_command_targets(Path(tmp))
+            self.assertEqual(len(pairs), 3)
+            names = [src.name for src, _ in pairs]
+            self.assertEqual(names, ["loop_optimize.md", "loop_run.md", "loop_status.md"])
+            for src, dst in pairs:
+                self.assertEqual(dst.parent, Path(tmp) / ".claude" / "commands")
+                self.assertEqual(dst.name, src.name)
+
+    def test_install_and_uninstall_claude_commands(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_home = Path(tmp)
+            with mock.patch.object(install, "say"):
+                self.assertTrue(install.install_claude_commands(fake_home))
+                pairs = install.claude_command_targets(fake_home)
+                for src, dst in pairs:
+                    self.assertTrue(install.is_claude_command_installed(dst, src))
+                    self.assertTrue(dst.is_file())
+
+                # Idempotent
+                self.assertTrue(install.install_claude_commands(fake_home))
+
+                # Deinstallation
+                self.assertTrue(install.uninstall_claude_commands(fake_home))
+                for src, dst in pairs:
+                    self.assertFalse(dst.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
+
