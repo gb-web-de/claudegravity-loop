@@ -64,7 +64,7 @@ jobs:
         run: python tests/smoke/run_smoke.py --strategy ${{ matrix.strategy }} --out smoke-artifacts
       - name: Upload logs and reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-${{ matrix.os }}-${{ matrix.strategy }}
           path: smoke-artifacts/
