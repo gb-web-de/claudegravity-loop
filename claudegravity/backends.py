@@ -313,7 +313,7 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
         out = usage.get("output_tokens") or 0
         tot = usage.get("total_tokens") or (inp + out)
 
-        model_name = extract_flag_value(extra_flags, "--model")
+        model_name = extract_flag_value(extra_flags, "--model") or data.get("model") or "gemini-3.8-flash (CLI-Default)"
         effort_val = extract_flag_value(extra_flags, "--effort")
         if not effort_val and (usage.get("thinking_tokens") or 0) > 0:
             effort_val = f"high ({usage['thinking_tokens']} thinking tokens)"
@@ -324,16 +324,21 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
             "total_tokens": tot,
             "cost_usd": 0.0,
             "model": model_name,
+            "reported_model": model_name,
             "effort": effort_val,
         }
+        if data.get("conversation_id"):
+            metrics["session_id"] = str(data["conversation_id"])
         return text, metrics
     except json.JSONDecodeError:
+        model_fallback = extract_flag_value(extra_flags, "--model") or "gemini-3.8-flash (CLI-Default)"
         return raw, {
             "input_tokens": len(prompt) // 4,
             "output_tokens": len(raw) // 4,
             "total_tokens": (len(prompt) + len(raw)) // 4,
             "cost_usd": 0.0,
-            "model": extract_flag_value(extra_flags, "--model"),
+            "model": model_fallback,
+            "reported_model": model_fallback,
             "effort": extract_flag_value(extra_flags, "--effort"),
         }
 

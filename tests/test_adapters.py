@@ -72,10 +72,14 @@ class CliContractTest(unittest.TestCase):
             (text, m["input_tokens"], m["output_tokens"], m["cost_usd"], m["reported_model"], m["session_id"]),
             ("ok", 5, 4, 0.01, "claude-x", "s"),
         )
-        agy = json.dumps({"response": "ok", "usage": {"input_tokens": 1, "output_tokens": 2, "thinking_tokens": 7}})
+        agy = json.dumps({"conversation_id": "c-123", "response": "ok", "usage": {"input_tokens": 1, "output_tokens": 2, "thinking_tokens": 7}})
         (text, m), _ = self.run_adapter("agy", completed(agy))
         self.assertEqual((text, m["total_tokens"]), ("ok", 3))
+        self.assertEqual(m["reported_model"], "gemini-3.8-flash (CLI-Default)")
+        self.assertEqual(m["session_id"], "c-123")
         self.assertIn("7 thinking", m["effort"])
+        _, m_custom = self.run_adapter("agy", completed(agy), flags=["--model", "gemini-4-argon"])[0]
+        self.assertEqual(m_custom["reported_model"], "gemini-4-argon")
         codex = "\n".join(
             json.dumps(e)
             for e in (
