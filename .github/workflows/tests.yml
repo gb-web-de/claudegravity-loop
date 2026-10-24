@@ -5,8 +5,16 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: "1"
+
 jobs:
   lint:
+    name: lint (ruff)
     # Ruff nur als Prüfwerkzeug in CI; der Loop selbst braucht weiter nur die Standardbibliothek
     runs-on: ubuntu-latest
     steps:
@@ -21,6 +29,7 @@ jobs:
           ruff format --check .
 
   unittest:
+    name: unittest (${{ matrix.os }}, py${{ matrix.python }})
     strategy:
       fail-fast: false
       matrix:
@@ -35,11 +44,10 @@ jobs:
       - name: Syntax check
         run: python -m py_compile loop.py mcp_server.py && python -m compileall -q claudegravity
       - name: Unit tests
-        env:
-          PYTHONIOENCODING: utf-8
         run: python -m unittest discover -s tests -v
 
   smoke:
+    name: smoke (${{ matrix.os }}, ${{ matrix.strategy }})
     # Ganzer Ablauf (Plan, Review, Bau, Prüfbefehl, Abnahme) mit einem Fake-Server statt KI-Abos
     strategy:
       fail-fast: false
@@ -53,8 +61,6 @@ jobs:
         with:
           python-version: "3.13"
       - name: Smoke run (${{ matrix.strategy }})
-        env:
-          PYTHONIOENCODING: utf-8
         run: python tests/smoke/run_smoke.py --strategy ${{ matrix.strategy }} --out smoke-artifacts
       - name: Upload logs and reports
         if: always()
@@ -63,3 +69,74 @@ jobs:
           name: smoke-${{ matrix.os }}-${{ matrix.strategy }}
           path: smoke-artifacts/
           if-no-files-found: warn
+
+  manifests:
+    name: manifests (JSON/TOML, MCP handshake)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Parse JSON and TOML manifests
+        run: |
+          python - <<'PY'
+          import json, sys, tomllib
+          from pathlib import Path
+          files = ["plugin.json", "mcp.json", "mcp_config.json", "gemini-extension.json",
+                   ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json",
+                   ".cursor-plugin/plugin.json", ".cursor-plugin/mcp.json",
+                   ".cursor-plugin/marketplace.json", ".vscode/mcp.json"]
+          bad = 0
+          for name in files:
+              try:
+                  json.loads(Path(name).read_text(encoding="utf-8"))
+              except Exception as exc:
+                  bad += 1
+                  print(f"::error file={name}::invalid JSON: {exc}")
+          for path in sorted(Path("commands/claudegravity").glob("*.toml")):
+              try:
+                  tomllib.loads(path.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  bad += 1
+                  print(f"::error file={path}::invalid TOML: {exc}")
+          sys.exit(1 if bad else 0)
+          PY
+      - name: Plugin and MCP tests (incl. handshake)
+        run: python -m unittest tests.test_plugins tests.test_mcp_server -v
+
+  installer:
+    name: installer smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # Isoliertes Home-Verzeichnis, damit der Runner nicht verändert wird; --dry-run schreibt nichts
+      - name: Prepare isolated home
+        shell: python
+        run: |
+          import os, tempfile
+          home = tempfile.mkdtemp(prefix="cg-home-")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"HOME={home}\nUSERPROFILE={home}\n")
+      - name: install.py --dry-run
+        run: python install.py --dry-run --all-clients
+      - name: install.py --status
+        run: python install.py --status
+      - name: install.sh --dry-run
+        if: runner.os != 'Windows'
+        run: sh ./install.sh --dry-run --all-clients
+      - name: install.ps1 --dry-run
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./install.ps1 --dry-run --all-clients
+      - name: install.bat --dry-run
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: install.bat --dry-run --all-clients

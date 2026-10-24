@@ -138,6 +138,58 @@ class PluginServerStartTest(unittest.TestCase):
         answer = json.loads(proc.stdout.splitlines()[0])
         self.assertEqual(answer["result"]["serverInfo"]["name"], "claudegravity-mcp")
 
+    def test_server_lists_tools_after_handshake(self):
+        # Minimaler MCP-Handshake ohne Modell-Zugang: initialize, initialized, tools/list
+        messages = [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18", "clientInfo": {"name": "test"}},
+            },
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        ]
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "mcp_server.py")],
+            input="".join(json.dumps(message) + "\n" for message in messages),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+        answers = {item["id"]: item for item in map(json.loads, proc.stdout.splitlines()) if "id" in item}
+        names = {tool["name"] for tool in answers[2]["result"]["tools"]}
+        self.assertEqual(
+            names,
+            {"claudegravity_optimize", "claudegravity_run", "claudegravity_status", "claudegravity_stop", "claudegravity_info"},
+        )
+
+
+class ManifestParseTest(unittest.TestCase):
+    JSON_FILES = [
+        "plugin.json",
+        "mcp.json",
+        "mcp_config.json",
+        "gemini-extension.json",
+        ".claude-plugin/plugin.json",
+        ".claude-plugin/marketplace.json",
+        ".cursor-plugin/plugin.json",
+        ".cursor-plugin/mcp.json",
+        ".cursor-plugin/marketplace.json",
+    ]
+
+    def test_json_manifests_parse(self):
+        for relative in self.JSON_FILES:
+            with self.subTest(manifest=relative):
+                self.assertIsInstance(read_json(relative), dict)
+
+    def test_vscode_mcp_config_starts_bundled_server(self):
+        server = read_json(".vscode/mcp.json")["servers"][PLUGIN_NAME]
+        self.assertEqual(server["type"], "stdio")
+        self.assertIn("mcp_server.py", server["args"][-1])
+        self.assertEqual(server["env"]["PYTHONIOENCODING"], "utf-8")
+
 
 if __name__ == "__main__":
     unittest.main()
