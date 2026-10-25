@@ -409,6 +409,31 @@ def _resolve_agy_flags(binary: str, flags: list[str], available: list[str]) -> l
     return None
 
 
+AGY_EMPTY_FOLLOWUP = (
+    "Dein letzter Zug endete ohne Antworttext, vermutlich weil ein Befehl nicht freigegeben wurde. "
+    "Führe keine Befehle mehr aus. Gib jetzt dein vollständiges Ergebnis als Text aus, im verlangten Antwortformat."
+)
+
+
+def _agy_followup_empty(binary: str, conversation_id: str, cwd: Path | None, flags: list[str]) -> tuple[str, dict]:
+    """Fragt einmal in derselben agy-Unterhaltung nach, wenn die Antwort leer blieb.
+
+    agy beendet den Zug im Druckmodus ohne Text, sobald ein Befehl (z.B. pytest) ohne Freigabe abgelehnt wird,
+    meldet aber trotzdem SUCCESS."""
+    say("ℹ️  agy hat ohne Antworttext geendet (abgelehnter Befehl?). Frage einmal in derselben Unterhaltung nach.")
+    try:
+        raw = _exec_cli(binary, ["-p", AGY_EMPTY_FOLLOWUP, "--output-format", "json", "--conversation", conversation_id, *flags], cwd)
+        data = json.loads(raw)
+    except (RuntimeError, json.JSONDecodeError) as ex:
+        say(f"⚠️  Nachfrage bei agy fehlgeschlagen: {ex}")
+        return "", {}
+    if not isinstance(data, dict) or data.get("status") == "ERROR":
+        return "", {}
+    usage = data.get("usage") or {}
+    inp, out = usage.get("input_tokens") or 0, usage.get("output_tokens") or 0
+    return data.get("response") or "", {"input_tokens": inp, "output_tokens": out, "total_tokens": usage.get("total_tokens") or (inp + out)}
+
+
 def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
     flags = [f for f in (extra_flags or []) if f not in ["--output-format", "json", "text"]]
     if binary in _AGY_AVAILABLE_MODELS:
@@ -442,6 +467,10 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
         inp = usage.get("input_tokens") or 0
         out = usage.get("output_tokens") or 0
         tot = usage.get("total_tokens") or (inp + out)
+        if not text.strip() and data.get("conversation_id"):
+            text, extra = _agy_followup_empty(binary, str(data["conversation_id"]), cwd, extra_flags)
+            inp, out = inp + extra.get("input_tokens", 0), out + extra.get("output_tokens", 0)
+            tot += extra.get("total_tokens", 0)
 
         model_name = extract_flag_value(extra_flags, "--model") or data.get("model") or DEFAULT_MODEL_LABEL
         effort_val = extract_flag_value(extra_flags, "--effort")

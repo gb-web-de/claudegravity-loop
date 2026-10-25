@@ -104,6 +104,26 @@ class AgyModelListTest(unittest.TestCase):
             loop._exec_agy("agy", "Prompt", None, ["--model", "gemini-4-argon"])
         self.assertEqual(run.call_count, 1)
 
+    def test_empty_response_asks_once_in_same_conversation(self):
+        empty = '{"conversation_id": "c-1", "status": "SUCCESS", "response": "", "usage": {"input_tokens": 10, "output_tokens": 2}}'
+        filled = '{"conversation_id": "c-1", "status": "SUCCESS", "response": "VERDICT: APPROVED", "usage": {"input_tokens": 5, "output_tokens": 3}}'
+        results = [subprocess.CompletedProcess([], 0, empty, ""), subprocess.CompletedProcess([], 0, filled, "")]
+        with mock.patch.object(loop.subprocess, "run", side_effect=results) as run:
+            text, metrics = loop._exec_agy("agy", "Prompt", None, ["--mode", "plan"])
+        self.assertEqual(text, "VERDICT: APPROVED")
+        self.assertEqual((metrics["input_tokens"], metrics["output_tokens"]), (15, 5))
+        followup = run.call_args_list[1].args[0]
+        self.assertEqual(followup[followup.index("--conversation") + 1], "c-1")
+        self.assertIn("plan", followup)
+
+    def test_empty_response_stays_empty_after_one_followup(self):
+        empty = '{"conversation_id": "c-1", "status": "SUCCESS", "response": ""}'
+        results = [subprocess.CompletedProcess([], 0, empty, ""), subprocess.CompletedProcess([], 0, empty, "")]
+        with mock.patch.object(loop.subprocess, "run", side_effect=results) as run:
+            text, _ = loop._exec_agy("agy", "Prompt", None, [])
+        self.assertEqual(text, "")
+        self.assertEqual(run.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

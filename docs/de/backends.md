@@ -134,6 +134,8 @@ Dauerhaft geht es mit `export CLAUDEGRAVITY_ENDPOINT="http://<server>:11434/v1"`
 
 Die Antigravity CLI erwartet ab Version 1.4 Modellnamen mit eingebauter Effort-Stufe, z. B. `Gemini 3.8 Flash (Medium)` oder `Gemini 4 Argon (High)`. Die Liste zeigt `agy` selbst, wenn ein Name nicht passt. ClaudeGravity übersetzt kurze Namen wie `--bauer-model gemini-3.8-flash --bauer-effort low` in `Gemini 3.8 Flash (Low)` und lässt `--effort` dann weg. Ohne Effort nimmt es `(Medium)`, `xhigh` und `max` werden zu `(High)`. Lehnt `agy` den Namen trotzdem ab, liest der Loop die Liste aus der Fehlermeldung, nimmt den passenden Eintrag und wiederholt den Aufruf einmal. Gibt es keinen Treffer, läuft die Rolle mit dem Standardmodell der CLI weiter. Ist kein Modell gewählt (Anzeige `CLI-Default`), übergibt der Loop weder `--model` noch ein leeres `--effort`.
 
+Lesende Rollen laufen bei `agy` mit `--mode plan`. Will `agy` dort einen Befehl wie `pytest` starten, wird er ohne Freigabe abgelehnt, und `agy` beendet den Zug ohne Antworttext (meldet aber trotzdem Erfolg). Prüfstatiker und Abnahme werden deshalb gebeten, keine Befehle zu starten; den Prüfbefehl führt der Loop selbst aus. Kommt trotzdem eine leere Antwort, fragt der Loop einmal in derselben Unterhaltung (`--conversation <id>`) nach dem Ergebnis.
+
 ### Wie Endpunkt-Bauleiter Dateien schreiben
 
 Endpunkte haben keinen Dateizugriff. ClaudeGravity fordert sie auf, neue Dateien vollständig auszugeben:
