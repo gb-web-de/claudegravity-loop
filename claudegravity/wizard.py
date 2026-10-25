@@ -6,7 +6,7 @@ import os
 import platform
 from pathlib import Path
 
-from .common import CLOUD_PLANNER_ORDER, say
+from .common import CLOUD_PLANNER_ORDER, say, tr
 from .backends import is_private_endpoint
 from .config import global_profile_path, load_profile, project_profile_path
 
@@ -76,9 +76,9 @@ def run_setup_wizard(project_path: Path, agents: dict, input_fn=input, global_pa
     def ask(question: str, default: str, allowed: tuple[str, ...] | None = None) -> str:
         while True:
             try:
-                answer = input_fn(f"{question} [{default}]: ").strip()
+                answer = input_fn(f"{tr(question)} [{default}]: ").strip()
             except (EOFError, KeyboardInterrupt):
-                raise SystemExit("\nEinrichtung abgebrochen, nichts gespeichert.") from None
+                raise SystemExit(tr("\nEinrichtung abgebrochen, nichts gespeichert.")) from None
             answer = answer or default
             if not allowed or answer in allowed:
                 return answer
@@ -172,7 +172,7 @@ def first_run_guide(args, input_fn=input) -> str:
     say("  [3] Jetzt starten")
     say("  [4] Jetzt starten und diesen Hinweis nicht mehr zeigen")
     try:
-        choice = input_fn("Auswahl [1]: ").strip() or "1"
+        choice = input_fn(tr("Auswahl [1]: ")).strip() or "1"
     except (EOFError, KeyboardInterrupt):
         choice = "1"
     return {"1": "dry-run", "2": "init", "3": "run", "4": "quiet"}.get(choice, "dry-run")

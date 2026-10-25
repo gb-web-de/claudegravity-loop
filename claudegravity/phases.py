@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from .common import ENDPOINT_BINARIES, LOCAL_BACKEND_ORDER, SETTINGS, STAGE_MAX_TRIES, say
+from .common import ENDPOINT_BINARIES, LOCAL_BACKEND_ORDER, SETTINGS, STAGE_MAX_TRIES, ask, say
 from .safety import redact_secrets
 from .errors import fail, format_error
 from .metrics import SessionMetrics, append_metrics_to_done, format_metrics_report
@@ -131,7 +131,7 @@ def open_session(args: argparse.Namespace, project_path: Path, config_report: di
             say(f"\n🔍 Unterbrochene Sitzung gefunden: {latest_sess.name}")
             say(f"📌 Aufgabe: {state_candidate.get('task')}")
             try:
-                res_ans = input("Möchtest du diese Sitzung fortsetzen? [J/n]: ")
+                res_ans = ask("Möchtest du diese Sitzung fortsetzen? [J/n]: ")
             except (EOFError, KeyboardInterrupt):
                 res_ans = "n"
             if res_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:
@@ -551,7 +551,7 @@ def prepare_build(run: "RunContext") -> None:
     if not yolo_active:
         try:
             say("\n⚙️  Berechtigungs-Prüfung für Phase 3 (Implementierung):")
-            perm_ans = input(
+            perm_ans = ask(
                 f"Soll 🔨 Bauleiter ({builder.name}) volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(builder.binary))})? [J/n]: "
             )
             if perm_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:

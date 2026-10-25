@@ -30,6 +30,7 @@ from claudegravity import (  # noqa: E402
     common,
     config,
     errors,
+    i18n,
     metrics,
     phases,
     planning,
@@ -42,6 +43,7 @@ from claudegravity import (  # noqa: E402
 
 # Alle Namen der Module auch unter `loop.<name>` anbieten, wie vor der Aufteilung.
 for _module in (
+    i18n,
     common,
     safety,
     errors,

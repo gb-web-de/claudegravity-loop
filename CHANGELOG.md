@@ -10,6 +10,7 @@
 - `claudegravity --version`.
 - Kandidaten-Modus `--kandidaten claude,codex` (Best-of-N): mehrere Bauleiter setzen den Plan parallel in eigenen Worktrees um, der Loop prüft jeden selbst, die Abnahme wählt den besten und nimmt ihn ab.
 - Testwächter (`--test-guard warn|strict|off`): erkennt nach grünem Prüfbefehl gelöschte Testdateien, neue Skip-/Only-Marker und weniger Testfälle oder Prüfungen; Audit CG-1504.
+- Englische Ausgabe mit `--lang en` (auch `auto` nach Locale, `CLAUDEGRAVITY_LANG`, `"lang"` im Profil): Statuszeilen, Menüs, Hilfe, Fehlercodes mit Link auf die englische Doku, Berichte in `.done`/`AUDIT.md`; die Modelle antworten dann ebenfalls auf Englisch. Standard bleibt Deutsch.
 - Der Benchmark baut direkt im Wegwerf-Ordner (`--no-worktree`), damit die Original-Tests das Ergebnis sehen.
 
 ### Geändert
@@ -22,9 +23,9 @@
 - `gh` ohne heruntergeladene Copilot CLI wird nicht mehr als Copilot erkannt; die automatische Rollenwahl nahm es sonst als Prüfstatiker.
 - Rollen mit Copilot über `gh` brachen mit „Agent-CLI 'gh' ist nicht verfügbar“ ab.
 
-## [1.0.0] – 2026-10-25
+## [1.5.0] – 2026-10-25
 
-Erster festgehaltener Stand.
+Erster festgehaltener Stand. Paket, MCP-Server (zuvor 1.4.0) und Plugin-Manifeste (zuvor 1.0.0) tragen ab hier dieselbe Version.
 
 - Vier Rollen mit getrennten Anbietern: Architekt, Prüfstatiker, Bauleiter, Abnahme; Urteile nur über die letzte `VERDICT:`-Zeile.
 - Backends `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama` und OpenAI-kompatible Endpunkte; Strategien `balanced`, `best-code`, `eco`, `local-free`, `hybrid`.

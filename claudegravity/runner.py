@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from .common import (
     RateLimitError,
     SETTINGS,
+    ask,
     backoff_delay,
     interruptible_sleep,
     is_transient_error,
@@ -101,7 +102,7 @@ def handle_rate_limit(
     say("-" * 65)
 
     try:
-        choice = input("Auswahl [1/2/3] (Standard: 1): ").strip()
+        choice = ask("Auswahl [1/2/3] (Standard: 1): ").strip()
     except (EOFError, KeyboardInterrupt):
         return "exit", None
 
@@ -111,7 +112,7 @@ def handle_rate_limit(
         secs = err.reset_seconds
         if not secs:
             try:
-                user_min = input("Wieviele Minuten soll gewartet werden? [Standard: 15]: ").strip()
+                user_min = ask("Wieviele Minuten soll gewartet werden? [Standard: 15]: ").strip()
                 secs = int(user_min) * 60 if user_min else 15 * 60
             except (ValueError, EOFError, KeyboardInterrupt):
                 secs = 15 * 60

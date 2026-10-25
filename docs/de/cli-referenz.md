@@ -39,11 +39,26 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `init`, `--init` | `--einrichten` | Einrichtung: erkennt System und KI-CLIs, fragt Ziel, Prüfbefehl und Speicherort und schreibt ein Profil. Siehe [Schnellstart](schnellstart.md#1-einrichten). | – |
 | `--log-format text\|json` | | `json` schreibt zusätzlich `events.jsonl` in den Session-Ordner, eine JSON-Zeile pro Ereignis. Siehe [Sessions & Dateien](sessions-und-dateien.md#strukturiertes-ereignis-log). | `text` |
 | `--no-progress` | | Keine Statuszeile nach jedem KI-Aufruf (im Profil `"progress": false`). | aus |
+| `--lang de\|en\|auto` | `--sprache` | Sprache der Terminal-Ausgaben, der Hilfe, der Fehlercodes und der Berichte in `.done`/`AUDIT.md`; mit `en` antworten auch die Modelle auf Englisch (Formatmarken wie `VERDICT:` bleiben). `auto` folgt der Locale (`LANG`). Auch `CLAUDEGRAVITY_LANG` oder `"lang"` im Profil. Siehe [Sprache der Ausgabe](#sprache-der-ausgabe). | `de` |
 | `--no-guide` | | Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil `"guide": false`). | aus |
 | `--print-effective-config` | `--config` | Wirksame Einstellungen mit Quelle (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden. Siehe [Vorrang der Einstellungen](#vorrang-der-einstellungen). | aus |
 | `--builder-fresh` | `--bauer-neu` | Bauleiter jede Runde in neuer Sitzung starten. Ohne das Flag setzen `claude` und `codex` ihre Sitzung fort und bekommen nur Rückmeldung und nächsten Schritt. Siehe [Bau-Loop](bau-loop.md#bauleiter-sitzung-fortsetzen). | aus |
 | `--etappen <modus>` | `--stages` | `auto`, `an`, `aus`. Der Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede mit `--proof`. `auto` schaltet den Modus für Bauleiter ohne eigenen Dateizugriff ein (Ollama, LM Studio, Endpunkte). Siehe [Bau-Loop](bau-loop.md#etappen-modus). | `auto` |
 | `--plan-auto` | `--approve-plan` | Plan ohne Freigabe-Menü übernehmen, sobald der Prüfstatiker `APPROVED` meldet. Endet das Review am Rundenlimit nur noch mit MITTEL- oder NIEDRIG-Befunden, wird ebenfalls gebaut, und der Bauleiter bekommt diese Befunde als Hinweise. Bei einem offenen HOCH-Befund, `BLOCKED` oder ohne lesbares Urteil wird nicht gebaut. Für Läufe ohne Terminal. | aus |
+
+## Sprache der Ausgabe
+
+Der Loop spricht Deutsch, solange nichts anderes eingestellt ist. Für Englisch:
+
+```bash
+claudegravity --lang en "Fix the median bug"     # einmalig
+export CLAUDEGRAVITY_LANG=en                     # für die Shell
+claudegravity --lang auto --help                 # nach Locale: de_* → Deutsch, sonst Englisch
+```
+
+Übersetzt werden Statuszeilen, Menüs und Rückfragen, `--help`/`--help-all`, Fehlercodes samt Doku-Link (`docs/en/…`) und die Berichte, die der Loop in `.done` und `AUDIT.md` schreibt. Die Modelle bekommen mit `en` den Hinweis, Plan, Befunde und Zusammenfassungen auf Englisch zu schreiben; Formatmarken wie `VERDICT:`, `## Etappen` und `filepath:` bleiben, weil der Loop sie liest. Die Arbeitsanweisungen an die Modelle selbst bleiben deutsch, ebenso Dateinamen wie `PLAN_v1.md` und die Zeilen in `LOG.md`.
+
+Neue Meldungen im Code bekommen ihren englischen Text in `claudegravity/i18n.py`; `tests/test_i18n.py` schlägt fehl, wenn eine deutsche Meldung keinen hat.
 
 ## Rollen
 

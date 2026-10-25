@@ -39,11 +39,26 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `init`, `--init` | `--einrichten` | Setup: detects system and AI CLIs, asks for goal, proof command and location, and writes a profile. See [Quick start](schnellstart.md#1-set-up). | – |
 | `--log-format text\|json` | | `json` additionally writes `events.jsonl` to the session folder, one JSON line per event. See [Sessions & files](sessions-und-dateien.md#structured-event-log). | `text` |
 | `--no-progress` | | No status line after every AI call (in a profile: `"progress": false`). | off |
+| `--lang de\|en\|auto` | `--sprache` | Language of the terminal output, the help, the error codes and the reports in `.done`/`AUDIT.md`; with `en` the models answer in English too (format markers like `VERDICT:` stay). `auto` follows the locale (`LANG`). Also `CLAUDEGRAVITY_LANG` or `"lang"` in a profile. See [Output language](#output-language). | `de` |
 | `--no-guide` | | Do not show the hint on the first run without a profile (in a profile: `"guide": false`). | off |
 | `--print-effective-config` | `--config` | Show the effective settings with their source (command line, session, environment, profile, default) and exit. See [Settings precedence](#settings-precedence). | off |
 | `--builder-fresh` | `--bauer-neu` | Start the Builder in a new session every round. Without the flag, `claude` and `codex` continue their session and only get the feedback and the next step. See [Build loop](bau-loop.md#continuing-the-builder-session). | off |
 | `--etappen <mode>` | `--stages` | `auto`, `an` (on), `aus` (off); `on`/`off` work too. The Architect cuts the plan into stages, the Builder implements them one by one, the loop checks each with `--proof`. `auto` turns the mode on for Builders without their own file access (Ollama, LM Studio, endpoints). See [Build loop](bau-loop.md#stage-mode). | `auto` |
 | `--plan-auto` | `--approve-plan` | Accept the plan without the approval menu as soon as the Reviewer reports `APPROVED`. If the review ends at the round limit with only MEDIUM or LOW findings, it is built as well, and the Builder gets these findings as hints. With an open HIGH finding, `BLOCKED` or no readable verdict nothing is built. For runs without a terminal. | off |
+
+## Output language
+
+The loop speaks German unless told otherwise. For English:
+
+```bash
+claudegravity --lang en "Fix the median bug"     # once
+export CLAUDEGRAVITY_LANG=en                     # for the shell
+claudegravity --lang auto --help                 # by locale: de_* → German, otherwise English
+```
+
+Translated are status lines, menus and prompts, `--help`/`--help-all`, error codes with their doc link (`docs/en/…`) and the reports the loop writes to `.done` and `AUDIT.md`. With `en` the models are told to write plan, findings and summaries in English; format markers such as `VERDICT:`, `## Etappen` and `filepath:` stay because the loop reads them. The working instructions to the models stay German, as do file names like `PLAN_v1.md` and the lines in `LOG.md`.
+
+New messages in the code get their English text in `claudegravity/i18n.py`; `tests/test_i18n.py` fails when a German message has none.
 
 ## Roles
 

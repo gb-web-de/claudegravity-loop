@@ -23,6 +23,15 @@ class SmokeTest(unittest.TestCase):
     def test_local_free_in_stages(self):
         self.check("local-free", 2)
 
+    def test_english_output(self):
+        summary = run_smoke.run_smoke("local-free", None, ["--lang", "en"])
+        self.assertTrue(summary["ok"], summary["stdout"][-3000:] + summary["stderr"][-2000:])
+        out = summary["stdout"]
+        for english in ("Phase 1: plan draft", "Build round 1/", "### 📈 Metrics (ClaudeGravity KPI v1)", "Accepted (APPROVED)"):
+            self.assertIn(english, out)
+        for german in ("Bauleiter", "Prüfstatiker", "Architekt", "Abnahme", "Etappe", "Kennzahlen"):
+            self.assertNotIn(german, out)
+
 
 if __name__ == "__main__":
     unittest.main()

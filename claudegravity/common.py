@@ -9,6 +9,8 @@ import sys
 import time
 from typing import TYPE_CHECKING
 
+from .i18n import detect_lang, translate
+
 if TYPE_CHECKING:
     from .budget import Budget
 
@@ -24,8 +26,21 @@ if sys.platform == "win32":
 
 def say(*parts: object, sep: str = " ", end: str = "\n", file=None, flush: bool = False) -> None:
     """Einzige Stelle für Terminal-Ausgaben des Loops (Statuszeilen, Menüs, Ergebnisse).
-    Maschinenlesbare Ereignisse gehen zusätzlich über log_event() nach events.jsonl."""
+    Mit --lang en werden die Meldungen übersetzt. Maschinenlesbare Ereignisse gehen zusätzlich über
+    log_event() nach events.jsonl."""
+    if SETTINGS.lang != "de":
+        parts = tuple(translate(p, SETTINGS.lang) if isinstance(p, str) else p for p in parts)
     print(*parts, sep=sep, end=end, file=file, flush=flush)
+
+
+def tr(text: str) -> str:
+    """Meldung in der Sprache des Laufs, für Texte, die nicht über say() gehen (z. B. Rückfragen)."""
+    return translate(text, SETTINGS.lang)
+
+
+def ask(prompt: str) -> str:
+    """Rückfrage im Terminal (input) in der Sprache des Laufs."""
+    return input(tr(prompt))
 
 
 @dataclasses.dataclass
@@ -40,6 +55,7 @@ class RuntimeSettings:
     log_format: str = "text"  # --log-format: json schreibt zusätzlich events.jsonl
     budget: "Budget | None" = None  # --budget-max/-warn/-roles
     stop_requested: bool = False  # Strg+C/SIGTERM: aktuelle Runde sauber beenden
+    lang: str = dataclasses.field(default_factory=detect_lang)  # --lang / CLAUDEGRAVITY_LANG: de oder en
 
 
 SETTINGS = RuntimeSettings()

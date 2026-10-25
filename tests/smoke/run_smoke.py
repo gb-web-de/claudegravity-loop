@@ -69,7 +69,7 @@ def start_server() -> tuple[http.server.HTTPServer, str]:
     return server, f"http://127.0.0.1:{server.server_port}/v1"
 
 
-def smoke_command(project: Path, url: str, strategy: str) -> list[str]:
+def smoke_command(project: Path, url: str, strategy: str, extra: list[str] | None = None) -> list[str]:
     cmd = [
         sys.executable,
         str(ROOT / "loop.py"),
@@ -108,7 +108,7 @@ def smoke_command(project: Path, url: str, strategy: str) -> list[str]:
     ]
     # balanced: ganzer Plan in einer Runde; local-free: Etappen wie bei lokalen Bauleitern üblich
     cmd += ["--etappen", "aus" if strategy == "balanced" else "auto"]
-    return cmd
+    return cmd + list(extra or [])
 
 
 def smoke_env(tmp: Path) -> dict:
@@ -130,7 +130,7 @@ def read_kpi(done: Path) -> dict | None:
     return json.loads(text.split("```json\n", 1)[1].split("\n```", 1)[0])
 
 
-def run_smoke(strategy: str, out_dir: Path | None = None) -> dict:
+def run_smoke(strategy: str, out_dir: Path | None = None, extra: list[str] | None = None) -> dict:
     server, url = start_server()
     try:
         with tempfile.TemporaryDirectory() as tmp_name:
@@ -143,7 +143,7 @@ def run_smoke(strategy: str, out_dir: Path | None = None) -> dict:
             )
             (tmp / "leer").mkdir()
             res = subprocess.run(
-                smoke_command(project, url, strategy),
+                smoke_command(project, url, strategy, extra),
                 input="",
                 capture_output=True,
                 text=True,

@@ -25,6 +25,7 @@ from .common import (
     parse_reset_seconds,
     say,
 )
+from .i18n import MODEL_DIRECTIVE
 from .safety import redact_secrets
 from .metrics import SessionMetrics
 
@@ -63,6 +64,8 @@ class AgentCLI:
             prompt, found = redact_secrets(prompt)
             if found:
                 say(f"🛡️  Datenschutzschild: {', '.join(found)} vor dem Versand an {self.name} geschwärzt.")
+        if SETTINGS.lang == "en":
+            prompt += MODEL_DIRECTIVE
         text, metrics = self.run_fn(self.binary, prompt, cwd, extra_flags)
         if metrics:
             if metrics.get("reported_model"):

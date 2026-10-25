@@ -6,7 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from .common import RESUMABLE_CLIS, SETTINGS, planning_directive, say
+from .common import RESUMABLE_CLIS, SETTINGS, ask, planning_directive, say
 from .backends import AgentCLI, describe_agent, model_flags
 from .session import (
     REVIEW_FORMAT,
@@ -121,7 +121,7 @@ def run_adversarial_plan(
                 say(questions)
                 say("-" * 60)
                 try:
-                    user_ans = input("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
+                    user_ans = ask("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
                 except (EOFError, KeyboardInterrupt):
                     user_ans = ""
                 if user_ans:
@@ -317,7 +317,7 @@ def run_adversarial_plan(
                     say(rev_questions)
                     say("-" * 60)
                     try:
-                        user_rev_ans = input("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
+                        user_rev_ans = ask("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
                     except (EOFError, KeyboardInterrupt):
                         user_rev_ans = ""
                     if user_rev_ans:
@@ -423,7 +423,7 @@ def handle_plan_approval_and_changes(
         say("-" * 60)
 
         try:
-            choice = input("Auswahl [1/2/3/4/5] (Standard: 1): ").strip()
+            choice = ask("Auswahl [1/2/3/4/5] (Standard: 1): ").strip()
         except (EOFError, KeyboardInterrupt):
             return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
@@ -479,7 +479,7 @@ def handle_plan_approval_and_changes(
             say("-" * 60)
 
             try:
-                c_choice = input("Auswahl [1-6]: ").strip()
+                c_choice = ask("Auswahl [1-6]: ").strip()
             except (EOFError, KeyboardInterrupt):
                 return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
@@ -487,7 +487,7 @@ def handle_plan_approval_and_changes(
                 editor = os.environ.get("EDITOR", "xdg-open")
                 say(f"🚀 Öffne {plan_file.name} mit {editor}...")
                 subprocess.run([editor, str(plan_file)])
-                input("\nDrücke [Enter], sobald du mit dem Bearbeiten im Editor fertig bist...")
+                ask("\nDrücke [Enter], sobald du mit dem Bearbeiten im Editor fertig bist...")
                 v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
                 new_v_file = session_dir / f"PLAN_v{v_num}_manual.md"
                 new_v_file.write_text(plan_file.read_text(encoding="utf-8"), encoding="utf-8")
@@ -498,10 +498,10 @@ def handle_plan_approval_and_changes(
                 say("\n📋 Plan-Pfad für Claude UI:")
                 say(f"   Pfad: {plan_file.resolve()}")
                 say("   Kopiere den Inhalt der Datei in deine Claude UI / Web-Chat.")
-                input(f"\nDrücke [Enter], wenn du die Änderungen vorgenommen und in {plan_file.name} gespeichert hast...")
+                ask(f"\nDrücke [Enter], wenn du die Änderungen vorgenommen und in {plan_file.name} gespeichert hast...")
 
             elif c_choice == "3":
-                feedback = input("\n📝 Gib deine Änderungswünsche ein: ").strip()
+                feedback = ask("\n📝 Gib deine Änderungswünsche ein: ").strip()
                 if feedback:
                     say(f"⏳ {planner.name} überarbeitet den Plan basierend auf deinem Feedback...")
                     old_plan = plan_file.read_text(encoding="utf-8")

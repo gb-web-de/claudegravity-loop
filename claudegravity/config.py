@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 
+from .common import tr
 from .session import find_latest_session, load_session_state
 
 
@@ -95,6 +96,13 @@ CONFIG_SOURCE_LABELS = {
     "global": "Globales Profil",
     "default": "Standard",
 }
+
+
+def source_label(source: str) -> str:
+    """Anzeigename einer Konfigurationsquelle (cli, env, project …) in der Sprache des Laufs."""
+    return tr(CONFIG_SOURCE_LABELS[source])
+
+
 TRUE_WORDS = {"1", "true", "yes", "ja", "an", "on", "y", "j"}
 FALSE_WORDS = {"0", "false", "no", "nein", "aus", "off", "n", ""}
 
@@ -264,8 +272,8 @@ def resolve_config(
             source, value = candidates[0]
             losers = [(s, v) for s, v in candidates[1:] if v != value]
             if losers:
-                overridden = ", ".join(f"{CONFIG_SOURCE_LABELS[s]} {v!r}" for s, v in losers)
-                conflicts.append(f"{dest}: {CONFIG_SOURCE_LABELS[source]} {value!r} überschreibt {overridden}")
+                overridden = ", ".join(f"{source_label(s)} {v!r}" for s, v in losers)
+                conflicts.append(tr(f"{dest}: {source_label(source)} {value!r} überschreibt {overridden}"))
         else:
             source, value = "default", action.default
         values[dest] = value
@@ -350,15 +358,19 @@ def apply_config_layers(
 
 def format_effective_config(report: dict) -> str:
     """Ausgabe für --print-effective-config: Schichten, geladene Profile und Wert mit Quelle je Einstellung."""
-    lines = ["⚙️  Wirksame Konfiguration (Kommandozeile > Session > Vorlage > Umgebung > Projekt-Profil > globales Profil > Standard)", ""]
+    lines = [
+        tr("⚙️  Wirksame Konfiguration (Kommandozeile > Session > Vorlage > Umgebung > Projekt-Profil > globales Profil > Standard)"),
+        "",
+    ]
     for layer in ("project", "global"):
-        state = "geladen" if report["loaded"][layer] else "nicht vorhanden"
-        lines.append(f"  {CONFIG_SOURCE_LABELS[layer]:<16}: {report['paths'][layer]} ({state})")
-    lines.append(f"  {'Umgebung':<16}: {CONFIG_ENV_PREFIX}<EINSTELLUNG>, z. B. {CONFIG_ENV_PREFIX}STRATEGY=hybrid")
+        state = tr("geladen" if report["loaded"][layer] else "nicht vorhanden")
+        lines.append(f"  {source_label(layer):<16}: {report['paths'][layer]} ({state})")
+    lines.append(f"  {tr('Umgebung'):<16}: " + tr(f"{CONFIG_ENV_PREFIX}<EINSTELLUNG>, z. B. {CONFIG_ENV_PREFIX}STRATEGY=hybrid"))
     tpl = report.get("template")
     if tpl:
         lines.append(
-            f"  {'Vorlage':<16}: {tpl['name']} ({tpl['origin']})" + (f", Pflicht: {', '.join(tpl['requires'])}" if tpl["requires"] else "")
+            f"  {tr('Vorlage'):<16}: {tpl['name']} ({tpl['origin']})"
+            + (tr(f", Pflicht: {', '.join(tpl['requires'])}") if tpl["requires"] else "")
         )
     lines.append("")
     conflict_keys = {c.split(":", 1)[0] for c in report["conflicts"]}
@@ -366,12 +378,12 @@ def format_effective_config(report: dict) -> str:
     for dest in sorted(report["values"]):
         value = report["values"][dest]
         if value is None and report["sources"][dest] == "default" and dest in CONFIG_DISPLAY_DEFAULTS:
-            value = CONFIG_DISPLAY_DEFAULTS[dest]
+            value = tr(CONFIG_DISPLAY_DEFAULTS[dest])
         shown = "–" if value is None else (json.dumps(value, ensure_ascii=False) if isinstance(value, str) else str(value).lower())
-        mark = "  ⚠️ Konflikt" if dest in conflict_keys else ""
-        lines.append(f"  {dest:<{width}} = {shown:<28} [{CONFIG_SOURCE_LABELS[report['sources'][dest]]}]{mark}")
+        mark = tr("  ⚠️ Konflikt") if dest in conflict_keys else ""
+        lines.append(f"  {dest:<{width}} = {shown:<28} [{source_label(report['sources'][dest])}]{mark}")
     if report["conflicts"]:
-        lines += ["", "Konflikte:"] + [f"  ⚠️ {c}" for c in report["conflicts"]]
+        lines += ["", tr("Konflikte:")] + [f"  ⚠️ {tr(c)}" for c in report["conflicts"]]
     if report["warnings"]:
         lines += [""] + [f"  {w}" for w in report["warnings"]]
     return "\n".join(lines)

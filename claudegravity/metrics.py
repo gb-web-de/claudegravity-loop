@@ -6,7 +6,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .common import say
+from .common import say, tr
 
 
 class SessionMetrics:
@@ -204,11 +204,8 @@ def format_kpi_block(kpi: dict) -> str:
             else []
         ),
         *([f"* **Abbruchgrund:** {kpi['abort_reason']}"] if kpi.get("abort_reason") else []),
-        "",
-        "```json",
-        json.dumps(kpi, ensure_ascii=False),
-        "```",
     ]
+    lines = [tr(line) for line in lines] + ["", "```json", json.dumps(kpi, ensure_ascii=False), "```"]
     return "\n".join(lines)
 
 
@@ -249,9 +246,9 @@ def format_metrics_report(metrics: SessionMetrics, state: dict | None = None) ->
     if metrics.audit_events:
         lines.append("* **Sicherheitsereignisse** (Details in `LOG.md` und `audit-events.jsonl`):")
         for kind, count in sorted(metrics.audit_events.items()):
-            lines.append(f"  * {AUDIT_EVENT_LABELS.get(kind, kind)}: {count}")
+            lines.append(f"  * {tr(AUDIT_EVENT_LABELS.get(kind, kind))}: {count}")
     lines.append(f"* **Audit-Zeitstempel:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append("")
+    lines = [tr(line) for line in lines] + [""]
     if state is not None:
         return format_kpi_block(build_kpis(state, metrics)) + "\n" + "\n".join(lines)
     return "\n".join(lines)
@@ -267,7 +264,7 @@ def append_metrics_to_done(session_dir: Path, project_path: Path, metrics: Sessi
             shutil.move(str(root_done), str(session_done))
 
     if not session_done.exists():
-        session_done.write_text("# Aufgabe abgeschlossen\n", encoding="utf-8")
+        session_done.write_text(tr("# Aufgabe abgeschlossen\n"), encoding="utf-8")
 
     content = session_done.read_text(encoding="utf-8")
     if "ClaudeGravity Audit" not in content:

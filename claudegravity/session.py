@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from .common import SETTINGS, say
 from .safety import is_sensitive_path, mask_secrets
-from .errors import AUDIT_EVENT_CODES, ERROR_CODES, error_doc_link
+from .errors import AUDIT_EVENT_CODES, error_doc_link, error_entry
 from .metrics import AUDIT_EVENT_LABELS
 from .backends import DEFAULT_MODEL_LABEL
 
@@ -483,7 +483,7 @@ def record_audit_event(session_dir: Path | None, kind: str, detail: str, metrics
     code = AUDIT_EVENT_CODES.get(kind)
     say(
         f"🛑 Audit{f' [{code}]' if code else ''}: {label}: {detail}"
-        + (f"\n   👉 {ERROR_CODES[code][1]}\n   📖 {error_doc_link(code)}" if code else "")
+        + (f"\n   👉 {error_entry(code)[1]}\n   📖 {error_doc_link(code)}" if code else "")
     )
     if metrics is not None:
         metrics.note_audit(kind)

@@ -12,6 +12,7 @@ import loop  # noqa: E402
 from claudegravity import cli, common, runner  # noqa: E402
 
 ORDER = [
+    "i18n",
     "common",
     "safety",
     "errors",

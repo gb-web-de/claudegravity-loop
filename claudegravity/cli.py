@@ -17,9 +17,11 @@ from .common import (
     LOCAL_BACKEND_ORDER,
     LOCAL_TIMEOUT,
     SETTINGS,
+    ask,
     say,
 )
 from .errors import classify_error, fail
+from .i18n import help_text, prescan_lang, resolve_lang
 from .backends import (
     AgentCLI,
     DEFAULT_MODEL_LABEL,
@@ -49,7 +51,7 @@ from .roles import (
     pick_plan_roles,
     stages_wanted,
 )
-from .config import CONFIG_SOURCE_LABELS, apply_config_layers, format_effective_config, global_profile_path
+from .config import apply_config_layers, format_effective_config, global_profile_path, source_label
 from .wizard import (
     first_run_guide,
     print_welcome,
@@ -102,24 +104,31 @@ class LoopFullHelpFormatter(LoopHelpFormatter):
     show_aliases = True
 
 
-def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
+def build_parser(full_help: bool = False, lang: str | None = None) -> argparse.ArgumentParser:
     """Kommandozeile in Gruppen. Ohne `full_help` zeigt --help nur die wichtigsten Optionen;
-    alle übrigen bleiben gültig und erscheinen mit --help-all."""
+    alle übrigen bleiben gültig und erscheinen mit --help-all. `lang` (Standard: Sprache des Laufs) übersetzt die Hilfe."""
+    lang = lang or SETTINGS.lang
+
+    def text(value):
+        return help_text(value, lang)
+
     parser = argparse.ArgumentParser(
         prog="claudegravity",
-        usage='claudegravity [Optionen] "Aufgabe"' if not full_help else None,
-        description="ClaudeGravity Loop: Ein Modell plant, ein anderes prüft, eines baut, ein anderer Anbieter nimmt ab.",
-        epilog=HELP_EPILOG,
+        usage=text('claudegravity [Optionen] "Aufgabe"') if not full_help else None,
+        description=text("ClaudeGravity Loop: Ein Modell plant, ein anderes prüft, eines baut, ein anderer Anbieter nimmt ab."),
+        epilog=text(HELP_EPILOG),
         formatter_class=LoopFullHelpFormatter if full_help else LoopHelpFormatter,
         add_help=False,
     )
 
     def group(title: str):
-        g = parser.add_argument_group(title)
+        g = parser.add_argument_group(text(title))
 
         def add(*flags, core: bool = False, **kw):
             if not (core or full_help):
                 kw["help"] = argparse.SUPPRESS
+            elif "help" in kw:
+                kw["help"] = text(kw["help"])
             return g.add_argument(*flags, **kw)
 
         return add
@@ -380,6 +389,14 @@ def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
 
     add = group("Ausgabe")
     add(
+        "--lang",
+        "--sprache",
+        choices=("de", "en", "auto"),
+        default=None,
+        core=True,
+        help="Sprache der Ausgaben und Modellantworten: de, en oder auto (Locale); auch CLAUDEGRAVITY_LANG",
+    )
+    add(
         "--log-format",
         choices=LOG_FORMATS,
         default="text",
@@ -399,9 +416,11 @@ def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
 
 def load_cli_config(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.Namespace, dict] | None:
     """Kommandozeile lesen und mit Session, Umgebung und Profilen verrechnen. None, wenn nur die Konfiguration gezeigt wurde."""
+    SETTINGS.lang = prescan_lang(argv)
     parser = build_parser(full_help="--help-all" in argv)
     args = parser.parse_args(argv)
     config_report = apply_config_layers(parser, args, argv)
+    SETTINGS.lang = resolve_lang(args.lang)
     if args.print_effective_config:
         say(format_effective_config(config_report))
         return None
@@ -411,9 +430,7 @@ def load_cli_config(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.
     if layered:
         say(
             "⚙️  Aus Umgebung/Profil: "
-            + ", ".join(
-                f"{d}={config_report['values'][d]!r} ({CONFIG_SOURCE_LABELS[config_report['sources'][d]]})" for d in sorted(layered)
-            )
+            + ", ".join(f"{d}={config_report['values'][d]!r} ({source_label(config_report['sources'][d])})" for d in sorted(layered))
         )
     for conflict in config_report["conflicts"]:
         say(f"⚠️  Konfigurationskonflikt: {conflict}")
@@ -434,6 +451,7 @@ def load_cli_config(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.
 
 def apply_runtime_settings(args: argparse.Namespace) -> None:
     """Einstellungen, die tief im Code gebraucht werden (Zeitlimits, Schild, Budget, Ausgabe), modulweit setzen."""
+    SETTINGS.lang = resolve_lang(getattr(args, "lang", None))
     SETTINGS.retries = args.retries
     SETTINGS.progress = args.progress
     SETTINGS.log_format = args.log_format
@@ -723,7 +741,7 @@ def show_dry_run(args: argparse.Namespace, agents: dict, project_path: Path, con
     if not guided_dry_run:
         return False
     try:
-        go = input("\nSo starten? [j/N]: ").strip().lower()
+        go = ask("\nSo starten? [j/N]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         go = ""
     if go not in ("j", "ja", "y", "yes"):

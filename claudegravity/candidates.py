@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .common import SETTINGS, say
+from .common import SETTINGS, ask, say
 from .backends import create_agent, describe_agent
 from .metrics import append_metrics_to_done
 from .session import (
@@ -120,6 +120,8 @@ def child_command(args, candidate: Candidate, proof_cmd: str | None) -> list[str
     if candidate.model:
         cmd += ["--bauer-model", candidate.model]
     cmd += ["--no-worktree", "--no-inspect", "--yolo", "--no-guide", "-d", str(args.delay), "--test-guard", args.test_guard]
+    if SETTINGS.lang != "de":
+        cmd += ["--lang", SETTINGS.lang]
     if proof_cmd:
         cmd += ["--proof", proof_cmd]
     if args.max_iterations:
@@ -295,9 +297,7 @@ def ensure_write_permission(run: "RunContext") -> bool:
     if run.yolo_active:
         return True
     try:
-        answer = input(
-            "Die Kandidaten bauen parallel ohne Rückfrage und brauchen volle Schreibrechte in ihren Worktrees. Erlauben? [J/n]: "
-        )
+        answer = ask("Die Kandidaten bauen parallel ohne Rückfrage und brauchen volle Schreibrechte in ihren Worktrees. Erlauben? [J/n]: ")
     except (EOFError, KeyboardInterrupt):
         return False
     return answer.strip().lower() in ("", "j", "ja", "y", "yes")

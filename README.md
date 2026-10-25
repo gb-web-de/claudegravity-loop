@@ -95,7 +95,7 @@ Choose your path:
 | 💶 **Cheap** | `claudegravity "Your task" --strategy hybrid --proof "npm test"` (cloud plans and accepts, local model reviews and builds; without a local model: `--strategy eco`) |
 | 🏆 **Maximum quality** | `claudegravity "Your task" --strategy best-code --template refactor --proof "npm test"` |
 
-Not sure? `claudegravity init` asks three questions and saves a profile; `--dry-run` shows the role assignment first.
+Not sure? `claudegravity init` asks three questions and saves a profile; `--dry-run` shows the role assignment first. The loop talks German by default; `--lang en` (or `export CLAUDEGRAVITY_LANG=en`) switches the output, the help, error codes, reports and the models' answers to English.
 
 Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md). Threat model: [Security](docs/en/sicherheit.md). Changes per version: [Changelog](CHANGELOG.en.md).
 
