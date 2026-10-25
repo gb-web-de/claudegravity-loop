@@ -98,6 +98,22 @@ Einen echten Durchlauf ohne Risiko machst du am besten im Demo-Projekt:
 claudegravity "Ergänze eine Begrüßungsfunktion mit Test" -p projects/demo -m 3
 ```
 
+## Echte Läufe
+
+Die Tests oben laufen mit Attrappen. Ob die echten CLIs mit deinen Anmeldungen so reagieren, wie der Loop es erwartet, prüft `tools/realrun.py`:
+
+```bash
+python3 tools/realrun.py                          # alle erkannten Backends, je 1 bis 3 kurze Aufrufe
+python3 tools/realrun.py --backends codex,ollama --full --out ~/realrun
+```
+
+* **antwort:** Ein kurzer Prompt im Lesemodus; die Antwort muss das verlangte Wort enthalten (Anmeldung, Aufruf, Ausgabeformat).
+* **lesend:** Das Modell wird gebeten, eine Datei anzulegen. Mit den Lese-Flags darf sie nicht entstehen (nur `claude`, `codex`, `agy`, `gemini`, `copilot`).
+* **fortsetzen:** Nur Backends mit Sitzung (`claude`, `codex`, `copilot`): Die zweite Anfrage läuft mit `--resume` und muss die Zahl aus der ersten kennen.
+* **loop** (mit `--full`): ein ganzer Lauf auf der Benchmark-Aufgabe `median-bug` mit diesem Backend als Bauleiter.
+
+Backends, die nicht angemeldet sind, werden mit ⏭ übersprungen. Mit `--out` entstehen `realrun.md` und `realrun.json`. Am besten vor jeder neuen Version einmal laufen lassen.
+
 ## Benchmark-Pack
 
 `tools/benchmark/benchmark.py` lässt feste Aufgaben mit mehreren Strategien laufen und vergleicht die Kennzahlen. So siehst du auf deinem Rechner und mit deinen Abos, welche Belegung wie oft durchkommt und was sie kostet.

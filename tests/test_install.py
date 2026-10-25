@@ -109,10 +109,9 @@ class ClaudeCommandsInstallTest(unittest.TestCase):
 
                 # Deinstallation
                 self.assertTrue(install.uninstall_claude_commands(fake_home))
-                for src, dst in pairs:
+                for _src, dst in pairs:
                     self.assertFalse(dst.exists())
 
 
 if __name__ == "__main__":
     unittest.main()
-

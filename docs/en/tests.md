@@ -98,6 +98,22 @@ A real run without risk is best done in the demo project:
 claudegravity "Add a greeting function with a test" -p projects/demo -m 3
 ```
 
+## Real runs
+
+The tests above use stand-ins. Whether the real CLIs respond with your sign-ins the way the loop expects is checked by `tools/realrun.py`:
+
+```bash
+python3 tools/realrun.py                          # all detected backends, 1 to 3 short calls each
+python3 tools/realrun.py --backends codex,ollama --full --out ~/realrun
+```
+
+* **antwort (answer):** A short prompt in read-only mode; the answer must contain the requested word (sign-in, call, output format).
+* **lesend (read-only):** The model is asked to create a file. With the read-only flags it must not appear (only `claude`, `codex`, `agy`, `gemini`, `copilot`).
+* **fortsetzen (resume):** Only backends with a session (`claude`, `codex`, `copilot`): the second request runs with `--resume` and must know the number from the first.
+* **loop** (with `--full`): a full run on the benchmark task `median-bug` with this backend as Builder.
+
+Backends that are not signed in are skipped with ⏭. With `--out` you get `realrun.md` and `realrun.json`. Best run it once before every new release.
+
 ## Benchmark pack
 
 `tools/benchmark/benchmark.py` runs fixed tasks with several strategies and compares the key figures. This shows, on your machine and with your subscriptions, which setup succeeds how often and what it costs.

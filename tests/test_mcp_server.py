@@ -202,7 +202,11 @@ class DesktopEnvironmentTest(unittest.TestCase):
 
     def test_relative_project_in_root_cwd_is_rejected(self):
         root = Path(Path.cwd().anchor)
-        with mock.patch.object(mcp_server.Path, "cwd", return_value=root), mock.patch.dict(os.environ, {mcp_server.PROJECT_ENV: ""}), mock.patch.object(mcp_server, "get_last_project", return_value=None):
+        with (
+            mock.patch.object(mcp_server.Path, "cwd", return_value=root),
+            mock.patch.dict(os.environ, {mcp_server.PROJECT_ENV: ""}),
+            mock.patch.object(mcp_server, "get_last_project", return_value=None),
+        ):
             path, error = mcp_server.resolve_project_dir(".")
         self.assertIsNone(path)
         self.assertIn(mcp_server.PROJECT_ENV, error)
