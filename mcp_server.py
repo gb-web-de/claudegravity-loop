@@ -30,8 +30,10 @@ from pathlib import Path
 try:
     from claudegravity.backends import check_cli_auth
 except ImportError:
+
     def check_cli_auth(binary: str) -> tuple[bool, str]:  # type: ignore[misc]
         return True, "bereit"
+
 
 # Cross-Platform Console-Encoding (Windows CMD/PowerShell UTF-8 Fix)
 if sys.platform == "win32":
