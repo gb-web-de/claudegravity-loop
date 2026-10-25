@@ -41,6 +41,7 @@ If the project is a Git repository, the Builder doesn't build directly in the pr
 * With `--merge`, the branch is automatically merged into the original branch after `.done` and a passed acceptance check, provided the project is still on that branch.
 * If the acceptance check rejects the completion signal, the worktree is kept and `claudegravity -c` continues there.
 * With `--no-worktree`, the Builder works directly in the project folder. Without Git there is no worktree.
+* If the worktree cannot be deleted completely, for example because a Docker run by the Builder created files as root or a program on Windows keeps files open, the commit on the branch is still kept. ClaudeGravity deletes what it may, lists the remaining files and the command to clean up (`sudo rm -rf …` or `rmdir /s /q …`). A broken worktree (folder present, Git admin data gone) is recreated on the next start.
 
 ## `state.json`
 

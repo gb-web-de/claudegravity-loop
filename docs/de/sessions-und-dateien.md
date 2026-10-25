@@ -41,6 +41,7 @@ Ist das Projekt ein Git-Repository, baut der Bauleiter nicht direkt im Projektor
 * Mit `--merge` wird der Branch nach `.done` und bestandener Abnahme automatisch in den Ausgangs-Branch gemergt, sofern das Projekt noch auf diesem Branch steht.
 * Verweigert die Abnahme die Fertigmeldung, bleibt der Worktree bestehen und `claudegravity -c` macht dort weiter.
 * Mit `--no-worktree` arbeitet der Bauleiter direkt im Projektordner. Ohne Git gibt es keinen Worktree.
+* Lässt sich der Worktree nicht vollständig löschen, zum Beispiel weil ein Docker-Lauf des Bauleiters Dateien als root angelegt hat oder unter Windows ein Programm Dateien offen hält, bleibt der Commit auf dem Branch trotzdem erhalten. ClaudeGravity löscht, was es darf, nennt die übrigen Dateien und den Befehl zum Aufräumen (`sudo rm -rf …` bzw. `rmdir /s /q …`). Ein beschädigter Worktree (Ordner da, Git-Verwaltung weg) wird beim nächsten Start neu angelegt.
 
 ## `state.json`
 

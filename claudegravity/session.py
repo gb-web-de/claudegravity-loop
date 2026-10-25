@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -104,6 +105,65 @@ def is_git_repo(path: Path) -> bool:
     return _git(path, "rev-parse", "--verify", "HEAD").returncode == 0
 
 
+def worktree_is_valid(path: Path) -> bool:
+    """True, wenn path ein funktionierender Git-Worktree ist (die .git-Datei zeigt auf vorhandene Verwaltungsdaten)."""
+    if not (path / ".git").exists():
+        return False
+    res = _git(path, "rev-parse", "--is-inside-work-tree")
+    return res.returncode == 0 and res.stdout.strip() == "true"
+
+
+def _make_writable_and_retry(func, path, _exc_info) -> None:
+    """rmtree-Fehlerhandler: Schreibschutz entfernen (Windows, read-only Git-Objekte) und erneut versuchen."""
+    import stat
+
+    with contextlib.suppress(OSError):
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+        parent = os.path.dirname(path)
+        if parent:
+            os.chmod(parent, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+    func(path)
+
+
+def remove_tree(path: Path) -> list[str]:
+    """Löscht einen Ordner so weit wie möglich und liefert die Pfade, die sich nicht löschen ließen.
+
+    Schreibgeschützte Dateien (typisch unter Windows) werden vorher beschreibbar gemacht. Was einem anderen
+    Benutzer gehört (z. B. root nach einem Docker-Lauf), bleibt stehen und wird gemeldet."""
+    leftovers: list[str] = []
+
+    def onerror(func, p, exc_info):
+        try:
+            _make_writable_and_retry(func, p, exc_info)
+        except OSError:
+            leftovers.append(str(p))
+
+    if path.exists():
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(path, onexc=lambda func, p, exc: onerror(func, p, None))
+        else:
+            shutil.rmtree(path, onerror=onerror)
+    return leftovers
+
+
+def _drop_worktree_dir(project_path: Path, wt_path: Path) -> bool:
+    """Entfernt einen Worktree-Ordner, auch wenn git ihn nicht mehr (vollständig) kennt; meldet Reste mit Abhilfe."""
+    leftovers = remove_tree(wt_path)
+    _git(project_path, "worktree", "prune")
+    if not leftovers:
+        return True
+    say(
+        f"[!] {len(leftovers)} Datei(en) im Workspace ließen sich nicht löschen (gehören vermutlich einem anderen Benutzer, z. B. root nach Docker)."
+    )
+    for item in leftovers[:5]:
+        say(f"    • {item}")
+    if os.name == "nt":
+        say(f'   👉 Programme schließen, die dort Dateien offen halten, dann: rmdir /s /q "{wt_path}"')
+    else:
+        say(f'   👉 Von Hand aufräumen: sudo rm -rf "{wt_path}" && git -C "{project_path}" worktree prune')
+    return False
+
+
 def acquire_worktree(project_path: Path, session_dir: Path, state: dict) -> Path:
     """Legt (oder reaktiviert) den isolierten Git-Workspace der Session an.
 
@@ -115,8 +175,12 @@ def acquire_worktree(project_path: Path, session_dir: Path, state: dict) -> Path
     wt_path = Path(wt.get("path") or (session_dir / "workspace"))
     branch = wt.get("branch") or f"loop/{session_dir.name}"
 
-    if wt_path.exists() and (wt_path / ".git").exists():
+    if worktree_is_valid(wt_path):
         return wt_path
+    if wt_path.exists():
+        # Reste eines halb gelöschten Worktrees (z. B. nach „Keine Berechtigung“) verhindern ein neues `worktree add`
+        say(f"[!] Git-Workspace {wt_path} ist beschädigt und wird neu angelegt (Commits auf dem Branch bleiben erhalten).")
+        _drop_worktree_dir(project_path, wt_path)
 
     base_branch = wt.get("base_branch")
     if not base_branch:
@@ -149,9 +213,13 @@ def release_worktree(project_path: Path, session_dir: Path, state: dict, task: s
     branch = wt["branch"]
     base_branch = wt.get("base_branch", "HEAD")
 
-    if wt_path.exists():
+    if wt_path.exists() and not worktree_is_valid(wt_path):
+        # Ein früherer Versuch hat die Git-Verwaltung schon entfernt; committet wurde davor. Nur noch den Ordner aufräumen.
+        say(f"[!] Git-Workspace {wt_path} ist kein gültiger Worktree mehr, räume nur noch den Ordner auf.")
+        _drop_worktree_dir(project_path, wt_path)
+    elif wt_path.exists():
         _git(wt_path, "add", "-A")
-        if _git(wt_path, "diff", "--cached", "--quiet").returncode != 0:
+        if _git(wt_path, "diff", "--cached", "--quiet").returncode == 1:
             msg = f"claudegravity: {task[:72]}\n\nSession: {session_dir.name}"
             res = _git(wt_path, "commit", "-m", msg)
             if res.returncode != 0:
@@ -161,10 +229,18 @@ def release_worktree(project_path: Path, session_dir: Path, state: dict, task: s
                 return False
             say(f"💾 Änderungen auf Branch `{branch}` committet.")
 
-        res = _git(project_path, "worktree", "remove", str(wt_path))
-        if res.returncode != 0:
-            say(f"[!] Git-Workspace konnte nicht freigegeben werden: {res.stderr.strip()}")
+        pending = _git(wt_path, "status", "--porcelain")
+        if pending.returncode != 0 or pending.stdout.strip():
+            say(f"[!] Im Workspace liegen noch nicht committete Änderungen, er bleibt bestehen: {wt_path}")
             return False
+        # Alles ist committet; --force entfernt nur noch ignorierte Dateien (Caches, vendor/ …)
+        res = _git(project_path, "worktree", "remove", "--force", str(wt_path))
+        if res.returncode != 0:
+            # Alles ist committet. git bricht aber z. B. an fremden Dateien ab (root nach Docker, Windows-Sperren)
+            # und lässt einen halben Worktree zurück. Selbst aufräumen und als freigegeben markieren,
+            # damit ein zweiter Durchlauf nicht auf den kaputten Ordner trifft.
+            say(f"[!] git konnte den Workspace nicht vollständig entfernen: {res.stderr.strip()}")
+            _drop_worktree_dir(project_path, wt_path)
     _git(project_path, "worktree", "prune")
 
     merged = False
