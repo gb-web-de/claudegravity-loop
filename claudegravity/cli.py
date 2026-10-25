@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .candidates import run_candidates
 from .common import (
     CLOUD_PLANNER_ORDER,
     CLOUD_TIMEOUT,
@@ -203,6 +204,14 @@ def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
         default=None,
         core=True,
         help="Explizite CLI für Bauleiter / Umsetzung (Phase 3, z.B. claude oder agy, Standard: folgt Architekt)",
+    )
+    add(
+        "--candidates",
+        "--kandidaten",
+        default=None,
+        core=True,
+        help="Best-of-N: mehrere Bauleiter bauen den Plan parallel in eigenen Worktrees, die Abnahme wählt den besten, "
+        'z. B. "claude,codex" oder "codex,ollama=qwen3-coder:30b"',
     )
     add(
         "--inspector",
@@ -766,6 +775,9 @@ def main():
     run = setup_run(args, agents, project_path, session_dir, state, task)
     print_run_banner(run)
     if not run_plan_phase(run):
+        return
+    if args.candidates:
+        run_candidates(run)
         return
     prepare_build(run)
     run_build_phase(run)

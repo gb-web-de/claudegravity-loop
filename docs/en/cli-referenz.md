@@ -52,6 +52,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--architekt <key>` | `--planner` | Backend for phase 1. |
 | `--pruefstatiker <key>` | `--reviewer` | Backend for phase 2. |
 | `--bauer <key>` | `--builder` | Backend for phase 3 (default: same as Architect). |
+| `--kandidaten <list>` | `--candidates` | Best-of-N: several Builders in parallel, e.g. `claude,codex` or `codex,ollama=qwen3-coder:30b`; see [Candidate mode](bau-loop.md#candidate-mode-best-of-n). |
 
 Valid keys: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `ollama-cli`, `lmstudio`, `endpoint`, `architekt_ep`, `pruefstatiker_ep`, `bauer_ep` – if detected. An unrecognized key silently falls back to the default choice. Details: [Backends](backends.md).
 

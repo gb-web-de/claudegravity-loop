@@ -52,6 +52,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--architekt <key>` | `--planner` | Backend für Phase 1. |
 | `--pruefstatiker <key>` | `--reviewer` | Backend für Phase 2. |
 | `--bauer <key>` | `--builder` | Backend für Phase 3 (Standard: wie Architekt). |
+| `--kandidaten <liste>` | `--candidates` | Best-of-N: mehrere Bauleiter parallel, z. B. `claude,codex` oder `codex,ollama=qwen3-coder:30b`; siehe [Kandidaten-Modus](bau-loop.md#kandidaten-modus-best-of-n). |
 
 Gültige Schlüssel: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `ollama-cli`, `lmstudio`, `endpoint`, `architekt_ep`, `pruefstatiker_ep`, `bauer_ep` – sofern erkannt. Ein nicht erkannter Schlüssel fällt stillschweigend auf die Standardwahl zurück. Details: [Backends](backends.md).
 

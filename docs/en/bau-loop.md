@@ -56,6 +56,22 @@ If the `## Etappen` section is missing or has fewer than two stages, the Builder
 
 Even outside stage mode, endpoint Builders get the current content of the files they already wrote from the second round on.
 
+## Candidate mode (Best-of-N)
+
+With `--kandidaten claude,codex` (or `--candidates`) several Builders build the same approved plan **at the same time**, each in its own Git worktree on its own branch (`loop/<session>-<candidate>`). A model per candidate is given with `=`: `--kandidaten codex=gpt-5,ollama=qwen3-coder:30b`.
+
+```bash
+claudegravity "Fix the discount calculation" --kandidaten claude,codex --abnahme agy --proof "npm test" --yolo
+```
+
+1. Plan and review run once as usual.
+2. Every candidate runs as its own loop without acceptance until it reports done; output in `<session>/candidates/<name>/loop.log` and the session folder next to it.
+3. ClaudeGravity runs `--proof` itself in every worktree and runs the [test guard](#test-guard). Only green candidates go on.
+4. The acceptance check (preferably a provider that did not build) gets the plan and the diffs of all green candidates, picks the best with `WINNER: <name>` and accepts it with `VERDICT`. If it names no valid candidate, the smallest change without test guard findings wins.
+5. Every candidate keeps its branch; with `--merge` only the accepted winner is merged. The table and the winner are in `.done`, the usage of all candidates in the key figures.
+
+Requirements: a Git repository with at least one commit and write access without prompts (`--yolo` or the one-time question at the start), because the candidates run without a terminal. If the winner is not accepted, the task stays open (`phase = inspection_open`); the branches are there to continue working.
+
 ## End of the loop
 
 | Trigger | Result |

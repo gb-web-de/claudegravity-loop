@@ -56,6 +56,22 @@ Fehlt der Abschnitt `## Etappen` oder hat er weniger als zwei Etappen, baut der 
 
 Auch ohne Etappen-Modus bekommen Endpunkt-Bauleiter ab der zweiten Runde den aktuellen Inhalt der Dateien mit, die sie schon geschrieben haben.
 
+## Kandidaten-Modus (Best-of-N)
+
+Mit `--kandidaten claude,codex` bauen mehrere Bauleiter denselben freigegebenen Plan **gleichzeitig**, jeder in einem eigenen Git-Worktree auf einem eigenen Branch (`loop/<session>-<kandidat>`). Ein Modell pro Kandidat gibst du mit `=` an: `--kandidaten codex=gpt-5,ollama=qwen3-coder:30b`.
+
+```bash
+claudegravity "Rabattberechnung reparieren" --kandidaten claude,codex --abnahme agy --proof "npm test" --yolo
+```
+
+1. Plan und Review laufen einmal wie gewohnt.
+2. Jeder Kandidat läuft als eigener Loop ohne Abnahme bis zu seiner Fertigmeldung; Ausgabe in `<session>/candidates/<name>/loop.log` bzw. dem Session-Ordner daneben.
+3. ClaudeGravity führt `--proof` in jedem Worktree selbst aus und lässt den [Testwächter](#testwächter) laufen. Nur grüne Kandidaten kommen weiter.
+4. Die Abnahme (möglichst ein Anbieter, der nicht mitgebaut hat) bekommt Plan und Diffs aller grünen Kandidaten, wählt mit `WINNER: <name>` den besten und nimmt ihn mit `VERDICT` ab. Nennt sie keinen gültigen Namen, gewinnt der kleinste Eingriff ohne Testwächter-Funde.
+5. Alle Kandidaten behalten ihren Branch; mit `--merge` wird nur der abgenommene Gewinner gemerged. Tabelle und Gewinner stehen in `.done`, Verbrauch aller Kandidaten in den Kennzahlen.
+
+Voraussetzungen: ein Git-Repository mit mindestens einem Commit und Schreibrechte ohne Rückfrage (`--yolo` oder die einmalige Frage am Start), weil die Kandidaten ohne Terminal laufen. Wird der Gewinner nicht abgenommen, bleibt die Aufgabe offen (`phase = inspection_open`); die Branches liegen zum Weiterarbeiten bereit.
+
 ## Ende des Loops
 
 | Auslöser | Ergebnis |

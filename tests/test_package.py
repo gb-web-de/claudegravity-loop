@@ -26,6 +26,7 @@ ORDER = [
     "config",
     "wizard",
     "phases",
+    "candidates",
     "cli",
 ]
 

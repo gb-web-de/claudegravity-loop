@@ -25,6 +25,7 @@ from claudegravity import (  # noqa: E402
     backends,
     budget,
     build,
+    candidates,
     cli,
     common,
     config,
@@ -40,7 +41,24 @@ from claudegravity import (  # noqa: E402
 )
 
 # Alle Namen der Module auch unter `loop.<name>` anbieten, wie vor der Aufteilung.
-for _module in (common, safety, errors, metrics, backends, session, budget, runner, planning, roles, build, config, wizard, phases, cli):
+for _module in (
+    common,
+    safety,
+    errors,
+    metrics,
+    backends,
+    session,
+    budget,
+    runner,
+    planning,
+    roles,
+    build,
+    config,
+    wizard,
+    phases,
+    candidates,
+    cli,
+):
     globals().update({k: v for k, v in vars(_module).items() if not k.startswith("__")})
 
 if __name__ == "__main__":
