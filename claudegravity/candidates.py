@@ -116,7 +116,8 @@ def child_state(state: dict, candidate: Candidate) -> dict:
 
 def child_command(args, candidate: Candidate, proof_cmd: str | None) -> list[str]:
     """Aufruf des Loops für einen Kandidaten: setzt die kopierte Session fort und baut nur (ohne eigene Abnahme)."""
-    cmd = [sys.executable, str(ROOT / "loop.py"), "-c", "-p", str(candidate.work_dir), "--bauer", candidate.binary]
+    entry = [sys.executable, str(ROOT / "loop.py")] if (ROOT / "loop.py").exists() else [sys.executable, "-m", "claudegravity"]
+    cmd = entry + ["-c", "-p", str(candidate.work_dir), "--bauer", candidate.binary]
     if candidate.model:
         cmd += ["--bauer-model", candidate.model]
     cmd += ["--no-worktree", "--no-inspect", "--yolo", "--no-guide", "-d", str(args.delay), "--test-guard", args.test_guard]

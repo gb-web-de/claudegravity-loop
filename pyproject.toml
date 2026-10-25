@@ -1,0 +1,41 @@
+# Nur für die Installation mit pipx/uv/pip: Zur Laufzeit braucht ClaudeGravity weiter nur die Standardbibliothek.
+# Aus dem Klon funktioniert alles auch ohne Installation (loop.py, mcp_server.py, install.py).
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claudegravity-loop"
+dynamic = ["version"]
+description = "Plan, review, build and acceptance with separate AI providers (Claude, Codex, Antigravity, Copilot, Ollama, own servers): no model grades its own work."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "gb-web-de" }]
+keywords = ["ai", "coding-agent", "claude", "codex", "ollama", "mcp", "code-review"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/gb-web-de/claudegravity-loop"
+Documentation = "https://github.com/gb-web-de/claudegravity-loop/blob/main/docs/en/README.md"
+Changelog = "https://github.com/gb-web-de/claudegravity-loop/blob/main/CHANGELOG.en.md"
+
+[project.scripts]
+claudegravity = "claudegravity.cli:run_cli"
+claudegravity-loop = "claudegravity.cli:run_cli"
+claudegravity-mcp = "mcp_server:main"
+
+[tool.setuptools]
+packages = ["claudegravity"]
+py-modules = ["mcp_server"]
+
+[tool.setuptools.dynamic]
+version = { attr = "claudegravity.__version__" }

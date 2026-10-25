@@ -300,8 +300,12 @@ def format_shell_command(argv: list[str], shell: str = "bash") -> str:
 
 
 def loop_launch_argv(loop_args: list[str]) -> list[str]:
-    """Startbefehl für loop.py ohne Shell: Aufgabentext wird nie von einer Shell interpretiert."""
-    return [sys.executable, str(Path(__file__).resolve().parent / "loop.py")] + loop_args
+    """Startbefehl für loop.py ohne Shell: Aufgabentext wird nie von einer Shell interpretiert.
+    Installiert mit pipx/uv/pip liegt kein loop.py daneben; dann startet `python -m claudegravity`."""
+    script = Path(__file__).resolve().parent / "loop.py"
+    if script.exists():
+        return [sys.executable, str(script)] + loop_args
+    return [sys.executable, "-m", "claudegravity"] + loop_args
 
 
 def background_log_path(project_dir: Path) -> Path:

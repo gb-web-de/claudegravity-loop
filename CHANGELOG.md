@@ -11,6 +11,7 @@
 - Kandidaten-Modus `--kandidaten claude,codex` (Best-of-N): mehrere Bauleiter setzen den Plan parallel in eigenen Worktrees um, der Loop prüft jeden selbst, die Abnahme wählt den besten und nimmt ihn ab.
 - Testwächter (`--test-guard warn|strict|off`): erkennt nach grünem Prüfbefehl gelöschte Testdateien, neue Skip-/Only-Marker und weniger Testfälle oder Prüfungen; Audit CG-1504.
 - Englische Ausgabe mit `--lang en` (auch `auto` nach Locale, `CLAUDEGRAVITY_LANG`, `"lang"` im Profil): Statuszeilen, Menüs, Hilfe, Fehlercodes mit Link auf die englische Doku, Berichte in `.done`/`AUDIT.md`; die Modelle antworten dann ebenfalls auf Englisch. Standard bleibt Deutsch.
+- Installation als Paket ohne Klon: `pipx install git+https://github.com/gb-web-de/claudegravity-loop`, `uv tool install …` oder einmalig `uvx --from … claudegravity`; dazu `python -m claudegravity`. Keine Laufzeit-Abhängigkeiten, `pyproject.toml` nur für die Installation.
 - Der Benchmark baut direkt im Wegwerf-Ordner (`--no-worktree`), damit die Original-Tests das Ergebnis sehen.
 
 ### Geändert

@@ -140,3 +140,38 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: install.bat --dry-run --all-clients
+
+  package:
+    name: package (${{ matrix.os }}, py${{ matrix.python }})
+    # pip install . in eine frische Umgebung, dann die Befehle aus einem fremden Ordner aufrufen (wie pipx/uv tool)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.13"]
+        include:
+          - os: ubuntu-latest
+            python: "3.10"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install into a fresh venv
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/cg-venv"
+          if [ "$RUNNER_OS" = "Windows" ]; then BIN="$RUNNER_TEMP/cg-venv/Scripts"; else BIN="$RUNNER_TEMP/cg-venv/bin"; fi
+          "$BIN/python" -m pip install --quiet .
+          echo "$BIN" >> "$GITHUB_PATH"
+      - name: Commands work outside the checkout
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          claudegravity --version
+          claudegravity-loop --lang en --help > /dev/null
+          python -m claudegravity --version
+          mkdir -p demo && cd demo
+          claudegravity --dry-run "Demo" --endpoint http://127.0.0.1:9/v1 --no-guide > /dev/null
+          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' | claudegravity-mcp | grep '"serverInfo"' > /dev/null

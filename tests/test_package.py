@@ -39,7 +39,7 @@ class PackageTest(unittest.TestCase):
         self.assertIs(loop.safe_agent_run, runner.safe_agent_run)
 
     def test_modules_import_only_earlier_modules(self):
-        files = {p.stem for p in (ROOT / "claudegravity").glob("*.py") if p.stem != "__init__"}
+        files = {p.stem for p in (ROOT / "claudegravity").glob("*.py") if p.stem not in ("__init__", "__main__")}
         self.assertEqual(files, set(ORDER))
         for pos, name in enumerate(ORDER):
             tree = ast.parse((ROOT / "claudegravity" / f"{name}.py").read_text(encoding="utf-8"))

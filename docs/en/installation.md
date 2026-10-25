@@ -2,7 +2,7 @@
 
 [← Back to overview](../../README.md) · [Documentation index](README.md) · 🇩🇪 [Deutsch](../de/installation.md)
 
-ClaudeGravity consists of two entry scripts (`loop.py` and `mcp_server.py`) and the package folder `claudegravity/`, which `loop.py` loads from its own directory. Keep the folder next to `loop.py`; symlinks to `loop.py` work. Everything uses only the standard library. There is **no `pip install`**, no virtual environment and nothing to compile.
+ClaudeGravity consists of two entry scripts (`loop.py` and `mcp_server.py`) and the package folder `claudegravity/`, which `loop.py` loads from its own directory. Keep the folder next to `loop.py`; symlinks to `loop.py` work. Everything uses only the standard library. A `pip install` is **not needed**: no dependencies, no virtual environment, nothing to compile. If you prefer to manage commands with pipx or uv, you can still install ClaudeGravity as a package (see [below](#with-pipx-or-uv)).
 
 ## Requirements
 
@@ -17,6 +17,20 @@ Supported CLIs (searched for automatically on the `PATH`): `claude`, `agy`, `gem
 
 > [!TIP]
 > **Everything in one step:** After cloning, run `./install.sh` (Linux/macOS), `install.bat` (CMD) or `.\install.ps1` (PowerShell). This registers the MCP server and the skill in all clients found (Claude Code, Claude Desktop, Gemini CLI, Antigravity, Codex, Copilot CLI, Cursor, Windsurf, VS Code) and makes `claudegravity`, `claudegravity-loop` and `claudegravity-mcp` callable globally. `--project <path>` sets a default project for desktop apps (`CLAUDEGRAVITY_PROJECT`), `--status` shows the current state, `--dry-run` simulates, `--uninstall` removes everything again. The manual steps below are then not needed.
+
+## With pipx or uv
+
+Without a clone, straight from GitHub; this creates `claudegravity`, `claudegravity-loop` and `claudegravity-mcp` (the package is not on PyPI yet):
+
+```bash
+pipx install git+https://github.com/gb-web-de/claudegravity-loop
+# or
+uv tool install git+https://github.com/gb-web-de/claudegravity-loop
+# try it once without installing anything:
+uvx --from git+https://github.com/gb-web-de/claudegravity-loop claudegravity --dry-run "Your task"
+```
+
+From a clone, `pipx install .` or `uv tool install .` works too; `python -m claudegravity` is the same entry point as `loop.py`. Update with `pipx upgrade claudegravity-loop` or `uv tool upgrade claudegravity-loop`. For MCP clients the command is then `claudegravity-mcp` (instead of `python3 /path/mcp_server.py`). The plugins and `install.py` still expect a clone.
 
 ## 🍏 macOS & 🐧 Linux
 
@@ -72,7 +86,7 @@ On Windows, use `claudegravity.bat --info` or `.\claudegravity.ps1 --info` accor
 
 ## Updating & uninstalling
 
-* **Update:** `git pull` in the repository folder.
+* **Update:** `git pull` in the repository folder (with pipx/uv: `pipx upgrade claudegravity-loop` or `uv tool upgrade claudegravity-loop`).
 * **Uninstall:** Remove the symlinks in `~/.local/bin` or the `PATH` entry and delete the folder. Project-specific data lives in `.dual-loop/` and `logs/` of the respective target project.
 
 ## Next
