@@ -62,7 +62,7 @@ class ParseTest(unittest.TestCase):
         self.assertNotIn("geheim", cmd)
         self.assertEqual(cand.child_env(args)["CLAUDEGRAVITY_API_KEY"], "geheim")
         for part in (
-            ["-c", "-p", "/wt"],
+            ["-c", "-p", str(Path("/wt"))],
             ["--bauer-model", "a"],
             ["--proof", "make test"],
             ["-m", "3"],
