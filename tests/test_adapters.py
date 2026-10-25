@@ -298,3 +298,12 @@ class CopilotArgsTest(unittest.TestCase):
         agent = loop.AgentCLI("Copilot", "copilot", None)
         agent.session_id = "s-1"
         self.assertEqual(loop.builder_resume_flags(agent), ["--resume", "s-1"])
+
+
+class CreateAgentTest(unittest.TestCase):
+    def test_binary_name_differs_from_key(self):
+        agents = {"copilot": loop.AgentCLI("GitHub Copilot CLI (gh)", "gh", None)}
+        agent = loop.create_agent("gh", agents, role="Prüfstatiker")
+        self.assertEqual((agent.binary, agent.role), ("gh", "Prüfstatiker"))
+        with self.assertRaises(ValueError):
+            loop.create_agent("codex", agents)

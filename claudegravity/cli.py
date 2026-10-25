@@ -8,6 +8,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from . import __version__
 from .common import (
     CLOUD_PLANNER_ORDER,
     CLOUD_TIMEOUT,
@@ -157,6 +158,7 @@ def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
     )
     add("-h", "--help", action="help", core=True, help="Diese Hilfe (wichtigste Optionen)")
     add("--help-all", action="help", core=True, help="Alle Optionen mit Aliasen zeigen")
+    add("--version", action="version", version=f"claudegravity {__version__}", core=True, help="Version anzeigen")
 
     add = group("Strategie und Kosten")
     add(

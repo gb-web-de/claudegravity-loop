@@ -18,6 +18,7 @@ PROFILE_FILE = "profile.json"
 CONFIG_EXCLUDED = {
     "help",
     "help_all",
+    "version",
     "task",
     "project",
     "resume",

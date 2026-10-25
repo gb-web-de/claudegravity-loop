@@ -74,6 +74,7 @@ Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell)
 | [Sessions & Dateien](docs/de/sessions-und-dateien.md) | `.dual-loop/`, `state.json`, `.done`, Projektkontext |
 | [Sicherheit](docs/de/sicherheit.md) | Bedrohungsmodell, Schutzmaßnahmen, Empfehlungen |
 | [Fehlerbehebung](docs/de/fehlerbehebung.md) | Entscheidungsbaum, Fehlercodes CG-xxxx, häufige Probleme, bekannte Einschränkungen |
+| [Änderungsprotokoll](CHANGELOG.md) | Was sich je Version geändert hat ([English](CHANGELOG.en.md)) |
 
 ---
 
@@ -96,7 +97,7 @@ Choose your path:
 
 Not sure? `claudegravity init` asks three questions and saves a profile; `--dry-run` shows the role assignment first.
 
-Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md). Threat model: [Security](docs/en/sicherheit.md).
+Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`. Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md). Threat model: [Security](docs/en/sicherheit.md). Changes per version: [Changelog](CHANGELOG.en.md).
 
 Plugins for Claude Code, Codex, Antigravity, Copilot CLI, Cursor and Gemini CLI bundle the MCP server, the skill and `run`/`optimize`/`status` commands: [Plugins](docs/en/plugins.md). In Claude Code:
 

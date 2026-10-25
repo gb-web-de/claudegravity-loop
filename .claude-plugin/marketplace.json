@@ -3,13 +3,13 @@
   "owner": { "name": "gb-web-de", "url": "https://github.com/gb-web-de" },
   "metadata": {
     "description": "ClaudeGravity Loop als Plugin für Claude Code, GitHub Copilot CLI und Codex.",
-    "version": "1.0.0"
+    "version": "1.5.0"
   },
   "plugins": [
     {
       "name": "claudegravity",
       "description": "Plan, Review, Bau und Abnahme mit getrennten KI-Anbietern: kein Modell benotet sich selbst.",
-      "version": "1.0.0",
+      "version": "1.5.0",
       "source": "./",
       "category": "development"
     }

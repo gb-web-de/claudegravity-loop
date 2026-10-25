@@ -48,7 +48,7 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 # Neueste zuerst; der Server antwortet mit der Version des Clients, wenn er sie kennt
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", MCP_PROTOCOL_VERSION)
 SERVER_NAME = "claudegravity-mcp"
-SERVER_VERSION = "1.4.0"
+SERVER_VERSION = "1.5.0"
 PROJECT_ENV = "CLAUDEGRAVITY_PROJECT"
 HOST_ENV = "CLAUDEGRAVITY_HOST"
 # clientInfo.name aus initialize → Backend-Schlüssel des Loops (Teilstring, klein geschrieben, erster Treffer gilt)
@@ -248,7 +248,7 @@ def detect_installed_agents() -> dict[str, str]:
         agents["gemini"] = "Gemini CLI"
     if shutil.which("codex"):
         agents["codex"] = "Codex CLI"
-    if shutil.which("copilot") or shutil.which("gh"):
+    if shutil.which("copilot") or (shutil.which("gh") and check_cli_auth("gh")[0]):
         agents["copilot"] = "GitHub Copilot CLI"
     if shutil.which("ollama"):
         agents["ollama-cli"] = "Ollama CLI"

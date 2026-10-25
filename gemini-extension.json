@@ -1,6 +1,6 @@
 {
   "name": "claudegravity",
-  "version": "1.0.0",
+  "version": "1.5.0",
   "description": "Plan, Review, Bau und Abnahme mit getrennten KI-Anbietern: kein Modell benotet sich selbst.",
   "mcpServers": {
     "claudegravity": {

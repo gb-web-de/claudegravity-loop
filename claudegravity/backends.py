@@ -101,6 +101,9 @@ def create_agent(
     """Neue Instanz eines erkannten Backends für eine Rolle; wirft ValueError, wenn es nicht verfügbar ist."""
     base = agents.get(binary)
     if not base:
+        # Rollen merken sich das Programm (z. B. `gh` für Copilot); der Schlüssel in `agents` kann anders heißen
+        base = next((a for a in agents.values() if a.binary == binary), None)
+    if not base:
         raise ValueError(f"Agent-CLI '{binary}' ist nicht verfügbar.")
     return AgentCLI(
         name=base.name,
@@ -883,7 +886,8 @@ def detect_installed_agents(
         agents["codex"] = AgentCLI("Codex CLI", "codex", _exec_codex)
     if shutil.which("copilot"):
         agents["copilot"] = AgentCLI("GitHub Copilot CLI", "copilot", _exec_copilot)
-    elif shutil.which("gh"):
+    elif shutil.which("gh") and check_cli_auth("gh")[0]:
+        # `gh` allein reicht nicht: `gh copilot` braucht die heruntergeladene Copilot CLI
         agents["copilot"] = AgentCLI("GitHub Copilot CLI (gh)", "gh", _exec_copilot)
     if shutil.which("ollama"):
         agents["ollama-cli"] = AgentCLI("Ollama CLI", "ollama", _exec_ollama_cli, local=True)

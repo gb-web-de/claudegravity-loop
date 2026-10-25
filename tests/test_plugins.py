@@ -9,6 +9,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_NAME = "claudegravity"
+sys.path.insert(0, str(ROOT))
+
+import claudegravity  # noqa: E402
 
 # Manifest mit MCP-Server → Variable für den Plugin-Ordner, die der Client einsetzt
 MCP_FILES = {
@@ -36,6 +39,8 @@ class PluginManifestTest(unittest.TestCase):
     def test_versions_match(self):
         versions = {relative: read_json(relative)["version"] for relative in VERSIONED}
         versions["marketplace"] = read_json(".claude-plugin/marketplace.json")["plugins"][0]["version"]
+        versions["paket"] = claudegravity.__version__
+        versions["mcp_server"] = re.search(r'SERVER_VERSION = "([^"]+)"', (ROOT / "mcp_server.py").read_text(encoding="utf-8")).group(1)
         self.assertEqual(len(set(versions.values())), 1, versions)
 
     def test_antigravity_manifest_only_allowed_keys(self):
