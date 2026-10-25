@@ -27,7 +27,7 @@ Soll 🔨 Bauleiter (Claude Code) volle Schreib-/Tool-Rechte erhalten (--dangero
 2. `last_iteration` und Metriken werden in `state.json` gespeichert. So kann nach einem Abbruch genau hier fortgesetzt werden.
 3. Der Bauleiter bekommt einen kurzen Prompt: Pfad zur freigegebenen Planversion, die Aufgabe, den Auftrag „Dateien erstellen/ändern, Tests durchführen“, den Prüfbefehl und den genauen Pfad für die Fertigmeldung. Es wird **keine Chat-Historie** mitgeschickt, nur der Plan und gegebenenfalls die Rückmeldung der letzten Runde (roter Prüfbefehl oder Befunde der Abnahme).
 4. Die Antwort wird im Terminal ausgegeben und an `logs/loop_<session>.log` angehängt.
-5. Bei **Endpunkt-Bauleitern** (Ollama-Server, LM Studio, eigene Server, Copilot) liest ClaudeGravity die `filepath:`-Codeblöcke aus der Antwort und schreibt die Dateien selbst (Format siehe [Backends](backends.md#wie-endpunkt-bauleiter-dateien-schreiben)). Geschriebene Dateien werden aufgelistet.
+5. Bei **Endpunkt-Bauleitern** (Ollama-Server, LM Studio, eigene Server) liest ClaudeGravity die `filepath:`-Codeblöcke aus der Antwort und schreibt die Dateien selbst (Format siehe [Backends](backends.md#wie-endpunkt-bauleiter-dateien-schreiben)). Geschriebene Dateien werden aufgelistet.
 6. Erneute Prüfung auf `.done`. Ohne `.done` läuft der Prüfbefehl trotzdem; ist er rot, geht seine Ausgabe in die nächste Runde. Dann `--delay` Sekunden Pause (Standard 3) und die nächste Runde.
 
 Ein Fehler in einer Runde (z. B. Absturz der CLI) beendet den Loop nicht: Er wird gemeldet, und die nächste Runde startet.

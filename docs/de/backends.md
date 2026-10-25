@@ -12,7 +12,7 @@ Jede Rolle kann mit einem beliebigen erkannten Backend besetzt werden. Welche Ba
 | `agy` | `agy` im `PATH` | `agy -p <prompt> --output-format json` | exakt (inkl. Thinking-Tokens) |
 | `gemini` | `gemini` im `PATH` | `gemini -p <prompt>` | geschätzt (Zeichen / 4) |
 | `codex` | `codex` im `PATH` | `codex exec -s <sandbox> <prompt>` | geschätzt |
-| `copilot` | `copilot` oder `gh` im `PATH` | `copilot suggest -t shell …` bzw. `gh copilot suggest …` | geschätzt |
+| `copilot` | `copilot` oder `gh` im `PATH` | `copilot -s --session-id <id>` (Prompt über stdin) bzw. `gh copilot -- …` | geschätzt |
 | `ollama-cli` | `ollama` im `PATH` | `ollama run <modell> <prompt>` | geschätzt |
 | `ollama` | Server antwortet auf `http://localhost:11434` oder auf die Adresse in `OLLAMA_HOST` | OpenAI-API (`/v1/chat/completions`) | aus `usage`, sonst geschätzt |
 | `lmstudio` | Server antwortet auf `http://localhost:1234` | OpenAI-API | aus `usage`, sonst geschätzt |
@@ -173,7 +173,8 @@ Mit `--yolo` (oder „J“ bei der Rechte-Abfrage vor Phase 3) werden diese Flag
 | `claude`, `agy` | `--dangerously-skip-permissions` |
 | `gemini` | `-y` |
 | `codex` | `-s workspace-write` |
-| Endpunkte, `ollama`, `copilot` | keine (Dateien schreibt ClaudeGravity selbst) |
+| `copilot` | `--allow-all-tools` |
+| Endpunkte, `ollama` | keine (Dateien schreibt ClaudeGravity selbst) |
 
 Diese Flags bekommt **nur der Bauleiter**. Architekt, Prüfstatiker und Abnahme laufen immer lesend, auch mit `--yolo`:
 
@@ -181,9 +182,10 @@ Diese Flags bekommt **nur der Bauleiter**. Architekt, Prüfstatiker und Abnahme 
 | :--- | :--- |
 | `claude` | `--permission-mode dontAsk --tools Read,Glob,Grep --allowedTools Read,Glob,Grep --strict-mcp-config` (keine Shell, kein Schreiben, keine MCP-Server) |
 | `codex` | `-s read-only` |
+| `copilot` | `--allow-all-tools --deny-tool write --deny-tool shell --disable-builtin-mcps` (Sperren haben Vorrang: lesen ja, schreiben, Shell und eingebaute MCP-Server nein) |
 | `agy`, `gemini` | keine Rechte-Flags (Werkzeuge mit Rückfrage werden ohne Terminal abgelehnt) |
 
-Prompts gehen bei `claude`, `codex`, `gemini` und `ollama` über stdin, nicht über die Kommandozeile. So tauchen Aufgabe und Plan nicht in der Prozessliste auf und werden unter Windows nicht an der Längengrenze (~32 KB) abgeschnitten.
+Prompts gehen bei `claude`, `codex`, `copilot`, `gemini` und `ollama` über stdin, nicht über die Kommandozeile. So tauchen Aufgabe und Plan nicht in der Prozessliste auf und werden unter Windows nicht an der Längengrenze (~32 KB) abgeschnitten.
 
 > [!WARNING]
 > Im YOLO-Modus darf der Bauleiter ohne Rückfrage Dateien ändern und Befehle ausführen. Nutze ihn nur in Projekten unter Versionskontrolle.

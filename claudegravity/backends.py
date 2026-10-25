@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
 import sys
 import urllib.error
 import urllib.parse
@@ -114,6 +115,8 @@ def create_agent(
 
 
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+# CLIs, die einen Effort-Wert verstehen; bei allen anderen steht er nur im Audit
+EFFORT_BINARIES = ("agy", "codex", "copilot", "gh")
 DEFAULT_MODEL_LABEL = "CLI-Default"
 
 
@@ -158,7 +161,7 @@ def model_flags(binary: str, model: str | None, effort: str | None) -> list[str]
     Bei agy steckt der Effort im Modellnamen („Gemini 3.8 Flash (High)“), --effort kommt dann nicht dazu."""
     flags: list[str] = []
     has_model = not is_placeholder_value(model)
-    has_effort = not is_placeholder_value(effort) and binary in ("agy", "codex")
+    has_effort = not is_placeholder_value(effort) and binary in EFFORT_BINARIES
     if has_model:
         name = agy_model_name(str(model), effort if has_effort else None) if binary == "agy" else str(model).strip()
         flags += ["--model", name]
@@ -168,11 +171,11 @@ def model_flags(binary: str, model: str | None, effort: str | None) -> list[str]
 
 
 def effort_label(binary: str, effort: str | None) -> str | None:
-    """Effort für die Anzeige; markiert Stufen, die nur an agy und codex übergeben werden."""
+    """Effort für die Anzeige; markiert Stufen, die nur an agy, codex und copilot übergeben werden."""
     if not effort:
         return None
-    if effort in EFFORT_LEVELS and binary not in ("agy", "codex"):
-        return f"{effort} (nur für agy/codex wirksam)"
+    if effort in EFFORT_LEVELS and binary not in EFFORT_BINARIES:
+        return f"{effort} (nur für agy/codex/copilot wirksam)"
     return effort
 
 
@@ -596,18 +599,56 @@ def _exec_codex(binary: str, prompt: str, cwd: Path | None = None, extra_flags: 
     }
 
 
+COPILOT_BINARIES = ("copilot", "gh")
+
+
+def build_copilot_args(binary: str, extra_flags: list[str] | None) -> tuple[list[str], str]:
+    """Baut die Argumente für die Copilot CLI im Skriptmodus (Prompt über stdin, nur die Antwort mit `-s`).
+
+    Rechte, Modell und `--reasoning-effort` kommen aus den Flags. Ohne `--resume <id>` vergibt der Loop selbst
+    eine Sitzungs-ID (`--session-id`), damit spätere Runden die Sitzung fortsetzen können. Liefert (Argumente, ID).
+    Über `gh` läuft dieselbe CLI als `gh copilot -- <argumente>`."""
+    flags = list(extra_flags or [])
+    resume_id = extract_flag_value(flags, "--resume")
+    model = extract_flag_value(flags, "--model")
+    effort = extract_flag_value(flags, "--effort")
+    rest: list[str] = []
+    skip = False
+    for i, flag in enumerate(flags):
+        if skip:
+            skip = False
+            continue
+        if flag in ("--resume", "--model", "--effort") and i + 1 < len(flags):
+            skip = True
+            continue
+        rest.append(flag)
+    session_id = resume_id or str(uuid.uuid4())
+    args = ["-s", f"--resume={session_id}"] if resume_id else ["-s", "--session-id", session_id]
+    if model:
+        args += ["--model", model]
+    if effort and effort.split()[0] in EFFORT_LEVELS:
+        args += ["--reasoning-effort", effort.split()[0]]
+    args += rest
+    return (["copilot", "--"] + args if binary == "gh" else args), session_id
+
+
 def _exec_copilot(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
-    args = ["copilot", "suggest", "-t", "shell", prompt] if binary == "gh" else ["suggest", "-t", "shell", prompt]
-    if extra_flags:
-        args.extend(extra_flags)
-    raw = _exec_cli(binary, args, cwd)
+    args, session_id = build_copilot_args(binary, extra_flags)
+    raw = _exec_cli(binary, args, cwd, stdin=prompt)
+    if raw.lstrip().startswith(("Error:", "! ")) and len(raw) < 2000:
+        # Die CLI meldet Anmelde- und Installationsfehler teils mit Rückgabe 0 auf stdout
+        if is_rate_limit(raw):
+            r_time = extract_reset_time(raw)
+            raise RateLimitError(binary, raw, r_time, parse_reset_seconds(r_time) if r_time else None)
+        raise RuntimeError(f"Copilot Fehler: {raw.strip().splitlines()[0]}")
     return raw, {
         "input_tokens": len(prompt) // 4,
         "output_tokens": len(raw) // 4,
         "total_tokens": (len(prompt) + len(raw)) // 4,
         "cost_usd": 0.0,
-        "model": "copilot",
-        "effort": "CLI",
+        "model": extract_flag_value(extra_flags, "--model"),
+        "effort": extract_flag_value(extra_flags, "--effort"),
+        "session_id": session_id,
     }
 
 
@@ -902,15 +943,19 @@ def check_cli_auth(binary: str) -> tuple[bool, str]:
             msg = (res.stderr or res.stdout).strip().splitlines()[-1] if (res.stderr or res.stdout).strip() else "nicht bereit"
             return False, msg
         elif binary == "gh":
-            res = subprocess.run(["gh", "copilot", "--help"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=2.0)
-            if "unknown command" in (res.stderr + res.stdout).lower() or res.returncode != 0:
-                return False, "Erweiterung 'gh-copilot' fehlt (gh extension install github/gh-copilot)"
+            # `gh copilot` startet die Copilot CLI, meldet eine fehlende CLI aber mit Rückgabe 0
+            res = subprocess.run(
+                ["gh", "copilot", "--", "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5.0
+            )
+            text = (res.stderr + res.stdout).lower()
+            if res.returncode != 0 or "not installed" in text or "unknown command" in text:
+                return False, "Copilot CLI fehlt (npm install -g @github/copilot oder gh copilot)"
             return True, "bereit"
         elif binary == "copilot":
             res = subprocess.run(["copilot", "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=2.0)
             if res.returncode == 0:
                 return True, "bereit"
-            return False, "nicht installiert (copilot setup)"
+            return False, "nicht installiert (npm install -g @github/copilot, danach copilot login)"
         elif binary == "agy":
             acc_file = Path.home() / ".gemini" / "antigravity" / "google_accounts.json"
             if acc_file.exists():

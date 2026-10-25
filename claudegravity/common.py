@@ -257,7 +257,7 @@ def extract_flag_value(flags: list[str] | None, flag_name: str) -> str | None:
 
 
 # Backends ohne eigenen Dateizugriff: Der Loop schreibt ihre filepath-Blöcke und gibt ihnen Plan und Dateistand mit
-ENDPOINT_BINARIES = ("endpoint", "ollama", "lmstudio", "copilot", "architekt_ep", "pruefstatiker_ep", "bauer_ep")
+ENDPOINT_BINARIES = ("endpoint", "ollama", "lmstudio", "architekt_ep", "pruefstatiker_ep", "bauer_ep")
 CLOUD_PLANNER_ORDER = ("codex", "claude", "agy", "gemini")
 LOCAL_BACKEND_ORDER = ("bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli")
 OLLAMA_KEYS = ("ollama", "ollama-cli")

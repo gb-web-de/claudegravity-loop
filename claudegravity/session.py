@@ -282,6 +282,8 @@ CLAUDE_READONLY_FLAGS = [
     "--mcp-config",
     '{"mcpServers":{}}',
 ]
+# Copilot CLI: --deny-tool hat Vorrang vor --allow-all-tools; damit bleiben Lesewerkzeuge ohne Nachfrage nutzbar
+COPILOT_READONLY_FLAGS = ["--allow-all-tools", "--deny-tool", "write", "--deny-tool", "shell", "--disable-builtin-mcps"]
 
 
 def get_readonly_flags(binary: str) -> list[str]:
@@ -294,6 +296,9 @@ def get_readonly_flags(binary: str) -> list[str]:
         return ["--mode", "plan"]
     if binary == "gemini":
         return ["--approval-mode", "plan"]
+    if binary in ("copilot", "gh"):
+        # Ohne Freigabe würde die CLI im Skriptmodus nachfragen; Schreiben, Shell und eingebaute MCP-Server bleiben gesperrt
+        return list(COPILOT_READONLY_FLAGS)
     return []
 
 
@@ -314,6 +319,8 @@ def get_permission_flags(binary: str) -> list[str]:
         return ["-y"]
     elif binary == "codex":
         return ["-s", "workspace-write"]
+    elif binary in ("copilot", "gh"):
+        return ["--allow-all-tools"]
     return []
 
 

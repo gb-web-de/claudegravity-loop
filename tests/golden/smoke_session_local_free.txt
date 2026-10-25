@@ -11,8 +11,8 @@ state.json.bak
 
 ## [<DATUM>] Session: <ZEIT>_Addition_mit_Test
 - **Aufgabe:** Addition mit Test
-- **🏗️ Architekt (Planung & Bau):** Architekt Endpoint (http://<SERVER>/v1) (`planer`) [Effort: high (nur für agy/codex wirksam)]
-- **🧐 Prüfstatiker (Prüfung & Review):** Prüfstatiker Endpoint (http://<SERVER>/v1) (`pruefer`) [Effort: high (nur für agy/codex wirksam)]
+- **🏗️ Architekt (Planung & Bau):** Architekt Endpoint (http://<SERVER>/v1) (`planer`) [Effort: high (nur für agy/codex/copilot wirksam)]
+- **🧐 Prüfstatiker (Prüfung & Review):** Prüfstatiker Endpoint (http://<SERVER>/v1) (`pruefer`) [Effort: high (nur für agy/codex/copilot wirksam)]
 - **Session-Pfad:** `.dual-loop/sessions/<ZEIT>_Addition_mit_Test`
   - Review Runde 1: **VERDICT: APPROVED** (APPROVED, 0 Befund(e))
 - **Modelle:** Architekt Endpoint (http://<SERVER>/v1): angefordert `planer`, gemeldet `unbekannt`; Prüfstatiker Endpoint (http://<SERVER>/v1): angefordert `pruefer`, gemeldet `unbekannt`

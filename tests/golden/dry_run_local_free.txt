@@ -9,19 +9,19 @@
 1. 🏗️ Architekt (Phase 1: Planung & Entwurf):
    • CLI/Endpoint  : Architekt Endpoint (http://<SERVER>/v1) (`architekt_ep`)
    • Modell        : planer
-   • Effort        : high (nur für agy/codex wirksam)
+   • Effort        : high (nur für agy/codex/copilot wirksam)
    • Token-Anteil  : Leichtgewichtig (~10-15% aller Tokens)
 
 2. 🧐 Prüfstatiker (Phase 2: Prüfung & Review / Stresstest):
    • CLI/Endpoint  : Prüfstatiker Endpoint (http://<SERVER>/v1) (`pruefstatiker_ep`)
    • Modell        : pruefer
-   • Effort        : high (nur für agy/codex wirksam)
+   • Effort        : high (nur für agy/codex/copilot wirksam)
    • Token-Anteil  : Leichtgewichtig (~5-10% aller Tokens)
 
 3. 🔨 Bauleiter (Phase 3: Bau & Umsetzung / Implementation):
    • CLI/Endpoint  : Bauleiter Endpoint (http://<SERVER>/v1) (`bauer_ep`)
    • Modell        : bauer
-   • Effort        : low (nur für agy/codex wirksam)
+   • Effort        : low (nur für agy/codex/copilot wirksam)
    • Token-Anteil  : Schwergewicht (~80-90% aller Tokens!)
 
 4. 🔎 Abnahme (Phase 4: Prüfung des fertigen Codes):

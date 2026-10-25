@@ -226,22 +226,24 @@ class CliAuthTest(unittest.TestCase):
 
     def test_gh_copilot_check(self):
         with mock.patch("subprocess.run") as m_run:
-            m_run.return_value = completed(stdout="unknown command copilot", code=1)
+            # Neuere gh-Versionen melden eine fehlende Copilot CLI mit Rückgabe 0
+            m_run.return_value = completed(stdout="! Copilot CLI not installed", code=0)
             ok, msg = loop.check_cli_auth("gh")
             self.assertFalse(ok)
-            self.assertIn("gh extension install", msg)
+            self.assertIn("@github/copilot", msg)
 
-            m_run.return_value = completed(stdout="gh copilot help", code=0)
+            m_run.return_value = completed(stdout="GitHub Copilot CLI 1.0.103.", code=0)
             ok, msg = loop.check_cli_auth("gh")
             self.assertTrue(ok)
             self.assertEqual(msg, "bereit")
+            self.assertEqual(m_run.call_args[0][0], ["gh", "copilot", "--", "--version"])
 
     def test_copilot_missing_check(self):
         with mock.patch("subprocess.run") as m_run:
             m_run.return_value = completed(stdout="", stderr="GitHub Copilot CLI was not found", code=127)
             ok, msg = loop.check_cli_auth("copilot")
             self.assertFalse(ok)
-            self.assertIn("copilot setup", msg)
+            self.assertIn("copilot login", msg)
 
     def test_timeout_or_missing_binary(self):
         with mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["test"], timeout=2.0)):
@@ -261,3 +263,38 @@ class CliAuthTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CopilotArgsTest(unittest.TestCase):
+    def test_new_session_gets_own_id_and_flags_are_mapped(self):
+        args, sid = loop.build_copilot_args("copilot", ["--model", "gpt-5", "--effort", "high", "--allow-all-tools"])
+        self.assertEqual(args[:3], ["-s", "--session-id", sid])
+        self.assertEqual(args[3:], ["--model", "gpt-5", "--reasoning-effort", "high", "--allow-all-tools"])
+        self.assertEqual(len(sid), 36)
+
+    def test_resume_and_gh_prefix(self):
+        args, sid = loop.build_copilot_args("gh", ["--resume", "abc-123"] + loop.get_readonly_flags("gh"))
+        self.assertEqual(sid, "abc-123")
+        self.assertEqual(args[:4], ["copilot", "--", "-s", "--resume=abc-123"])
+        self.assertIn("--deny-tool", args)
+        self.assertIn("--disable-builtin-mcps", args)
+
+    def test_prompt_goes_over_stdin_and_session_id_is_reported(self):
+        with mock.patch.object(loop.backends, "_exec_cli", return_value="Antwort") as m_exec:
+            text, metrics = loop._exec_copilot("copilot", "Geheimer Prompt", None, [])
+        self.assertEqual(text, "Antwort")
+        self.assertEqual(m_exec.call_args.kwargs["stdin"], "Geheimer Prompt")
+        self.assertNotIn("Geheimer Prompt", m_exec.call_args[0][1])
+        self.assertTrue(metrics["session_id"])
+
+    def test_error_on_stdout_with_code_zero_is_an_error(self):
+        error = "Error: Authentication token found but could not be validated."
+        with mock.patch.object(loop.backends, "_exec_cli", return_value=error), self.assertRaises(RuntimeError):
+            loop._exec_copilot("copilot", "x", None, [])
+
+    def test_builder_writes_itself_and_can_resume(self):
+        self.assertNotIn("copilot", loop.ENDPOINT_BINARIES)
+        self.assertEqual(loop.get_permission_flags("copilot"), ["--allow-all-tools"])
+        agent = loop.AgentCLI("Copilot", "copilot", None)
+        agent.session_id = "s-1"
+        self.assertEqual(loop.builder_resume_flags(agent), ["--resume", "s-1"])

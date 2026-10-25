@@ -27,7 +27,7 @@ Soll 🔨 Bauleiter (Claude Code) volle Schreib-/Tool-Rechte erhalten (--dangero
 2. `last_iteration` and metrics are saved to `state.json`. This allows resuming exactly here after an interruption.
 3. The Builder gets a short prompt: path to the approved plan version, the task, the instruction "create/modify files, run tests", the proof command and the exact path for the completion signal. **No chat history** is sent, only the plan and, if applicable, the feedback from the last round (red proof command or acceptance check findings).
 4. The response is printed in the terminal and appended to `logs/loop_<session>.log`.
-5. With **endpoint Builders** (Ollama server, LM Studio, custom servers, Copilot), ClaudeGravity reads the `filepath:` code blocks from the response and writes the files itself (format: see [Backends](backends.md#how-endpoint-builders-write-files)). Written files are listed.
+5. With **endpoint Builders** (Ollama server, LM Studio, custom servers), ClaudeGravity reads the `filepath:` code blocks from the response and writes the files itself (format: see [Backends](backends.md#how-endpoint-builders-write-files)). Written files are listed.
 6. Check for `.done` again. Without `.done`, the proof command still runs; if it is red, its output goes into the next round. Then a pause of `--delay` seconds (default 3) and the next round.
 
 An error in a round (e.g. a CLI crash) doesn't end the loop: it is reported and the next round starts.

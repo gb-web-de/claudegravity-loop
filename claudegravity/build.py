@@ -246,7 +246,7 @@ def compose_resume_prompt(
 
 
 # Bauleiter-CLIs, deren Sitzung der Loop über Bau-Runden fortsetzen kann (spart das erneute Einlesen des Projekts)
-RESUMABLE_BUILDERS = {"claude", "codex"}
+RESUMABLE_BUILDERS = {"claude", "codex", "copilot", "gh"}
 
 
 def builder_resume_flags(builder: "AgentCLI", enabled: bool = True) -> list[str]:

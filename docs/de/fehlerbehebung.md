@@ -159,5 +159,5 @@ Diese Punkte entsprechen dem aktuellen Stand des Codes:
 
 * **Effort nur für Antigravity und Codex:** `--effort` und die rollenbezogenen Effort-Flags werden an `agy` und `codex` übergeben. Bei anderen CLIs erscheinen sie nur im Audit-Bericht.
 * **Prüfer-Sitzung fortsetzen nur bei Claude:** Ab Review-Runde 2 bekommt nur ein Claude-Prüfer den Plan-Diff statt des ganzen Plans. Andere Prüfer bekommen den vollständigen Plan.
-* **Copilot:** Wird über `copilot suggest -t shell` angesprochen und eignet sich damit eher für Shell-Vorschläge als für Planung oder Bau.
+* **Copilot:** Läuft über die Copilot CLI (`npm install -g @github/copilot`, danach `copilot login`). Die alte Erweiterung `gh copilot suggest` wird nicht mehr unterstützt. Tokens werden geschätzt, weil die CLI im Textmodus keinen Verbrauch meldet.
 * **Kosten-Erkennung bei Endpunkten:** Als kostenlos gelten `localhost`, private IPs und Rechnernamen im Heimnetz (ohne Punkt oder mit `.local`, `.lan`, `.fritz.box`, `.home.arpa`, `.internal`). Ein Server im Intranet mit öffentlichem Domainnamen erscheint im Audit als „API“.

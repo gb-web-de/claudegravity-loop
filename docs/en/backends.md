@@ -12,7 +12,7 @@ Every role can be assigned to any detected backend. `claudegravity --info` shows
 | `agy` | `agy` in `PATH` | `agy -p <prompt> --output-format json` | exact (incl. thinking tokens) |
 | `gemini` | `gemini` in `PATH` | `gemini -p <prompt>` | estimated (characters / 4) |
 | `codex` | `codex` in `PATH` | `codex exec -s <sandbox> <prompt>` | estimated |
-| `copilot` | `copilot` or `gh` in `PATH` | `copilot suggest -t shell …` or `gh copilot suggest …` | estimated |
+| `copilot` | `copilot` or `gh` in `PATH` | `copilot -s --session-id <id>` (prompt via stdin) or `gh copilot -- …` | estimated |
 | `ollama-cli` | `ollama` in `PATH` | `ollama run <modell> <prompt>` | estimated |
 | `ollama` | Server responds on `http://localhost:11434` or on the address in `OLLAMA_HOST` | OpenAI API (`/v1/chat/completions`) | from `usage`, otherwise estimated |
 | `lmstudio` | Server responds on `http://localhost:1234` | OpenAI API | from `usage`, otherwise estimated |
@@ -173,7 +173,8 @@ With `--yolo` (or "J" at the permissions prompt before phase 3) these flags are 
 | `claude`, `agy` | `--dangerously-skip-permissions` |
 | `gemini` | `-y` |
 | `codex` | `-s workspace-write` |
-| Endpoints, `ollama`, `copilot` | none (ClaudeGravity writes the files itself) |
+| `copilot` | `--allow-all-tools` |
+| Endpoints, `ollama` | none (ClaudeGravity writes the files itself) |
 
 **Only the Builder** gets these flags. Architect, Reviewer and the Acceptance check (`--abnahme`) always run read-only, even with `--yolo`:
 
@@ -181,9 +182,10 @@ With `--yolo` (or "J" at the permissions prompt before phase 3) these flags are 
 | :--- | :--- |
 | `claude` | `--permission-mode dontAsk --tools Read,Glob,Grep --allowedTools Read,Glob,Grep --strict-mcp-config` (no shell, no writing, no MCP servers) |
 | `codex` | `-s read-only` |
+| `copilot` | `--allow-all-tools --deny-tool write --deny-tool shell --disable-builtin-mcps` (denials take precedence: reading yes, writing, shell and built-in MCP servers no) |
 | `agy`, `gemini` | no permission flags (tools that require confirmation are denied without a terminal) |
 
-For `claude`, `codex`, `gemini` and `ollama`, prompts are passed via stdin, not on the command line. This keeps the task and plan out of the process list and prevents them from being truncated at the length limit (~32 KB) on Windows.
+For `claude`, `codex`, `copilot`, `gemini` and `ollama`, prompts are passed via stdin, not on the command line. This keeps the task and plan out of the process list and prevents them from being truncated at the length limit (~32 KB) on Windows.
 
 > [!WARNING]
 > In YOLO mode the Builder may change files and run commands without asking. Only use it in projects under version control.
