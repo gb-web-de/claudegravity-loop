@@ -1,0 +1,1 @@
+Feature: deep_merge(base, override) in src/merge.py soll zwei verschachtelte Dicts zusammenführen und ein neues Dict liefern, ohne die Eingaben zu verändern. Dicts werden rekursiv gemischt, Listen und alle anderen Werte aus override ersetzen die aus base, und ein Wert None in override löscht den Schlüssel. Die Tests in tests/ müssen grün sein.

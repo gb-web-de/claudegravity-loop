@@ -1,0 +1,1 @@
+Feature: Ergänze in src/roman.py die Funktionen to_roman(n) und from_roman(text) für Zahlen von 1 bis 3999. Ungültige Eingaben (0, negative Zahlen, über 3999, kein gültiges römisches Zahlwort wie 'IIII' oder 'IC') lösen ValueError aus. Die Tests in tests/ müssen grün sein.

@@ -7,8 +7,14 @@ leeren Ordner kopiert, als Git-Repository angelegt und `loop.py` mit `--plan-aut
 `python -m unittest discover -s tests` gestartet. Ergebnis: Tabelle (Markdown) und JSON mit den
 Kennzahlen aus `.done` bzw. `AUDIT.md`.
 
+Gezählt wird ein Lauf nur, wenn danach auch die **Original-Tests** der Aufgabe grün sind: Der Benchmark
+kopiert tests/ aus dem Aufgabenpaket zurück und prüft erneut. Ein Bauleiter, der Tests abschwächt oder
+löscht, besteht also nicht. Mit --baseline läuft dieselbe Aufgabe zum Vergleich mit einer einzigen CLI
+ohne Loop (ein Aufruf mit Schreibrechten, danach dieselbe Prüfung).
+
 Beispiele:
     python3 tools/benchmark/benchmark.py --strategies balanced,hybrid -- --yolo
+    python3 tools/benchmark/benchmark.py --strategies balanced --baseline claude,codex --repeat 3 --out bench -- --yolo
     python3 tools/benchmark/benchmark.py --tasks median-bug --strategies eco -- --bauer codex --yolo
     python3 tools/benchmark/benchmark.py --fake          # ohne Modelle, prüft nur den Ablauf
 
@@ -40,10 +46,17 @@ PROOF = f'"{sys.executable}" -m unittest discover -s tests'
 
 
 def list_tasks() -> list[str]:
+    """Namen aller Aufgaben im Aufgabenordner (jeder Unterordner mit task.txt)."""
     return sorted(p.name for p in TASKS_DIR.iterdir() if (p / "task.txt").exists())
 
 
+def task_text(task: str) -> str:
+    """Aufgabentext aus task.txt."""
+    return (TASKS_DIR / task / "task.txt").read_text(encoding="utf-8").strip()
+
+
 def prepare_project(task: str, target: Path, git: bool = True) -> None:
+    """Startstand der Aufgabe in einen leeren Ordner kopieren und als Git-Repository anlegen."""
     shutil.copytree(TASKS_DIR / task / "project", target)
     if git and shutil.which("git"):
         git = ["git", "-c", "user.name=benchmark", "-c", "user.email=benchmark@localhost"]
@@ -134,16 +147,36 @@ def fake_env(tmp: Path) -> dict:
     return env
 
 
+def check_original_tests(task: str, project: Path, timeout: int = 300) -> bool:
+    """Original-Tests aus dem Aufgabenpaket zurückkopieren und laufen lassen; geänderte Tests zählen nicht."""
+    original = TASKS_DIR / task / "project" / "tests"
+    if not original.is_dir() or not project.is_dir():
+        return False
+    shutil.rmtree(project / "tests", ignore_errors=True)
+    shutil.copytree(original, project / "tests")
+    ok, _ = loop.run_proof(PROOF, project, timeout=timeout)
+    return ok
+
+
 # ---------- Ein Lauf ----------
 def run_one(
-    task: str, strategy: str, extra: list[str], tmp: Path, timeout: int, fake_url: str | None = None, out_dir: Path | None = None
+    task: str,
+    strategy: str,
+    extra: list[str],
+    tmp: Path,
+    timeout: int,
+    fake_url: str | None = None,
+    out_dir: Path | None = None,
+    run: int = 1,
 ) -> dict:
-    project = tmp / f"{task}-{strategy}"
+    """Aufgabe einmal mit dem Loop und einer Strategie lösen lassen; liefert die Kennzahlen."""
+    name = f"{task}-{strategy}" + (f"-{run}" if run > 1 else "")
+    project = tmp / name
     prepare_project(task, project, git=not fake_url)
     cmd = [
         sys.executable,
         str(ROOT / "loop.py"),
-        (TASKS_DIR / task / "task.txt").read_text(encoding="utf-8").strip(),
+        task_text(task),
         "-p",
         str(project),
         "--strategy",
@@ -169,28 +202,88 @@ def run_one(
         returncode, stdout = None, f"Zeitlimit {timeout} s überschritten\n{exc.stdout or ''}"
     sessions = sorted((project / ".dual-loop" / "sessions").glob("*")) if (project / ".dual-loop").exists() else []
     kpi = loop.read_session_kpi(sessions[-1]) if sessions else None
+    wall = round(time.monotonic() - started, 1)
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / f"{task}-{strategy}.log").write_text(stdout, encoding="utf-8")
+        (out_dir / f"{name}.log").write_text(stdout, encoding="utf-8")
+    loop_ok = bool(kpi and kpi.get("success"))
+    tests_ok = check_original_tests(task, project) if loop_ok else False
     return {
         "task": task,
         "strategy": strategy,
+        "run": run,
         "returncode": returncode,
-        "wall_s": round(time.monotonic() - started, 1),
-        "success": bool(kpi and kpi.get("success")),
+        "wall_s": wall,
+        "success": loop_ok and tests_ok,
+        "loop_success": loop_ok,
+        "original_tests": tests_ok,
         "build_rounds": kpi.get("build_rounds") if kpi else None,
         "tokens_total": kpi.get("tokens_total") if kpi else None,
         "cost_usd_task": kpi.get("cost_usd_task") if kpi else None,
         "rework_rate": kpi.get("rework_rate") if kpi else None,
         "escalation": (kpi or {}).get("escalation"),
-        "abort_reason": (kpi or {}).get("abort_reason") or (None if kpi else "keine Kennzahlen (Lauf vorzeitig beendet)"),
+        "abort_reason": (kpi or {}).get("abort_reason")
+        or (None if kpi else "keine Kennzahlen (Lauf vorzeitig beendet)")
+        or (None if tests_ok or not loop_ok else "Original-Tests rot (Tests geändert?)"),
+    }
+
+
+def baseline_prompt(task: str) -> str:
+    """Auftrag für den Vergleichslauf ohne Loop: dieselbe Aufgabe, derselbe Prüfbefehl."""
+    return (
+        f"{task_text(task)}\n\nArbeite direkt im aktuellen Ordner. Prüfe dein Ergebnis mit "
+        "`python -m unittest discover -s tests` und arbeite weiter, bis alle Tests grün sind."
+    )
+
+
+def run_baseline(task: str, cli: str, tmp: Path, timeout: int, agents: dict, out_dir: Path | None = None, run: int = 1) -> dict:
+    """Vergleichslauf: eine einzige CLI löst die Aufgabe in einem Aufruf mit Schreibrechten, ohne Plan, Review und Abnahme."""
+    strategy = f"allein:{cli}"
+    name = f"{task}-allein-{cli}" + (f"-{run}" if run > 1 else "")
+    project = tmp / name
+    prepare_project(task, project)
+    metrics = loop.SessionMetrics()
+    agent = loop.create_agent(cli, agents, role="Bauleiter", metrics_tracker=metrics)
+    started = time.monotonic()
+    saved = os.environ.get("CLAUDEGRAVITY_CLI_TIMEOUT")
+    os.environ["CLAUDEGRAVITY_CLI_TIMEOUT"] = str(timeout)
+    error = None
+    try:
+        output = agent.run(baseline_prompt(task), cwd=project, extra_flags=loop.get_permission_flags(agent.binary))
+    except Exception as exc:  # ein Fehler der CLI ist ein Ergebnis, kein Absturz des Benchmarks
+        output, error = "", f"{type(exc).__name__}: {exc}"
+    finally:
+        if saved is None:
+            os.environ.pop("CLAUDEGRAVITY_CLI_TIMEOUT", None)
+        else:
+            os.environ["CLAUDEGRAVITY_CLI_TIMEOUT"] = saved
+    wall = round(time.monotonic() - started, 1)
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / f"{name}.log").write_text(error or output, encoding="utf-8")
+    tests_ok = False if error else check_original_tests(task, project)
+    return {
+        "task": task,
+        "strategy": strategy,
+        "run": run,
+        "returncode": None,
+        "wall_s": wall,
+        "success": tests_ok,
+        "loop_success": None,
+        "original_tests": tests_ok,
+        "build_rounds": 1,
+        "tokens_total": metrics.total_tokens or None,
+        "cost_usd_task": metrics.cost_usd or None,
+        "rework_rate": None,
+        "escalation": None,
+        "abort_reason": error[:200] if error else (None if tests_ok else "Original-Tests rot"),
     }
 
 
 def format_table(results: list[dict]) -> str:
     lines = [
-        "| Aufgabe | Strategie | Ergebnis | Bau-Runden | Tokens | Kosten (gemeldet) | Dauer |",
-        "| :--- | :--- | :--- | ---: | ---: | ---: | ---: |",
+        "| Aufgabe | Strategie | Ergebnis | Original-Tests | Bau-Runden | Tokens | Kosten (gemeldet) | Dauer |",
+        "| :--- | :--- | :--- | :---: | ---: | ---: | ---: | ---: |",
     ]
     for r in results:
         verdict = "✅" if r["success"] else f"❌ {r['abort_reason'] or ''}".strip()
@@ -199,22 +292,35 @@ def format_table(results: list[dict]) -> str:
         tokens = loop.format_budget("tokens", r["tokens_total"]) if r["tokens_total"] else "–"
         cost = loop.format_budget("usd", r["cost_usd_task"]) if r["cost_usd_task"] else "–"
         lines.append(
-            f"| {r['task']} | {r['strategy']} | {verdict} | {r['build_rounds'] if r['build_rounds'] is not None else '–'} "
+            f"| {r['task']} | {r['strategy']} | {verdict} | {'✅' if r.get('original_tests') else '❌'} "
+            f"| {r['build_rounds'] if r['build_rounds'] is not None else '–'} "
             f"| {tokens} | {cost} | {loop.format_duration(r['wall_s'])} |"
         )
     by_strategy: dict[str, list[dict]] = {}
     for r in results:
         by_strategy.setdefault(r["strategy"], []).append(r)
-    lines += ["", "| Strategie | Erfolg | Tokens gesamt | Kosten gesamt |", "| :--- | ---: | ---: | ---: |"]
+    lines += [
+        "",
+        "| Strategie | Erfolg | Quote | Ø Tokens je Erfolg | Kosten gesamt | Ø Dauer |",
+        "| :--- | ---: | ---: | ---: | ---: | ---: |",
+    ]
     for strategy, rows in by_strategy.items():
         ok = sum(r["success"] for r in rows)
         tokens = sum(r["tokens_total"] or 0 for r in rows)
         cost = sum(r["cost_usd_task"] or 0 for r in rows)
+        per_success = loop.format_budget("tokens", tokens / ok) if tokens and ok else "–"
+        avg_wall = loop.format_duration(sum(r["wall_s"] for r in rows) / len(rows))
         lines.append(
-            f"| {strategy} | {ok}/{len(rows)} | {loop.format_budget('tokens', tokens) if tokens else '–'} "
-            f"| {loop.format_budget('usd', cost) if cost else '–'} |"
+            f"| {strategy} | {ok}/{len(rows)} | {round(100 * ok / len(rows))} % | {per_success} "
+            f"| {loop.format_budget('usd', cost) if cost else '–'} | {avg_wall} |"
         )
     return "\n".join(lines)
+
+
+def report_line(result: dict) -> None:
+    """Kurzmeldung nach jedem Lauf."""
+    mark = "✅" if result["success"] else "❌"
+    print(f"  {mark} {result['build_rounds']} Bau-Runden, {result['wall_s']} s {result['abort_reason'] or ''}".rstrip(), flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -227,14 +333,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=int, default=1800, help="Sekunden je Lauf (Standard: 1800)")
     parser.add_argument("--out", default=None, help="Ordner für results.json, results.md und die Logs je Lauf")
     parser.add_argument("--fake", action="store_true", help="Ohne Modelle: ein lokaler Fake-Server liefert die Musterlösung")
+    parser.add_argument("--baseline", default="", help="Vergleich ohne Loop, kommagetrennte CLIs (z. B. claude,codex)")
+    parser.add_argument("--repeat", type=int, default=1, help="Jeden Lauf so oft wiederholen (Streuung der Modelle)")
+    parser.add_argument("--tasks-dir", default=None, help="Eigenes Aufgabenpaket statt tools/benchmark/tasks")
     args = parser.parse_args(own)
+    if args.tasks_dir:
+        global TASKS_DIR
+        TASKS_DIR = Path(args.tasks_dir).expanduser().resolve()
 
     tasks = list_tasks() if args.tasks == "all" else [t.strip() for t in args.tasks.split(",") if t.strip()]
     unknown = [t for t in tasks if t not in list_tasks()]
     if unknown:
         parser.error(f"Unbekannte Aufgabe(n): {', '.join(unknown)}")
     strategies = [s.strip() for s in args.strategies.split(",") if s.strip()]
+    baselines = [b.strip() for b in args.baseline.split(",") if b.strip()]
     out_dir = Path(args.out) if args.out else None
+    agents = {}
+    if baselines:
+        if args.fake:
+            parser.error("--baseline braucht echte CLIs und geht nicht mit --fake")
+        agents = loop.detect_installed_agents()
+        missing = [b for b in baselines if b not in agents]
+        if missing:
+            parser.error(f"Nicht gefunden: {', '.join(missing)}")
 
     results = []
     with tempfile.TemporaryDirectory(prefix="cg-benchmark-") as tmp_name:
@@ -245,12 +366,19 @@ def main(argv: list[str] | None = None) -> int:
             server, url = start_fake_server(fake_state)
         try:
             for task in tasks:
-                for strategy in strategies:
-                    print(f"▶ {task} · {strategy} ...", flush=True)
-                    fake_state["solution"] = TASKS_DIR / task / "solution"
-                    result = run_one(task, strategy, extra, tmp, args.timeout, fake_url=url if args.fake else None, out_dir=out_dir)
-                    print(f"  {'✅' if result['success'] else '❌'} {result['build_rounds']} Bau-Runden, {result['wall_s']} s", flush=True)
-                    results.append(result)
+                for run in range(1, max(1, args.repeat) + 1):
+                    for strategy in strategies:
+                        print(f"▶ {task} · {strategy} ...", flush=True)
+                        fake_state["solution"] = TASKS_DIR / task / "solution"
+                        fake_url = url if args.fake else None
+                        result = run_one(task, strategy, extra, tmp, args.timeout, fake_url=fake_url, out_dir=out_dir, run=run)
+                        report_line(result)
+                        results.append(result)
+                    for cli in baselines:
+                        print(f"▶ {task} · allein:{cli} ...", flush=True)
+                        result = run_baseline(task, cli, tmp, args.timeout, agents, out_dir=out_dir, run=run)
+                        report_line(result)
+                        results.append(result)
         finally:
             if server:
                 server.shutdown()

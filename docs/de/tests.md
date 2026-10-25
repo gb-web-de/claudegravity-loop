@@ -125,11 +125,16 @@ python3 tools/benchmark/benchmark.py --strategies balanced,hybrid --out bench --
 # nur eine Aufgabe, eigene Rollen
 python3 tools/benchmark/benchmark.py --tasks median-bug --strategies eco -- --bauer codex --yolo
 
+# Vergleich mit einer einzelnen CLI ohne Loop, jeder Lauf dreimal
+python3 tools/benchmark/benchmark.py --strategies balanced,hybrid --baseline claude,codex --repeat 3 --out bench -- --yolo
+
 # ohne Modelle: prüft nur den Ablauf (ein Fake-Server liefert die Musterlösung)
 python3 tools/benchmark/benchmark.py --fake
 ```
 
-* **Aufgaben** liegen unter `tools/benchmark/tasks/<name>/`: `task.txt`, `project/` (Startstand mit Tests, die anfangs rot sind) und `solution/` (nur für `--fake`). Dabei sind `fizzbuzz` (neue Funktion), `median-bug` (Bugfix) und `slugify` (Feature mit Umlauten). Eine eigene Aufgabe ist ein weiterer Ordner nach diesem Muster.
+* **Aufgaben** liegen unter `tools/benchmark/tasks/<name>/`: `task.txt`, `project/` (Startstand mit Tests, die anfangs rot sind) und `solution/` (nur für `--fake`). Dabei sind zehn Aufgaben: neue Funktionen (`fizzbuzz`, `roman`, `wrap-text`, `config-merge`), Bugfixes (`median-bug`, `lru-bug`, `date-range`), Änderungen über zwei Module (`csv-report`, `inventory-bugs`) und `slugify` (Umlaute). Eine eigene Aufgabe ist ein weiterer Ordner nach diesem Muster; ein ganzes eigenes Paket nimmt `--tasks-dir <ordner>`.
 * **Ablauf:** Jeder Lauf bekommt eine frische Kopie von `project/` als Git-Repository in einem Wegwerf-Ordner und startet mit `--plan-auto`, `--log-format json` und `--proof "python -m unittest discover -s tests"`. CLI-Bauleiter brauchen Schreibrechte (`-- --yolo`); dein eigenes Projekt bleibt unberührt.
-* **Ergebnis:** Tabelle je Aufgabe und Strategie (Ergebnis, Bau-Runden, Tokens, gemeldete Kosten, Dauer) plus Summe je Strategie. Mit `--out` zusätzlich `results.json`, `results.md` und die Ausgabe jedes Laufs. Exit-Code 0 nur, wenn alle Läufe erfolgreich sind.
+* **Original-Tests:** Ein Lauf zählt nur, wenn danach auch die unveränderten Tests aus dem Aufgabenpaket grün sind. Der Benchmark kopiert `tests/` zurück und prüft erneut; wer Tests abschwächt oder löscht, besteht nicht.
+* **Vergleich ohne Loop:** `--baseline claude,codex` gibt dieselbe Aufgabe einer einzelnen CLI in einem Aufruf mit Schreibrechten (Zeile `allein:<cli>`). So siehst du, was Plan, Review und Abnahme gegenüber „einfach machen lassen“ bringen. `--repeat N` wiederholt jeden Lauf, weil Modelle streuen.
+* **Ergebnis:** Tabelle je Aufgabe und Strategie (Ergebnis, Bau-Runden, Tokens, gemeldete Kosten, Dauer) plus Summe je Strategie mit Erfolgsquote, Tokens je Erfolg und mittlerer Dauer. Mit `--out` zusätzlich `results.json`, `results.md` und die Ausgabe jedes Laufs. Exit-Code 0 nur, wenn alle Läufe erfolgreich sind.
 * `--timeout` begrenzt jeden Lauf (Standard 1800 s). Kosten erscheinen nur, wenn Anbieter sie melden.

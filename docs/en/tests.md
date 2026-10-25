@@ -125,11 +125,16 @@ python3 tools/benchmark/benchmark.py --strategies balanced,hybrid --out bench --
 # one task only, your own roles
 python3 tools/benchmark/benchmark.py --tasks median-bug --strategies eco -- --bauer codex --yolo
 
+# compare with a single CLI without the loop, every run three times
+python3 tools/benchmark/benchmark.py --strategies balanced,hybrid --baseline claude,codex --repeat 3 --out bench -- --yolo
+
 # without models: only checks the flow (a fake server returns the reference solution)
 python3 tools/benchmark/benchmark.py --fake
 ```
 
-* **Tasks** live under `tools/benchmark/tasks/<name>/`: `task.txt`, `project/` (starting state with tests that are red at first) and `solution/` (only for `--fake`). Included are `fizzbuzz` (new function), `median-bug` (bug fix) and `slugify` (feature with umlauts). A task of your own is another folder following this pattern. The task texts are German, like the loop's prompts.
+* **Tasks** live under `tools/benchmark/tasks/<name>/`: `task.txt`, `project/` (starting state with tests that are red at first) and `solution/` (only for `--fake`). Included are ten tasks: new functions (`fizzbuzz`, `roman`, `wrap-text`, `config-merge`), bug fixes (`median-bug`, `lru-bug`, `date-range`), changes across two modules (`csv-report`, `inventory-bugs`) and `slugify` (umlauts). A task of your own is another folder following this pattern; a whole pack of your own is passed with `--tasks-dir <folder>`. The task texts are German, like the loop's prompts.
 * **Flow:** Every run gets a fresh copy of `project/` as a Git repository in a throwaway folder and starts with `--plan-auto`, `--log-format json` and `--proof "python -m unittest discover -s tests"`. CLI Builders need write access (`-- --yolo`); your own project stays untouched.
-* **Result:** A table per task and strategy (result, build rounds, tokens, reported costs, duration) plus a total per strategy. With `--out` also `results.json`, `results.md` and the output of every run. Exit code 0 only if all runs succeed.
+* **Original tests:** A run only counts if the unchanged tests from the task pack are green afterwards too. The benchmark copies `tests/` back and checks again; whoever weakens or deletes tests does not pass.
+* **Comparison without the loop:** `--baseline claude,codex` gives the same task to a single CLI in one call with write access (row `allein:<cli>`). This shows what plan, review and acceptance add compared to "just let it do it". `--repeat N` repeats every run because models vary.
+* **Result:** A table per task and strategy (result, build rounds, tokens, reported costs, duration) plus a total per strategy with success rate, tokens per success and average duration. With `--out` also `results.json`, `results.md` and the output of every run. Exit code 0 only if all runs succeed.
 * `--timeout` limits every run (default 1800 s). Costs only appear if providers report them.

@@ -1,0 +1,1 @@
+Bugfix: Der LRUCache in src/cache.py verdrängt den falschen Eintrag. Ein Lesezugriff mit get() muss den Eintrag als zuletzt benutzt markieren, und put() auf einen vorhandenen Schlüssel darf keinen anderen Eintrag verdrängen. Behebe die Fehler, ohne die Schnittstelle zu ändern. Die Tests in tests/ müssen grün sein.

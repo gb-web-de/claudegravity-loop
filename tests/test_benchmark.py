@@ -61,6 +61,40 @@ class FakeRunTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("❌ Rundenlimit erreicht (1 Bau-Runden)", out)
 
+    def test_weakened_tests_do_not_count(self):
+        cheat = (
+            "```filepath: tests/test_stats.py\nimport unittest\n\n\nclass T(unittest.TestCase):\n    def test_ok(self):\n        pass\n```"
+        )
+
+        def answer(prompt, solution):
+            if "Führe den genehmigten Plan" in prompt:
+                done = benchmark.re.search(r"unter: '([^']+)'", prompt)
+                return cheat + f"\n\n```filepath: {done.group(1)}\nfertig\n```"
+            return original(prompt, solution)
+
+        original = benchmark.fake_answer
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(benchmark, "fake_answer", answer):
+            code, out = self.run_main(["--fake", "--tasks", "median-bug", "--out", tmp])
+            results = json.loads((Path(tmp) / "results.json").read_text(encoding="utf-8"))
+        self.assertEqual(code, 1, out)
+        self.assertEqual((results[0]["loop_success"], results[0]["original_tests"], results[0]["success"]), (True, False, False))
+        self.assertIn("Original-Tests rot", out)
+
+    def test_baseline_runs_single_cli_and_checks_original_tests(self):
+        def solve(binary, prompt, cwd=None, flags=None):
+            shutil.copytree(benchmark.TASKS_DIR / "median-bug" / "solution", cwd, dirs_exist_ok=True)
+            return "fertig", {"input_tokens": 10, "output_tokens": 5}
+
+        agents = {"fake": benchmark.loop.AgentCLI("Fake", "fake", solve)}
+        with tempfile.TemporaryDirectory() as tmp:
+            result = benchmark.run_baseline("median-bug", "fake", Path(tmp), 60, agents)
+        self.assertEqual((result["strategy"], result["success"], result["tokens_total"]), ("allein:fake", True, 15))
+
+    def test_repeat_and_summary_quote(self):
+        code, out = self.run_main(["--fake", "--tasks", "fizzbuzz", "--repeat", "2"])
+        self.assertEqual(code, 0, out)
+        self.assertIn("| balanced | 2/2 | 100 % |", out)
+
     def test_unknown_task(self):
         with self.assertRaises(SystemExit), redirect_stdout(io.StringIO()), unittest.mock.patch("sys.stderr", io.StringIO()):
             benchmark.main(["--tasks", "gibtsnicht"])

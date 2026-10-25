@@ -1,0 +1,1 @@
+Bugfix: days_between(start, end) in src/dates.py soll die Anzahl der Tage von start bis end einschließlich beider Tage liefern (gleicher Tag = 1), auch über Schaltjahre und Jahreswechsel; ist end vor start, gibt es ValueError. Die eigene Schaltjahr-Logik ist fehlerhaft. Behebe die Fehler, ohne die Signatur zu ändern. Die Tests in tests/ müssen grün sein.
