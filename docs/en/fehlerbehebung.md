@@ -96,6 +96,7 @@ Choose another model; very small models often do not keep the answer format.
 <a id="cg-1206"></a>
 **CG-1206 · AI CLI reports an error**  
 Start the CLI once by hand in a terminal and read its message; often the sign-in or an update is missing.
+If `agy` reports "invalid model selection", see [Model names with Antigravity](backends.md#model-names-with-antigravity-agy).
 
 <a id="cg-1301"></a>
 **CG-1301 · Rate limit reached**  

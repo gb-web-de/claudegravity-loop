@@ -130,6 +130,10 @@ Dauerhaft geht es mit `export CLAUDEGRAVITY_ENDPOINT="http://<server>:11434/v1"`
 >
 > CLIs (`claude`, `codex`, `agy` …) haben ein eigenes Zeitlimit von 3600 Sekunden je Aufruf, damit ein hängender Prozess den Loop nicht ewig blockiert. Ändern mit `CLAUDEGRAVITY_CLI_TIMEOUT=<Sekunden>`, `0` schaltet es ab. Ein überschrittenes CLI-Zeitlimit wird nicht automatisch wiederholt.
 
+### Modellnamen bei Antigravity (`agy`)
+
+Die Antigravity CLI erwartet ab Version 1.4 Modellnamen mit eingebauter Effort-Stufe, z. B. `Gemini 3.8 Flash (Medium)` oder `Gemini 4 Argon (High)`. Die Liste zeigt `agy` selbst, wenn ein Name nicht passt. ClaudeGravity übersetzt kurze Namen wie `--bauer-model gemini-3.8-flash --bauer-effort low` in `Gemini 3.8 Flash (Low)` und lässt `--effort` dann weg. Ohne Effort nimmt es `(Medium)`, `xhigh` und `max` werden zu `(High)`. Lehnt `agy` den Namen trotzdem ab, liest der Loop die Liste aus der Fehlermeldung, nimmt den passenden Eintrag und wiederholt den Aufruf einmal. Gibt es keinen Treffer, läuft die Rolle mit dem Standardmodell der CLI weiter. Ist kein Modell gewählt (Anzeige `CLI-Default`), übergibt der Loop weder `--model` noch ein leeres `--effort`.
+
 ### Wie Endpunkt-Bauleiter Dateien schreiben
 
 Endpunkte haben keinen Dateizugriff. ClaudeGravity fordert sie auf, neue Dateien vollständig auszugeben:

@@ -11,7 +11,7 @@ state.json.bak
 
 ## [<DATUM>] Session: <ZEIT>_Addition_mit_Test
 - **Aufgabe:** Addition mit Test
-- **🏗️ Architekt (Planung & Bau):** Architekt Endpoint (http://<SERVER>/v1) (`planer`) [Effort: 0€ Lokal/Intranet]
+- **🏗️ Architekt (Planung & Bau):** Architekt Endpoint (http://<SERVER>/v1) (`planer`) [Effort: high (nur für agy/codex wirksam)]
 - **🧐 Prüfstatiker (Prüfung & Review):** Prüfstatiker Endpoint (http://<SERVER>/v1) (`pruefer`) [Effort: high (nur für agy/codex wirksam)]
 - **Session-Pfad:** `.dual-loop/sessions/<ZEIT>_Addition_mit_Test`
   - Review Runde 1: **VERDICT: APPROVED** (APPROVED, 0 Befund(e))

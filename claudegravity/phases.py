@@ -12,7 +12,7 @@ from .common import ENDPOINT_BINARIES, LOCAL_BACKEND_ORDER, SETTINGS, STAGE_MAX_
 from .safety import redact_secrets
 from .errors import fail, format_error
 from .metrics import SessionMetrics, append_metrics_to_done, format_metrics_report
-from .backends import AgentCLI, DEFAULT_MODEL_LABEL, create_agent, describe_agent, effort_label
+from .backends import AgentCLI, DEFAULT_MODEL_LABEL, create_agent, describe_agent, effort_label, is_placeholder_value, model_flags
 from .session import (
     acquire_worktree,
     append_log,
@@ -261,16 +261,14 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
     # Modell für Architekt
     planner_model = args.planner_model or state.get("planner_model")
     if planner_model:
-        planner_flags.extend(["--model", planner_model])
         state["planner_model"] = planner_model
         planner.model = planner_model
     else:
         planner.model = DEFAULT_MODEL_LABEL
 
     p_effort = args.planner_effort or args.effort or state.get("planner_effort") or default_p_effort
+    planner_flags.extend(model_flags(planner.binary, planner_model, p_effort))
     if p_effort:
-        if planner.binary in ("agy", "codex"):
-            planner_flags.extend(["--effort", p_effort])
         state["planner_effort"] = p_effort
         planner.effort = p_effort
     else:
@@ -279,16 +277,14 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
     # Modell für Prüfstatiker
     reviewer_model = args.reviewer_model or state.get("reviewer_model")
     if reviewer_model:
-        reviewer_flags.extend(["--model", reviewer_model])
         state["reviewer_model"] = reviewer_model
         reviewer.model = reviewer_model
     else:
         reviewer.model = DEFAULT_MODEL_LABEL
 
     r_effort = args.reviewer_effort or args.effort or state.get("reviewer_effort") or default_r_effort
+    reviewer_flags.extend(model_flags(reviewer.binary, reviewer_model, r_effort))
     if r_effort:
-        if reviewer.binary in ("agy", "codex"):
-            reviewer_flags.extend(["--effort", r_effort])
         state["reviewer_effort"] = r_effort
         reviewer.effort = r_effort
     else:
@@ -297,16 +293,14 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
     # Modell für Bauleiter (Phase 3)
     builder_model = args.builder_model or state.get("builder_model") or default_b_model
     if builder_model:
-        builder_flags.extend(["--model", builder_model])
         state["builder_model"] = builder_model
         builder.model = builder_model
     else:
         builder.model = planner.model if builder.binary == planner.binary else DEFAULT_MODEL_LABEL
 
     b_effort = args.builder_effort or state.get("builder_effort") or default_b_effort
+    builder_flags.extend(model_flags(builder.binary, builder_model, b_effort))
     if b_effort:
-        if builder.binary in ("agy", "codex"):
-            builder_flags.extend(["--effort", b_effort])
         state["builder_effort"] = b_effort
         builder.effort = b_effort
     else:
@@ -525,10 +519,7 @@ def prepare_build(run: "RunContext") -> None:
 
     # Rechte- und Modell-Flags passend zum tatsächlichen Bauleiter neu aufbauen
     builder_flags = role_flags(builder.binary, "builder", yolo_active)
-    if builder_model:
-        builder_flags.extend(["--model", builder_model])
-    if b_effort and builder.binary in ("agy", "codex"):
-        builder_flags.extend(["--effort", b_effort])
+    builder_flags.extend(model_flags(builder.binary, builder_model, b_effort))
 
     # Falls YOLO noch nicht aktiv war, vor Phase 3 fragen
     if not yolo_active:
@@ -581,17 +572,13 @@ def prepare_build(run: "RunContext") -> None:
             inspector = create_agent(inspector.binary, agents, role="🔎 Abnahme", metrics_tracker=session_metrics)
         if inspector is not None:
             inspector_model = (
-                args.inspector_model
-                or state.get("inspector_model")
-                or (inspector.model if inspector.model != DEFAULT_MODEL_LABEL else None)
+                args.inspector_model or state.get("inspector_model") or (None if is_placeholder_value(inspector.model) else inspector.model)
             )
             inspector_effort = args.inspector_effort or state.get("inspector_effort") or inspector.effort
             inspector_flags = get_readonly_flags(inspector.binary)
-            if inspector_model:
-                inspector_flags.extend(["--model", inspector_model])
+            inspector_flags.extend(model_flags(inspector.binary, inspector_model, inspector_effort))
+            if not is_placeholder_value(inspector_model):
                 state["inspector_model"] = inspector_model
-            if inspector_effort and inspector.binary in ("agy", "codex"):
-                inspector_flags.extend(["--effort", inspector_effort])
             state["inspector_binary"] = inspector.binary
             say(f"🔎 Abnahme des fertigen Codes durch: {describe_agent(inspector)}")
         else:

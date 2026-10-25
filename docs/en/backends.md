@@ -130,6 +130,10 @@ To make it permanent, use `export CLAUDEGRAVITY_ENDPOINT="http://<server>:11434/
 >
 > CLIs (`claude`, `codex`, `agy` …) have their own time limit of 3600 seconds per call, so a hung process cannot block the loop forever. Change it with `CLAUDEGRAVITY_CLI_TIMEOUT=<seconds>`, `0` turns it off. An exceeded CLI time limit is not retried automatically.
 
+### Model names with Antigravity (`agy`)
+
+From version 1.4 on, the Antigravity CLI expects model names with the effort level built in, e.g. `Gemini 3.8 Flash (Medium)` or `Gemini 4 Argon (High)`. `agy` prints the list itself when a name does not fit. ClaudeGravity translates short names such as `--bauer-model gemini-3.8-flash --bauer-effort low` into `Gemini 3.8 Flash (Low)` and then leaves out `--effort`. Without an effort it uses `(Medium)`; `xhigh` and `max` become `(High)`. If `agy` still rejects the name, the loop reads the list from the error message, picks the matching entry and retries the call once. If nothing matches, the role continues with the CLI's default model. When no model is chosen (shown as `CLI-Default`), the loop passes neither `--model` nor an empty `--effort`.
+
 ### How endpoint builders write files
 
 Endpoints have no file access. ClaudeGravity asks them to output new files completely:

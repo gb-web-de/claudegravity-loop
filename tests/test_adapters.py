@@ -72,10 +72,13 @@ class CliContractTest(unittest.TestCase):
             (text, m["input_tokens"], m["output_tokens"], m["cost_usd"], m["reported_model"], m["session_id"]),
             ("ok", 5, 4, 0.01, "claude-x", "s"),
         )
-        agy = json.dumps({"conversation_id": "c-123", "response": "ok", "usage": {"input_tokens": 1, "output_tokens": 2, "thinking_tokens": 7}})
+        agy = json.dumps(
+            {"conversation_id": "c-123", "response": "ok", "usage": {"input_tokens": 1, "output_tokens": 2, "thinking_tokens": 7}}
+        )
         (text, m), _ = self.run_adapter("agy", completed(agy))
         self.assertEqual((text, m["total_tokens"]), ("ok", 3))
-        self.assertEqual(m["reported_model"], "gemini-3.8-flash (CLI-Default)")
+        self.assertIsNone(m["reported_model"])
+        self.assertEqual(m["model"], "CLI-Default")
         self.assertEqual(m["session_id"], "c-123")
         self.assertIn("7 thinking", m["effort"])
         _, m_custom = self.run_adapter("agy", completed(agy), flags=["--model", "gemini-4-argon"])[0]
@@ -248,7 +251,9 @@ class CliAuthTest(unittest.TestCase):
 
     def test_get_alternative_agent_require_auth(self):
         agents = {k: loop.AgentCLI(k, k, lambda *a: ("", {})) for k in ("claude", "gemini", "agy")}
-        with mock.patch.object(loop.backends, "check_cli_auth", side_effect=lambda b: (True, "angemeldet") if b == "agy" else (False, "unauth")):
+        with mock.patch.object(
+            loop.runner, "check_cli_auth", side_effect=lambda b: (True, "angemeldet") if b == "agy" else (False, "unauth")
+        ):
             alt = loop.get_alternative_agent(agents["claude"], agents, require_auth=True)
             self.assertIsNotNone(alt)
             self.assertEqual(alt.binary, "agy")
@@ -256,4 +261,3 @@ class CliAuthTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
