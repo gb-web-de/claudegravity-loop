@@ -86,6 +86,10 @@
    👉 Antwort prüfen; Zugangsdaten nur über Umgebungsvariablen nutzen und kompromittierte Schlüssel erneuern.
    📖 docs/de/fehlerbehebung.md#cg-1503
 
+❌ [CG-1504] Tests abgeschwächt oder entfernt
+   👉 Diff der Testdateien prüfen. Ist die Änderung nicht gewollt, Tests wiederherstellen; mit --test-guard strict weist der Loop solche Fertigmeldungen selbst zurück.
+   📖 docs/de/fehlerbehebung.md#cg-1504
+
 ❌ [CG-1999] Unerwarteter Fehler
    👉 Bitte mit der vollständigen Ausgabe als Issue melden.
    📖 docs/de/fehlerbehebung.md#cg-1999

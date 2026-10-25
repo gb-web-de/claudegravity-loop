@@ -46,6 +46,7 @@
   strategy               = "eco"                        [Umgebung]  ⚠️ Konflikt
   swap                   = false                        [Standard]
   template               = "typo3"                      [Kommandozeile]
+  test_guard             = "warn"                       [Standard]
   timeout                = –                            [Standard]
   worktree               = true                         [Standard]
   yolo                   = false                        [Standard]

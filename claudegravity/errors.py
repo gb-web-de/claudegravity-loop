@@ -91,6 +91,11 @@ ERROR_CODES = {
         "Mögliche Zugangsdaten in einer Modellantwort",
         "Antwort prüfen; Zugangsdaten nur über Umgebungsvariablen nutzen und kompromittierte Schlüssel erneuern.",
     ),
+    "CG-1504": (
+        "Tests abgeschwächt oder entfernt",
+        "Diff der Testdateien prüfen. Ist die Änderung nicht gewollt, Tests wiederherstellen; mit --test-guard strict "
+        "weist der Loop solche Fertigmeldungen selbst zurück.",
+    ),
     "CG-1999": ("Unerwarteter Fehler", "Bitte mit der vollständigen Ausgabe als Issue melden."),
 }
 ERROR_PATTERNS = [
@@ -102,7 +107,7 @@ ERROR_PATTERNS = [
     ("CG-1205", r"Leere Antwort|JSONDecodeError|Expecting value"),
     ("CG-1206", r"Fehler \(Code \d+\)|(?:Claude|Antigravity|Codex) Fehler"),
 ]
-AUDIT_EVENT_CODES = {"blocked_write": "CG-1501", "readonly_changed": "CG-1502", "secret_in_output": "CG-1503"}
+AUDIT_EVENT_CODES = {"blocked_write": "CG-1501", "readonly_changed": "CG-1502", "secret_in_output": "CG-1503", "tests_weakened": "CG-1504"}
 
 
 def classify_error(text: str) -> str:

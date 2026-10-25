@@ -64,6 +64,7 @@ Gültige Schlüssel: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `o
 | `--abnahme-model <name>` | `--inspector-model` | Modell für die Abnahme. | – |
 | `--abnahme-effort <stufe>` | `--inspector-effort` | Effort für die Abnahme. | – |
 | `--max-inspections <n>` | | Abnahme-Runden pro Lauf; danach bleibt die Aufgabe offen (`phase = inspection_open`). | `2` |
+| `--test-guard warn\|strict\|off` | `--testwaechter` | Geschönte Tests erkennen (gelöscht, Skip/Only, weniger Prüfungen); siehe [Testwächter](bau-loop.md#testwächter). | `warn` |
 | `--no-inspect` | `--ohne-abnahme` | Abnahme auslassen (wird in `LOG.md` vermerkt). | an |
 
 ## Modelle

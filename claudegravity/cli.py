@@ -317,6 +317,14 @@ def build_parser(full_help: bool = False) -> argparse.ArgumentParser:
     add("--max-rounds", type=int, default=2, help="Maximale Review-Runden für den Plan (Standard: 2)")
     add("--max-inspections", type=int, default=2, help="Maximale Abnahme-Runden pro Lauf (Standard: 2)")
     add(
+        "--test-guard",
+        "--testwaechter",
+        choices=["warn", "strict", "off"],
+        default="warn",
+        help="Geschönte Tests erkennen (gelöscht, Skip/Only, weniger Prüfungen): warn meldet es der Abnahme, "
+        "strict weist die Fertigmeldung zurück, off schaltet ab (Standard: warn)",
+    )
+    add(
         "--no-inspect",
         "--ohne-abnahme",
         dest="inspect",

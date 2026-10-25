@@ -134,6 +134,10 @@ Check the changes with `git status` and revert them if needed; use this CLI only
 **CG-1503 · Possible credentials in a model answer**  
 Check the answer; use credentials only via environment variables and rotate compromised keys.
 
+<a id="cg-1504"></a>
+**CG-1504 · Tests weakened or removed**  
+Check the diff of the test files. If the change is not intended, restore the tests; with --test-guard strict the loop rejects such completion reports itself.
+
 <a id="cg-1999"></a>
 **CG-1999 · Unexpected error**  
 Please report it as an issue with the full output.

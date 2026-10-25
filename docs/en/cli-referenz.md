@@ -64,6 +64,7 @@ Valid keys: `claude`, `agy`, `gemini`, `codex`, `copilot`, `ollama`, `ollama-cli
 | `--abnahme-model <name>` | `--inspector-model` | Model for the acceptance check. | – |
 | `--abnahme-effort <level>` | `--inspector-effort` | Effort for the acceptance check. | – |
 | `--max-inspections <n>` | | Acceptance check rounds per run; after that the task stays open (`phase = inspection_open`). | `2` |
+| `--test-guard warn\|strict\|off` | `--testwaechter` | Detect weakened tests (deleted, skip/only, fewer assertions); see [Test guard](bau-loop.md#test-guard). | `warn` |
 | `--no-inspect` | `--ohne-abnahme` | Skip the acceptance check (noted in `LOG.md`). | on |
 
 ## Models

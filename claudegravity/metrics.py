@@ -281,4 +281,5 @@ AUDIT_EVENT_LABELS = {
     "blocked_write": "Blockierter Schreibversuch",
     "readonly_changed": "Änderung durch lesende Rolle",
     "secret_in_output": "Mögliche Zugangsdaten in Modellantwort",
+    "tests_weakened": "Tests abgeschwächt oder entfernt",
 }

@@ -16,6 +16,7 @@ from .backends import AgentCLI, DEFAULT_MODEL_LABEL, create_agent, describe_agen
 from .session import (
     acquire_worktree,
     append_log,
+    record_audit_event,
     check_and_clean_done_marker,
     find_latest_session,
     findings_digest,
@@ -52,6 +53,8 @@ from .build import (
     plan_excerpt,
     run_build_call,
     run_inspection,
+    format_test_findings,
+    test_integrity_findings,
     run_proof_check,
     stage_file_context,
 )
@@ -647,6 +650,17 @@ def run_build_phase(run: "RunContext") -> None:
                 reject_done(f"Der Prüfbefehl `{proof_cmd}` schlägt fehl:\n```\n{output}\n```")
                 return "retry"
             proof_note = f"Prüfbefehl `{proof_cmd}` wurde vom Loop selbst ausgeführt und ist grün."
+        test_findings = [] if args.test_guard == "off" else test_integrity_findings(work_path, state.get("build_base"))
+        if test_findings:
+            note = format_test_findings(test_findings)
+            say(note)
+            session_metrics.count("tests_weakened")
+            record_audit_event(session_dir, "tests_weakened", "; ".join(test_findings), session_metrics)
+            if args.test_guard == "strict":
+                say("❌ Testwächter (strict): Fertigmeldung zurückgewiesen.")
+                reject_done(note)
+                return "retry"
+            proof_note += "\n\n" + note
         if inspector is None:
             return "finished"
         if inspections_used >= max(1, args.max_inspections):

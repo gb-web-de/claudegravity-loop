@@ -77,6 +77,18 @@ Der Bauleiter meldet mit `.done`, dass er fertig ist. Fertig **ist** die Aufgabe
 
 Weist eines davon die Meldung zurück, löscht ClaudeGravity `.done` und gibt die Befunde in der nächsten Runde an den Bauleiter. Jede Abnahme steht als `INSPECTION_roundN.md` im Session-Ordner und in `LOG.md`. Ohne Git bekommt die Abnahme keinen Diff und liest die im Plan genannten Dateien selbst. Wie du die Tests absicherst, steht in [Tests](tests.md).
 
+### Testwächter
+
+Ein grüner Prüfbefehl beweist wenig, wenn der Bauleiter vorher die Tests abgeschwächt hat. Nach jedem grünen `--proof` vergleicht ClaudeGravity die Testdateien mit dem Basis-Commit und sucht nach gelöschten Testdateien, neuen Skip- oder Only-Markern (`@unittest.skip`, `pytest.mark.skip/xfail`, `it.skip`, `describe.only`, `xit`, `markTestSkipped`, `@Disabled`, `t.Skip` …) sowie nach weniger Testfällen oder Prüfungen als vorher. Funde erscheinen im Terminal, als Audit-Ereignis CG-1504 in `LOG.md` und `audit-events.jsonl` und im Kennzahlen-Zähler `tests_weakened`.
+
+| `--test-guard` | Verhalten |
+| :--- | :--- |
+| `warn` (Standard) | Die Funde gehen mit in den Abnahme-Prompt; die Abnahme entscheidet, ob die Änderung begründet ist. |
+| `strict` | Die Fertigmeldung wird sofort zurückgewiesen, der Bauleiter bekommt die Funde als Rückmeldung. |
+| `off` | Keine Prüfung. |
+
+Ohne Git-Basis-Commit (kein Repository) prüft der Wächter nichts.
+
 ## Nützliche Flags für Phase 3
 
 | Flag | Wirkung |

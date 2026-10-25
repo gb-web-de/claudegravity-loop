@@ -134,6 +134,10 @@ Ein Modell wollte außerhalb des Projekts oder in eine Geheimnis-Datei schreiben
 **CG-1503 · Mögliche Zugangsdaten in einer Modellantwort**  
 Antwort prüfen; Zugangsdaten nur über Umgebungsvariablen nutzen und kompromittierte Schlüssel erneuern.
 
+<a id="cg-1504"></a>
+**CG-1504 · Tests abgeschwächt oder entfernt**  
+Diff der Testdateien prüfen. Ist die Änderung nicht gewollt, Tests wiederherstellen; mit --test-guard strict weist der Loop solche Fertigmeldungen selbst zurück.
+
 <a id="cg-1999"></a>
 **CG-1999 · Unerwarteter Fehler**  
 Bitte mit der vollständigen Ausgabe als Issue melden.

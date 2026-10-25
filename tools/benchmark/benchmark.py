@@ -190,8 +190,10 @@ def run_one(
         "-d",
         "0",
     ]
+    # Wegwerf-Ordner: direkt darin bauen, damit die Original-Tests das Ergebnis sehen (nicht einen Worktree-Branch)
+    cmd.append("--no-worktree")
     if fake_url:
-        cmd += fake_args(fake_url) + ["--no-worktree"]
+        cmd += fake_args(fake_url)
     cmd += extra
     env = fake_env(tmp) if fake_url else None
     started = time.monotonic()

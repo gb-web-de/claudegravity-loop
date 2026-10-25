@@ -69,6 +69,78 @@ def collect_build_changes(work_path: Path, base: str | None, limit: int = 60000)
     return text
 
 
+# ==========================================
+# Testwächter: geschönte Tests erkennen
+# ==========================================
+TEST_PATH = re.compile(
+    r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[jt]sx?$|Tests?\.(php|java|cs|kt)$"
+)
+SKIP_MARKER = re.compile(
+    r"@unittest\.skip|\bskipTest\(|pytest\.mark\.(skip|xfail)|pytest\.skip\(|@pytest\.mark\.skip"
+    r"|\b(it|test|describe)\.(skip|only|todo)\(|\bx(it|describe|test)\(|\bfit\(|\bfdescribe\("
+    r"|markTestSkipped|markTestIncomplete|@Ignore\b|@Disabled\b|\bt\.Skip\(|#\[ignore\]"
+)
+ASSERTION = re.compile(r"\bassert|\bexpect\(|\bshould\b|\bverify\(|\$this->assert|\bAssert\.")
+TEST_CASE = re.compile(r"^\s*(async\s+)?def test|^\s*(it|test)\(|^\s*public function test|^\s*func Test|^\s*@Test\b")
+
+
+def test_integrity_findings(work_path: Path, base: str | None) -> list[str]:
+    """Hinweise auf geschönte Tests seit dem Basis-Commit: gelöschte Testdateien, neue Skip-/Only-Marker,
+    weniger Testfälle oder Prüfungen. Leere Liste, wenn nichts auffällt oder kein Git-Stand da ist."""
+    if not base:
+        return []
+    findings: list[str] = []
+    status = _git(work_path, "diff", "--no-ext-diff", "--name-status", base, "--").stdout
+    for line in status.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[0].startswith("D") and TEST_PATH.search(parts[1]):
+            findings.append(f"Testdatei gelöscht: {parts[1]}")
+    diff = _git(work_path, "diff", "--no-ext-diff", "--no-color", "-U0", base, "--").stdout
+    per_file: dict[str, dict[str, int]] = {}
+    current = None
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            name = line[4:].removeprefix("b/")
+            current = name if name != "/dev/null" and TEST_PATH.search(name) else None
+            continue
+        if line.startswith("--- ") and current is None:
+            # gelöschte Dateien haben +++ /dev/null; dann zählt der alte Name
+            name = line[4:].removeprefix("a/")
+            current = name if name != "/dev/null" and TEST_PATH.search(name) else None
+            continue
+        if current is None or not line or line[0] not in "+-" or line.startswith(("+++", "---")):
+            continue
+        counts = per_file.setdefault(current, {"skip": 0, "assert": 0, "cases": 0})
+        sign = 1 if line[0] == "+" else -1
+        body = line[1:]
+        if sign > 0 and SKIP_MARKER.search(body):
+            counts["skip"] += 1
+        if ASSERTION.search(body):
+            counts["assert"] += sign
+        if TEST_CASE.search(body):
+            counts["cases"] += sign
+    for name, counts in sorted(per_file.items()):
+        if counts["skip"]:
+            findings.append(f"{name}: {counts['skip']} neue(r) Skip-/Only-Marker")
+        if counts["cases"] < 0:
+            findings.append(f"{name}: {-counts['cases']} Testfall/Testfälle weniger")
+        if counts["assert"] < 0:
+            findings.append(f"{name}: {-counts['assert']} Prüfung(en) weniger")
+    seen: set[str] = set()
+    return [f for f in findings if not (f in seen or seen.add(f))]
+
+
+def format_test_findings(findings: list[str]) -> str:
+    """Hinweisblock für Abnahme und Bauleiter."""
+    lines = "\n".join(f"- {f}" for f in findings)
+    return (
+        "⚠️ Testwächter des Loops: Seit Baubeginn wurden Tests abgeschwächt oder entfernt:\n"
+        f"{lines}\n"
+        "Das ist nur zulässig, wenn der Plan es ausdrücklich verlangt (z. B. ein veralteter Test). Sonst gilt die "
+        "Umsetzung als nicht fertig: Tests wiederherstellen und den Code reparieren."
+    )
+
+
 STAGE_HEADING = re.compile(r"^#{1,6}\s*(?:\d+[.)]?\s*)?(?:Etappen|Stages|Arbeitspakete)\b.*$", re.IGNORECASE | re.MULTILINE)
 STAGE_ITEM = re.compile(r"^\s{0,3}(?:\d+[.)]|[-*]\s+(?:Etappe|Stage)\s*\d+[:.)]?)\s+(.+)$")
 FILE_MENTION = re.compile(r"`?((?:[\w.-]+/)*[\w-]+\.[A-Za-z0-9]{1,8})`?")

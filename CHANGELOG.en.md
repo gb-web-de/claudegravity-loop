@@ -8,6 +8,8 @@
 - `tools/realrun.py`: checks every installed backend with real models (answer, read-only mode holds, `--resume` continues the session, with `--full` a complete run as Builder).
 - Benchmark with ten tasks; a run only counts if the unchanged original tests are green. `--baseline <cli>` compares with a single CLI without the loop, plus `--repeat` and `--tasks-dir`.
 - `claudegravity --version`.
+- Test guard (`--test-guard warn|strict|off`): after a green proof command it detects deleted test files, new skip/only markers and fewer test cases or assertions; audit CG-1504.
+- The benchmark builds directly in the throwaway folder (`--no-worktree`) so the original tests see the result.
 
 ### Changed
 - Copilot runs via the new Copilot CLI (`copilot -s`, prompt via stdin, own session with `--resume`, read-only mode via `--deny-tool`) and is a full Builder. `gh copilot suggest` is no longer supported.

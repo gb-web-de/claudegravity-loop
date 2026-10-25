@@ -77,6 +77,18 @@ The Builder signals with `.done` that it is finished. The task **is** only finis
 
 If either of them rejects the signal, ClaudeGravity deletes `.done` and passes the findings to the Builder in the next round. Every acceptance check is stored as `INSPECTION_roundN.md` in the session folder and in `LOG.md`. Without Git, the acceptance check gets no diff and reads the files named in the plan itself. How to safeguard the tests is described in [Tests](tests.md).
 
+### Test guard
+
+A green proof command proves little if the Builder weakened the tests beforehand. After every green `--proof`, ClaudeGravity compares the test files with the base commit and looks for deleted test files, new skip or only markers (`@unittest.skip`, `pytest.mark.skip/xfail`, `it.skip`, `describe.only`, `xit`, `markTestSkipped`, `@Disabled`, `t.Skip` …) and for fewer test cases or assertions than before. Findings appear in the terminal, as audit event CG-1504 in `LOG.md` and `audit-events.jsonl`, and in the key figure counter `tests_weakened`.
+
+| `--test-guard` | Behaviour |
+| :--- | :--- |
+| `warn` (default) | The findings go into the acceptance prompt; the acceptance check decides whether the change is justified. |
+| `strict` | The completion report is rejected right away, the Builder gets the findings as feedback. |
+| `off` | No check. |
+
+Without a Git base commit (no repository) the guard checks nothing.
+
 ## Useful flags for phase 3
 
 | Flag | Effect |
