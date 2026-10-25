@@ -162,6 +162,6 @@ A timeout on a local model is not retried, because a second attempt takes just a
 These points reflect the current state of the code:
 
 * **Effort only for Antigravity and Codex:** `--effort` and the role-specific effort flags are passed to `agy` and `codex`. For other CLIs they only appear in the audit report.
-* **Resuming the reviewer session only with Claude:** From review round 2 on, only a Claude reviewer receives the plan diff instead of the whole plan. Other reviewers receive the full plan.
+* **Resuming the reviewer session only with Claude, Codex and Copilot:** From review round 2 on, these reviewers only receive the plan diff in their continued session. Other reviewers (agy, Gemini, endpoints) receive the full plan.
 * **Copilot:** Runs via the Copilot CLI (`npm install -g @github/copilot`, then `copilot login`). The old `gh copilot suggest` extension is no longer supported. Tokens are estimated because the CLI reports no usage in text mode.
 * **Cost detection for endpoints:** `localhost`, private IPs and hostnames on the home network (without a dot or ending in `.local`, `.lan`, `.fritz.box`, `.home.arpa`, `.internal`) count as free. An intranet server with a public domain name appears in the audit as "API".

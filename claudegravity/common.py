@@ -257,6 +257,8 @@ def extract_flag_value(flags: list[str] | None, flag_name: str) -> str | None:
 
 
 # Backends ohne eigenen Dateizugriff: Der Loop schreibt ihre filepath-Blöcke und gibt ihnen Plan und Dateistand mit
+# CLIs, deren Sitzung der Loop fortsetzen kann (Prüfstatiker ab Runde 2, Bauleiter ab Bau-Runde 2)
+RESUMABLE_CLIS = ("claude", "codex", "copilot", "gh")
 ENDPOINT_BINARIES = ("endpoint", "ollama", "lmstudio", "architekt_ep", "pruefstatiker_ep", "bauer_ep")
 CLOUD_PLANNER_ORDER = ("codex", "claude", "agy", "gemini")
 LOCAL_BACKEND_ORDER = ("bauer_ep", "ollama", "lmstudio", "endpoint", "ollama-cli")

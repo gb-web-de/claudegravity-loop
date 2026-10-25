@@ -417,3 +417,25 @@ class ReviewResumeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlanConvergenceTest(unittest.TestCase):
+    def write_review(self, folder, rnd, text):
+        (folder / f"REVIEW_round{rnd}.md").write_text(text, encoding="utf-8")
+
+    def test_only_medium_left_after_limit_counts_as_converged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self.assertIsNone(loop.converged_findings(folder))
+            self.write_review(folder, 1, "BEFUNDE:\n- [HOCH] a: kaputt -> fix\nVERDICT: REVISE")
+            self.write_review(folder, 10, "BEFUNDE:\n- [MITTEL] b: Rundung -> Test\n- [NIEDRIG] c: Stil\nVERDICT: REVISE")
+            self.assertEqual(loop.converged_findings(folder), "- [MITTEL] b: Rundung -> Test\n- [NIEDRIG] c: Stil")
+
+    def test_high_blocked_or_unreadable_never_converges(self):
+        for text in ("BEFUNDE:\n- [HOCH] a: x -> y\nVERDICT: REVISE", "BEFUNDE:\n- [MITTEL] a: x\nVERDICT: BLOCKED", "Kein Urteil"):
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as tmp:
+                self.write_review(Path(tmp), 2, text)
+                self.assertIsNone(loop.converged_findings(Path(tmp)))
+
+    def test_reviewer_resume_covers_codex_and_copilot(self):
+        self.assertTrue({"claude", "codex", "copilot"} <= set(loop.RESUMABLE_CLIS))

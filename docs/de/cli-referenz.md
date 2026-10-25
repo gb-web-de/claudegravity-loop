@@ -43,7 +43,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `--print-effective-config` | `--config` | Wirksame Einstellungen mit Quelle (Kommandozeile, Session, Umgebung, Profil, Standard) anzeigen und beenden. Siehe [Vorrang der Einstellungen](#vorrang-der-einstellungen). | aus |
 | `--builder-fresh` | `--bauer-neu` | Bauleiter jede Runde in neuer Sitzung starten. Ohne das Flag setzen `claude` und `codex` ihre Sitzung fort und bekommen nur Rückmeldung und nächsten Schritt. Siehe [Bau-Loop](bau-loop.md#bauleiter-sitzung-fortsetzen). | aus |
 | `--etappen <modus>` | `--stages` | `auto`, `an`, `aus`. Der Architekt schneidet den Plan in Etappen, der Bauleiter setzt sie einzeln um, der Loop prüft jede mit `--proof`. `auto` schaltet den Modus für Bauleiter ohne eigenen Dateizugriff ein (Ollama, LM Studio, Endpunkte). Siehe [Bau-Loop](bau-loop.md#etappen-modus). | `auto` |
-| `--plan-auto` | `--approve-plan` | Plan ohne Freigabe-Menü übernehmen, sobald der Prüfstatiker `APPROVED` meldet. Meldet er das nicht, wird nicht gebaut. Für Läufe ohne Terminal. | aus |
+| `--plan-auto` | `--approve-plan` | Plan ohne Freigabe-Menü übernehmen, sobald der Prüfstatiker `APPROVED` meldet. Endet das Review am Rundenlimit nur noch mit MITTEL- oder NIEDRIG-Befunden, wird ebenfalls gebaut, und der Bauleiter bekommt diese Befunde als Hinweise. Bei einem offenen HOCH-Befund, `BLOCKED` oder ohne lesbares Urteil wird nicht gebaut. Für Läufe ohne Terminal. | aus |
 
 ## Rollen
 

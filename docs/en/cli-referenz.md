@@ -43,7 +43,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `--print-effective-config` | `--config` | Show the effective settings with their source (command line, session, environment, profile, default) and exit. See [Settings precedence](#settings-precedence). | off |
 | `--builder-fresh` | `--bauer-neu` | Start the Builder in a new session every round. Without the flag, `claude` and `codex` continue their session and only get the feedback and the next step. See [Build loop](bau-loop.md#continuing-the-builder-session). | off |
 | `--etappen <mode>` | `--stages` | `auto`, `an` (on), `aus` (off); `on`/`off` work too. The Architect cuts the plan into stages, the Builder implements them one by one, the loop checks each with `--proof`. `auto` turns the mode on for Builders without their own file access (Ollama, LM Studio, endpoints). See [Build loop](bau-loop.md#stage-mode). | `auto` |
-| `--plan-auto` | `--approve-plan` | Accept the plan without the approval menu as soon as the Reviewer reports `APPROVED`. If it does not, nothing is built. For runs without a terminal. | off |
+| `--plan-auto` | `--approve-plan` | Accept the plan without the approval menu as soon as the Reviewer reports `APPROVED`. If the review ends at the round limit with only MEDIUM or LOW findings, it is built as well, and the Builder gets these findings as hints. With an open HIGH finding, `BLOCKED` or no readable verdict nothing is built. For runs without a terminal. | off |
 
 ## Roles
 

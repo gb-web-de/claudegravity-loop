@@ -13,6 +13,8 @@
 - Der Benchmark baut direkt im Wegwerf-Ordner (`--no-worktree`), damit die Original-Tests das Ergebnis sehen.
 
 ### Geändert
+- Prüfstatiker bewertet verhältnismäßig: HOCH/MITTEL nur, wenn der Plan die Aufgabe verfehlt, Daten beschädigt oder eine Sicherheitslücke öffnet. Mit `--plan-auto` wird nach dem Rundenlimit auch gebaut, wenn nur MITTEL/NIEDRIG offen sind (Befunde gehen an den Bauleiter). Im ersten echten Benchmark scheiterte `csv-report` daran, dass der Prüfstatiker zweimal Härtung außerhalb der Aufgabe verlangte.
+- Prüfer-Sitzung ab Runde 2 fortsetzen jetzt auch bei Codex und Copilot (nur Plan-Diff statt ganzem Plan).
 - Copilot läuft über die neue Copilot CLI (`copilot -s`, Prompt über stdin, eigene Sitzung mit `--resume`, Lesemodus über `--deny-tool`) und ist ein vollwertiger Bauleiter. `gh copilot suggest` wird nicht mehr unterstützt.
 
 ### Behoben

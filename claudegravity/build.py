@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .common import say
+from .common import RESUMABLE_CLIS, say
 from .safety import apply_code_blocks, apply_edit_blocks, mask_secrets, resolve_project_target
 from .backends import AgentCLI, build_cli_command
 from .session import (
@@ -318,7 +318,7 @@ def compose_resume_prompt(
 
 
 # Bauleiter-CLIs, deren Sitzung der Loop über Bau-Runden fortsetzen kann (spart das erneute Einlesen des Projekts)
-RESUMABLE_BUILDERS = {"claude", "codex", "copilot", "gh"}
+RESUMABLE_BUILDERS = set(RESUMABLE_CLIS)
 
 
 def builder_resume_flags(builder: "AgentCLI", enabled: bool = True) -> list[str]:

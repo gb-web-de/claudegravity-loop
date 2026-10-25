@@ -13,6 +13,8 @@
 - The benchmark builds directly in the throwaway folder (`--no-worktree`) so the original tests see the result.
 
 ### Changed
+- The Reviewer judges proportionately: HIGH/MEDIUM only if the plan misses the task, corrupts data or opens a security hole. With `--plan-auto` the plan is also built after the round limit if only MEDIUM/LOW findings are open (findings go to the Builder). In the first real benchmark `csv-report` failed because the Reviewer twice demanded hardening outside the task.
+- Reviewer session continued from round 2 now also for Codex and Copilot (plan diff only instead of the full plan).
 - Copilot runs via the new Copilot CLI (`copilot -s`, prompt via stdin, own session with `--resume`, read-only mode via `--deny-tool`) and is a full Builder. `gh copilot suggest` is no longer supported.
 
 ### Fixed

@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import dataclasses
+import re
 import datetime
 import sys
 import time
@@ -20,6 +21,7 @@ from .session import (
     check_and_clean_done_marker,
     find_latest_session,
     findings_digest,
+    parse_review,
     get_permission_flags,
     get_readonly_flags,
     is_git_repo,
@@ -422,6 +424,18 @@ def print_run_banner(run: "RunContext") -> None:
     say("=======================================================\n")
 
 
+def converged_findings(session_dir: Path) -> str | None:
+    """Befunde des letzten Plan-Reviews, wenn es nur noch MITTEL/NIEDRIG enthält und ein echtes REVISE ist; sonst None."""
+    reviews = sorted(session_dir.glob("REVIEW_round*.md"), key=lambda p: int(re.sub(r"\D", "", p.stem) or 0))
+    if not reviews:
+        return None
+    text = reviews[-1].read_text(encoding="utf-8", errors="replace")
+    parsed = parse_review(text)
+    if parsed["verdict"] != "REVISE" or not parsed["findings"] or any(f["severity"] == "high" for f in parsed["findings"]):
+        return None
+    return findings_digest(text)
+
+
 def run_plan_phase(run: "RunContext") -> bool:
     """Phase 1 und 2: Plan entwerfen, unabhängig prüfen und freigeben. False, wenn nicht gebaut werden soll."""
     args, agents, project_path, session_dir, state, task = run.args, run.agents, run.project_path, run.session_dir, run.state, run.task
@@ -462,6 +476,15 @@ def run_plan_phase(run: "RunContext") -> bool:
         if args.approve_plan or state.get("approve_plan"):
             # Freigabe ohne Terminal: nur ein vom Prüfstatiker genehmigter Plan wird gebaut
             state["approve_plan"] = True
+            open_findings = converged_findings(session_dir) if not review_ok else None
+            if open_findings is not None:
+                # Rundenlimit erreicht, aber nur MITTEL/NIEDRIG offen: bauen und die Befunde dem Bauleiter mitgeben
+                say(f"✅ {plan_file.name}: Rundenlimit erreicht, kein HOCH-Befund offen. Gebaut wird mit den Hinweisen des Prüfstatikers.")
+                append_log(session_dir, f"{plan_file.name} nach Rundenlimit ohne HOCH-Befund freigegeben (--plan-auto)")
+                state["pending_feedback"] = (
+                    "Offene Hinweise aus dem Plan-Review (berücksichtigen, soweit für die Aufgabe nötig):\n" + open_findings
+                )
+                review_ok = True
             if not review_ok:
                 say(f"🛑 Der Prüfstatiker hat {plan_file.name} nicht freigegeben. Ohne Rückfrage (--plan-auto) wird nicht gebaut.")
                 append_log(session_dir, "Plan nicht freigegeben, Bau mit --plan-auto nicht gestartet")
