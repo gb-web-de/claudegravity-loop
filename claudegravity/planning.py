@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from .common import SETTINGS, planning_directive, say
-from .backends import AgentCLI, DEFAULT_MODEL_LABEL, describe_agent
+from .backends import AgentCLI, describe_agent, model_flags
 from .session import (
     REVIEW_FORMAT,
     append_log,
@@ -433,14 +433,8 @@ def handle_plan_approval_and_changes(
 
             planner_flags = get_readonly_flags(planner.binary)
             reviewer_flags = get_readonly_flags(reviewer.binary)
-            if planner.model and planner.model != DEFAULT_MODEL_LABEL:
-                planner_flags.extend(["--model", planner.model])
-            if planner.effort and planner.binary in ("agy", "codex"):
-                planner_flags.extend(["--effort", planner.effort])
-            if reviewer.model and reviewer.model != DEFAULT_MODEL_LABEL:
-                reviewer_flags.extend(["--model", reviewer.model])
-            if reviewer.effort and reviewer.binary in ("agy", "codex"):
-                reviewer_flags.extend(["--effort", reviewer.effort])
+            planner_flags.extend(model_flags(planner.binary, planner.model, planner.effort))
+            reviewer_flags.extend(model_flags(reviewer.binary, reviewer.model, reviewer.effort))
 
             state["swap_roles"] = True
             state["planner_binary"] = planner.binary

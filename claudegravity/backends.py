@@ -70,10 +70,8 @@ class AgentCLI:
                 self.session_id = metrics["session_id"]
             used_model = metrics.get("model") or extract_flag_value(extra_flags, "--model") or self.model
             used_effort = metrics.get("effort") or extract_flag_value(extra_flags, "--effort") or self.effort
-            if used_model:
-                self.model = used_model
-            if used_effort:
-                self.effort = used_effort
+            # self.model und self.effort bleiben die gewählten Werte: Gemeldete Namen oder Anzeigetexte
+            # wie „high (123 thinking tokens)“ dürfen nicht als --model/--effort in spätere Aufrufe wandern.
             if self.metrics_tracker:
                 self.metrics_tracker.add(
                     agent_name=self.name,
@@ -117,6 +115,56 @@ def create_agent(
 
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 DEFAULT_MODEL_LABEL = "CLI-Default"
+
+
+# Anzeigetexte für „nichts gewählt“; sie gehen nie als Flag an eine CLI
+_PLACEHOLDER_MARKERS = ("cli-default", "cli default", "(standard)", "thinking tokens", "nur für agy/codex")
+AGY_EFFORT_NAMES = {"low": "Low", "medium": "Medium", "high": "High", "xhigh": "High", "max": "High"}
+
+
+def is_placeholder_value(value: str | None) -> bool:
+    """True für leere Werte und Anzeigetexte wie „CLI-Default“, die kein echtes Modell oder Effort sind."""
+    if value is None or not str(value).strip():
+        return True
+    text = str(value).strip().lower()
+    return text in ("default", DEFAULT_MODEL_LABEL.lower()) or any(m in text for m in _PLACEHOLDER_MARKERS)
+
+
+def agy_model_name(model: str, effort: str | None = None) -> str:
+    """Modellname im Format der Antigravity CLI ab 1.4, z.B. gemini-3.8-flash + low → „Gemini 3.8 Flash (Low)“.
+
+    Namen mit Großbuchstaben oder Leerzeichen gelten als schon passend und bleiben unverändert."""
+    model = model.strip()
+    if model != model.lower() or " " in model:
+        return model
+    words = []
+    if model.startswith("gpt-oss"):
+        words.append("GPT-OSS")
+        model = model[len("gpt-oss") :]
+    for part in model.split("-"):
+        if not part:
+            continue
+        if part == "gpt" or (any(c.isdigit() for c in part) and any(c.isalpha() for c in part)):
+            words.append(part.upper())
+        else:
+            words.append(part[:1].upper() + part[1:])
+    level = AGY_EFFORT_NAMES.get((effort or "").strip().lower(), "Medium")
+    return f"{' '.join(words)} ({level})"
+
+
+def model_flags(binary: str, model: str | None, effort: str | None) -> list[str]:
+    """--model/--effort für eine CLI; lässt Platzhalter („CLI-Default“) und leere Werte weg.
+
+    Bei agy steckt der Effort im Modellnamen („Gemini 3.8 Flash (High)“), --effort kommt dann nicht dazu."""
+    flags: list[str] = []
+    has_model = not is_placeholder_value(model)
+    has_effort = not is_placeholder_value(effort) and binary in ("agy", "codex")
+    if has_model:
+        name = agy_model_name(str(model), effort if has_effort else None) if binary == "agy" else str(model).strip()
+        flags += ["--model", name]
+    if has_effort and not (binary == "agy" and has_model):
+        flags += ["--effort", str(effort).strip()]
+    return flags
 
 
 def effort_label(binary: str, effort: str | None) -> str | None:
@@ -288,13 +336,95 @@ def _exec_claude(binary: str, prompt: str, cwd: Path | None = None, extra_flags:
         }
 
 
+# Von agy gemeldete Modelle je Programm, damit nach einem Fehlgriff alle weiteren Aufrufe passen
+_AGY_AVAILABLE_MODELS: dict[str, list[str]] = {}
+
+
+def parse_agy_available_models(message: str) -> list[str]:
+    """Liest die Liste unter „Available models:“ aus einer Fehlermeldung der Antigravity CLI."""
+    lines = message.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().lower().startswith("available models"):
+            models = []
+            for entry in lines[i + 1 :]:
+                if not entry.strip() or not entry[:1].isspace():
+                    break
+                models.append(entry.strip())
+            return models
+    return []
+
+
+def _model_key(name: str) -> tuple[str, str]:
+    """Vergleichsschlüssel (Basisname ohne Sonderzeichen, Effort-Stufe) für agy-Modellnamen."""
+    match = re.match(r"^(.*?)\s*\(([^)]*)\)\s*$", name)
+    base, level = (match.group(1), match.group(2)) if match else (name, "")
+    return re.sub(r"[^a-z0-9]", "", base.lower()), level.strip().lower()
+
+
+def match_agy_model(requested: str, effort: str | None, available: list[str]) -> str | None:
+    """Passender Eintrag aus der agy-Modellliste: gleicher Basisname, bevorzugt gleiche Effort-Stufe, sonst Medium."""
+    base, level = _model_key(requested)
+    wanted = AGY_EFFORT_NAMES.get((effort or "").strip().lower(), "").lower() or (level if level in ("low", "medium", "high") else "")
+    candidates = [m for m in available if _model_key(m)[0] == base]
+    for target in (wanted, "medium"):
+        for m in candidates:
+            if target and _model_key(m)[1] == target:
+                return m
+    return candidates[0] if candidates else None
+
+
+def _strip_model_flags(flags: list[str]) -> list[str]:
+    """Flag-Liste ohne --model/--effort samt Werten."""
+    out: list[str] = []
+    skip = False
+    for f in flags:
+        if skip:
+            skip = False
+            continue
+        if f in ("--model", "--effort"):
+            skip = True
+            continue
+        if f.startswith(("--model=", "--effort=")):
+            continue
+        out.append(f)
+    return out
+
+
+def _resolve_agy_flags(binary: str, flags: list[str], available: list[str]) -> list[str] | None:
+    """Ersetzt ein unbekanntes --model durch den passenden Namen aus der agy-Liste; ohne Treffer gilt der CLI-Default.
+
+    Liefert None, wenn sich nichts ändern würde."""
+    requested = extract_flag_value(flags, "--model")
+    effort = extract_flag_value(flags, "--effort")
+    if requested and requested in available:
+        return None
+    base = _strip_model_flags(flags)
+    match = match_agy_model(requested, effort, available) if requested else None
+    if match:
+        say(f"ℹ️  agy kennt das Modell „{requested}“ nicht, nehme „{match}“.")
+        return base + ["--model", match]
+    if requested or effort is not None:
+        say(f"⚠️  agy kennt das Modell „{requested}“ nicht, nutze das Standardmodell der CLI. Verfügbar: {', '.join(available)}")
+        return base
+    return None
+
+
 def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: list[str] | None = None) -> tuple[str, dict]:
-    args = ["-p", prompt, "--output-format", "json"]
-    if extra_flags:
-        for f in extra_flags:
-            if f not in ["--output-format", "json", "text"]:
-                args.append(f)
-    raw = _exec_cli(binary, args, cwd)
+    flags = [f for f in (extra_flags or []) if f not in ["--output-format", "json", "text"]]
+    if binary in _AGY_AVAILABLE_MODELS:
+        flags = _resolve_agy_flags(binary, flags, _AGY_AVAILABLE_MODELS[binary]) or flags
+    try:
+        raw = _exec_cli(binary, ["-p", prompt, "--output-format", "json", *flags], cwd)
+    except RuntimeError as ex:
+        # agy ab 1.4 erwartet Namen wie „Gemini 3.8 Flash (Medium)“ und nennt bei einem Fehlgriff die gültigen
+        available = parse_agy_available_models(str(ex))
+        retry = _resolve_agy_flags(binary, flags, available) if available else None
+        if retry is None:
+            raise
+        _AGY_AVAILABLE_MODELS[binary] = available
+        flags = retry
+        raw = _exec_cli(binary, ["-p", prompt, "--output-format", "json", *flags], cwd)
+    extra_flags = flags
     try:
         data = json.loads(raw)
         if not isinstance(data, dict):
@@ -313,7 +443,7 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
         out = usage.get("output_tokens") or 0
         tot = usage.get("total_tokens") or (inp + out)
 
-        model_name = extract_flag_value(extra_flags, "--model") or data.get("model") or "gemini-3.8-flash (CLI-Default)"
+        model_name = extract_flag_value(extra_flags, "--model") or data.get("model") or DEFAULT_MODEL_LABEL
         effort_val = extract_flag_value(extra_flags, "--effort")
         if not effort_val and (usage.get("thinking_tokens") or 0) > 0:
             effort_val = f"high ({usage['thinking_tokens']} thinking tokens)"
@@ -324,21 +454,21 @@ def _exec_agy(binary: str, prompt: str, cwd: Path | None = None, extra_flags: li
             "total_tokens": tot,
             "cost_usd": 0.0,
             "model": model_name,
-            "reported_model": model_name,
+            "reported_model": data.get("model") or extract_flag_value(extra_flags, "--model"),
             "effort": effort_val,
         }
         if data.get("conversation_id"):
             metrics["session_id"] = str(data["conversation_id"])
         return text, metrics
     except json.JSONDecodeError:
-        model_fallback = extract_flag_value(extra_flags, "--model") or "gemini-3.8-flash (CLI-Default)"
+        model_fallback = extract_flag_value(extra_flags, "--model") or DEFAULT_MODEL_LABEL
         return raw, {
             "input_tokens": len(prompt) // 4,
             "output_tokens": len(raw) // 4,
             "total_tokens": (len(prompt) + len(raw)) // 4,
             "cost_usd": 0.0,
             "model": model_fallback,
-            "reported_model": model_fallback,
+            "reported_model": extract_flag_value(extra_flags, "--model"),
             "effort": extract_flag_value(extra_flags, "--effort"),
         }
 
@@ -766,4 +896,3 @@ def check_cli_auth(binary: str) -> tuple[bool, str]:
     except (subprocess.TimeoutExpired, OSError, Exception):
         return False, "nicht erreichbar"
     return True, "bereit"
-

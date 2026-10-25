@@ -96,6 +96,7 @@ Anderes Modell wählen; sehr kleine Modelle halten das Antwortformat oft nicht e
 <a id="cg-1206"></a>
 **CG-1206 · KI-CLI meldet einen Fehler**  
 Die CLI einmal von Hand im Terminal starten und ihre Meldung lesen; oft fehlt die Anmeldung oder ein Update.
+Meldet `agy` „invalid model selection“, siehe [Modellnamen bei Antigravity](backends.md#modellnamen-bei-antigravity-agy).
 
 <a id="cg-1301"></a>
 **CG-1301 · Ratenlimit erreicht**  
