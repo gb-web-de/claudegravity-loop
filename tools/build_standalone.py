@@ -167,7 +167,9 @@ def smoke(binary: Path) -> None:
         if version != f"claudegravity {__version__}":
             raise SystemExit(f"[!] Version: {version!r} statt claudegravity {__version__}")
         run([str(binary), "--help"], env=env)
-        dry = run([str(binary), "Hallo Welt ausgeben", "-p", str(project), "--strategy", "local-free", "--dry-run"], env=env, cwd=tmp)
+        # Eigener Endpunkt (nicht erreichbar), damit der Trockenlauf ohne installierte KI-CLIs eine Belegung hat
+        endpoint = "http://127.0.0.1:9/v1"
+        dry = run([str(binary), "Hallo Welt ausgeben", "-p", str(project), "--endpoint", endpoint, "--dry-run"], env=env, cwd=tmp)
         if "claudegravity" not in dry.stdout:
             raise SystemExit(f"[!] Trockenlauf ohne Befehl:\n{dry.stdout[-2000:]}")
         mcp_handshake([str(binary), "mcp"], env)
