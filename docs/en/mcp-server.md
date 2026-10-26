@@ -8,6 +8,15 @@
 
 **Even simpler:** as a [plugin](plugins.md), Claude Code, Codex, Antigravity, Copilot CLI, Cursor and Gemini CLI get the server plus skill and commands with one command.
 
+### Claude Desktop: one-click extension
+
+For Claude Desktop the server comes as an extension (`.mcpb`, MCP Bundle): download the file, double-click it or drag it into *Settings → Extensions*, done. No clone, no installer, no JSON file.
+
+* **Download:** from the [release](https://github.com/gb-web-de/claudegravity-loop/releases) as `claudegravity-<version>.mcpb`, until then from the CI run on `main` (artifact `claudegravity-mcpb`), or build it yourself: `python tools/build_mcpb.py` puts it in `dist/`.
+* **Settings** in Claude Desktop (all optional): default project (`CLAUDEGRAVITY_PROJECT`), your own endpoint and its API key (stored protected), notification (default `desktop`: a notification when a background run is done, see [Live view](live-ansicht.md)), language and the path to Python.
+* **Python 3.10+ is required.** On macOS and Linux the extension looks for it itself (Homebrew, `/usr/local/bin`, `~/.local/bin`, pyenv, PATH, finally `uv run`); it skips the old `/usr/bin/python3` (3.9). If it finds none, set the path in the settings. On Windows it starts via the Python launcher `py` (included with the python.org installer).
+* You still need the AI CLIs (`codex`, `gemini`, `copilot`, `ollama` …) on the machine; the server finds them even without a shell PATH (see [Desktop apps](#desktop-apps-claude-desktop-cursor-)). From Claude Desktop, `claude` plans if the Claude Code CLI is installed.
+
 ### Easiest: the installer
 
 ```bash

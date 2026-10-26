@@ -16,6 +16,7 @@
 - Vom Issue zum Pull Request: `--from-issue 12` (auch `owner/repo#12` oder URL) nimmt Titel, Text und Kommentare als Aufgabe, `--open-pr`/`--pr-draft` pusht nach erfolgreicher Abnahme den Session-Branch und öffnet einen Pull Request mit `Closes #12`, Rollen, Kennzahlen und Plan. Über `gh` oder die REST-API (`GH_TOKEN`), Fehlercodes CG-1601/CG-1602. Das Repository ist dazu eine GitHub Action (`uses: gb-web-de/claudegravity-loop@main`), die ein Label oder `/claudegravity` startet; der MCP-Server kennt `issue` und `open_pr`.
 - Sandbox (`--sandbox an|docker|podman`, `--sandbox-image`, `--sandbox-net`): Prüfbefehl und CLI-Bauleiter laufen in einem frischen Container mit deiner Benutzer-ID, ohne Capabilities und mit Grenzen; der Prüfbefehl ohne Netz, der Bauleiter sieht nur Arbeits- und Session-Ordner und die Anmeldedaten seiner eigenen CLI. `sandbox/Dockerfile` bringt die KI-CLIs mit. Fehlercodes CG-1701/CG-1702; nicht aus dem Projekt-Profil.
 - Live-Ansicht und Benachrichtigungen: `--watch` (oder `claudegravity watch` ohne Lauf) zeigt im Browser Phase, aktuelle Rolle, Runde, Tokens, Kosten, geänderte Dateien, Diff und Log, nur auf `127.0.0.1` mit Token. `--notify desktop,bell,ntfy:<thema>,webhook:<url>` meldet, wenn eine Rückfrage 20 s offen ist und wenn der Lauf fertig ist oder abbricht. Neue Datei `live.json` im Session-Ordner, Ereignisse `call_start`/`proof_start`; der MCP-Server kennt `notify` und `watch`.
+- Claude-Desktop-Erweiterung `claudegravity-<version>.mcpb` (MCP Bundle): Doppelklick installiert den MCP-Server samt Einstellungen für Projekt, Endpunkt, API-Schlüssel, Benachrichtigung, Sprache und Python. `tools/build_mcpb.py` baut sie reproduzierbar, CI prüft das Manifest mit `mcpb validate`, ein Versions-Tag hängt sie ans Release. Unter macOS/Linux sucht `launch.sh` ein Python ab 3.10.
 - Der Benchmark baut direkt im Wegwerf-Ordner (`--no-worktree`), damit die Original-Tests das Ergebnis sehen.
 
 ### Geändert
@@ -24,6 +25,7 @@
 - Copilot läuft über die neue Copilot CLI (`copilot -s`, Prompt über stdin, eigene Sitzung mit `--resume`, Lesemodus über `--deny-tool`) und ist ein vollwertiger Bauleiter. `gh copilot suggest` wird nicht mehr unterstützt.
 
 ### Behoben
+- Leere `CLAUDEGRAVITY_*`-Variablen gelten als nicht gesetzt statt als ungültiger Wert.
 - Endpunkt-Bauleiter (Ollama, LM Studio, eigene Server) konnten im Git-Workspace ohne Etappen nie „fertig“ melden: Die Fertigmeldung liegt im Session-Ordner außerhalb des Workspace und wurde als Schreibversuch nach außen blockiert. Der Loop schreibt sie jetzt selbst.
 - Eine fehlende Copilot CLI hinter `gh` galt als bereit, weil `gh copilot` mit Rückgabe 0 endet.
 - `gh` ohne heruntergeladene Copilot CLI wird nicht mehr als Copilot erkannt; die automatische Rollenwahl nahm es sonst als Prüfstatiker.

@@ -16,6 +16,7 @@
 - From issue to pull request: `--from-issue 12` (also `owner/repo#12` or a URL) takes title, body and comments as the task, `--open-pr`/`--pr-draft` pushes the session branch after a successful acceptance check and opens a pull request with `Closes #12`, roles, metrics and plan. Via `gh` or the REST API (`GH_TOKEN`), error codes CG-1601/CG-1602. The repository is also a GitHub Action (`uses: gb-web-de/claudegravity-loop@main`) started by a label or `/claudegravity`; the MCP server knows `issue` and `open_pr`.
 - Sandbox (`--sandbox on|docker|podman`, `--sandbox-image`, `--sandbox-net`): the proof command and CLI Builder run in a fresh container with your user ID, without capabilities and with limits; the proof command without network, the Builder sees only the work and session folders and the credentials of its own CLI. `sandbox/Dockerfile` brings the AI CLIs. Error codes CG-1701/CG-1702; not from the project profile.
 - Live view and notifications: `--watch` (or `claudegravity watch` without a run) shows phase, current role, round, tokens, cost, changed files, diff and log in the browser, only on `127.0.0.1` with a token. `--notify desktop,bell,ntfy:<topic>,webhook:<url>` reports when a question has been open for 20 s and when the run is done or stops. New file `live.json` in the session folder, events `call_start`/`proof_start`; the MCP server knows `notify` and `watch`.
+- Claude Desktop extension `claudegravity-<version>.mcpb` (MCP Bundle): a double-click installs the MCP server with settings for project, endpoint, API key, notification, language and Python. `tools/build_mcpb.py` builds it reproducibly, CI checks the manifest with `mcpb validate`, a version tag attaches it to the release. On macOS/Linux `launch.sh` looks for Python 3.10+.
 - The benchmark builds directly in the throwaway folder (`--no-worktree`) so the original tests see the result.
 
 ### Changed
@@ -24,6 +25,7 @@
 - Copilot runs via the new Copilot CLI (`copilot -s`, prompt via stdin, own session with `--resume`, read-only mode via `--deny-tool`) and is a full Builder. `gh copilot suggest` is no longer supported.
 
 ### Fixed
+- Empty `CLAUDEGRAVITY_*` variables count as unset instead of an invalid value.
 - Endpoint Builders (Ollama, LM Studio, your own servers) could never report "done" in the Git workspace without stages: the completion marker lives in the session folder outside the workspace and was blocked as a write attempt outside the project. The loop now writes it itself.
 - A missing Copilot CLI behind `gh` counted as ready because `gh copilot` exits with 0.
 - `gh` without a downloaded Copilot CLI is no longer detected as Copilot; automatic role selection used to pick it as Reviewer.

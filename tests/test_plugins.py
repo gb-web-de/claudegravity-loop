@@ -40,6 +40,7 @@ class PluginManifestTest(unittest.TestCase):
         versions = {relative: read_json(relative)["version"] for relative in VERSIONED}
         versions["marketplace"] = read_json(".claude-plugin/marketplace.json")["plugins"][0]["version"]
         versions["paket"] = claudegravity.__version__
+        versions["mcpb"] = read_json("mcpb/manifest.json")["version"]
         versions["mcp_server"] = re.search(r'SERVER_VERSION = "([^"]+)"', (ROOT / "mcp_server.py").read_text(encoding="utf-8")).group(1)
         self.assertEqual(len(set(versions.values())), 1, versions)
 

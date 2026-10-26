@@ -88,6 +88,26 @@ jobs:
           path: smoke-artifacts/
           if-no-files-found: warn
 
+  mcpb:
+    name: mcpb (Claude-Desktop-Erweiterung)
+    # Manifest mit dem offiziellen Werkzeug prüfen, Bundle bauen und als Artefakt ablegen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Manifest prüfen
+        run: npx -y @anthropic-ai/mcpb@2.1.2 validate mcpb/manifest.json
+      - name: Bundle bauen
+        run: |
+          python tools/build_mcpb.py
+          npx -y @anthropic-ai/mcpb@2.1.2 info dist/claudegravity-*.mcpb
+      - uses: actions/upload-artifact@v7
+        with:
+          name: claudegravity-mcpb
+          path: dist/*.mcpb
+
   manifests:
     name: manifests (JSON/TOML, MCP handshake)
     runs-on: ubuntu-latest

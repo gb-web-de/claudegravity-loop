@@ -23,7 +23,7 @@ As with the loop, the only requirement is **Python 3.10+** as `python3` on the P
 | **Cursor** | add the repository as a plugin source or team marketplace (`.cursor-plugin/marketplace.json`) | `/loop_run`, `/loop_optimize`, `/loop_status` |
 | **Gemini CLI** | `gemini extensions install https://github.com/gb-web-de/claudegravity-loop` | `/claudegravity:loop_run …`, `/claudegravity:loop_optimize …`, `/claudegravity:loop_status` |
 
-Claude Desktop, VS Code and Windsurf have no matching plugin format. There the [installer](mcp-server.md#easiest-the-installer) registers the MCP server.
+For Claude Desktop there is the [`.mcpb` extension](mcp-server.md#claude-desktop-one-click-extension) (a double-click is enough). VS Code and Windsurf have no matching plugin format; there the [installer](mcp-server.md#easiest-the-installer) registers the MCP server.
 
 **Test locally** (without GitHub): give the checkout's path instead of `gb-web-de/claudegravity-loop`, e.g. `/plugin marketplace add ~/Projekte/claudegravity-loop` or `agy plugin install ~/Projekte/claudegravity-loop`.
 

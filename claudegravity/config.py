@@ -226,7 +226,8 @@ def resolve_config(
 
     for dest, action in actions.items():
         name = CONFIG_ENV_PREFIX + dest.upper()
-        if name in env:
+        # Leere Variable gilt als nicht gesetzt (z. B. leere Einstellung einer Desktop-Erweiterung)
+        if env.get(name, "").strip():
             try:
                 layers["env"][dest] = coerce_config_value(action, env[name])
             except ValueError as exc:

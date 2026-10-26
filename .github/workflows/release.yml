@@ -1,0 +1,31 @@
+name: release
+
+# Läuft nur, wenn ein Versions-Tag gepusht wird (z. B. git tag v1.6.0 && git push origin v1.6.0):
+# baut die Claude-Desktop-Erweiterung und hängt sie an das GitHub-Release des Tags.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  mcpb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Tag passt zur Version
+        run: test "v$(python -c 'import claudegravity; print(claudegravity.__version__)')" = "$GITHUB_REF_NAME"
+      - name: Bundle bauen und prüfen
+        run: |
+          npx -y @anthropic-ai/mcpb@2.1.2 validate mcpb/manifest.json
+          python tools/build_mcpb.py
+      - name: An das Release hängen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "Änderungen: CHANGELOG.md · Changes: CHANGELOG.en.md"
+          gh release upload "$GITHUB_REF_NAME" dist/*.mcpb --clobber

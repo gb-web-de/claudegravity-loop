@@ -23,7 +23,7 @@ Voraussetzung ist wie beim Loop nur **Python 3.10+** als `python3` im PATH. Die 
 | **Cursor** | Repository als Plugin-Quelle bzw. Team-Marketplace eintragen (`.cursor-plugin/marketplace.json`) | `/loop_run`, `/loop_optimize`, `/loop_status` |
 | **Gemini CLI** | `gemini extensions install https://github.com/gb-web-de/claudegravity-loop` | `/claudegravity:loop_run …`, `/claudegravity:loop_optimize …`, `/claudegravity:loop_status` |
 
-Für Claude Desktop, VS Code und Windsurf gibt es kein passendes Plugin-Format. Dort trägt der [Installer](mcp-server.md#am-einfachsten-installer) den MCP-Server ein.
+Für Claude Desktop gibt es die [Erweiterung `.mcpb`](mcp-server.md#claude-desktop-erweiterung-mit-einem-klick) (Doppelklick genügt). Für VS Code und Windsurf gibt es kein passendes Plugin-Format; dort trägt der [Installer](mcp-server.md#am-einfachsten-installer) den MCP-Server ein.
 
 **Lokal testen** (ohne GitHub): statt `gb-web-de/claudegravity-loop` den Pfad des Checkouts angeben, z. B. `/plugin marketplace add ~/Projekte/claudegravity-loop` oder `agy plugin install ~/Projekte/claudegravity-loop`.
 

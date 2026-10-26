@@ -1,0 +1,136 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "claudegravity",
+  "display_name": "ClaudeGravity Loop",
+  "version": "1.5.0",
+  "description": "Ein Modell plant, ein anderes prüft, eines baut, ein anderer Anbieter nimmt ab: Claude Code, Codex, Gemini, Copilot und Ollama im Loop.",
+  "long_description": "ClaudeGravity Loop verteilt eine Programmieraufgabe auf getrennte Rollen: Architekt (Plan), Prüfstatiker (Review), Bauleiter (Umsetzung) und Abnahme durch einen anderen Anbieter. Das Modell, das plant oder baut, benotet sich nie selbst; den Prüfbefehl führt der Loop selbst aus. Aus Claude Desktop plant Claude, geprüft und gebaut wird mit den CLIs und lokalen Modellen auf deinem Rechner (Codex, Gemini CLI, Copilot CLI, Ollama, LM Studio).\n\nVoraussetzungen: Python 3.10 oder neuer und mindestens eine der KI-CLIs oder Ollama. Läufe starten mit `claudegravity_run` (background) im Hintergrund, `claudegravity_status` zeigt den Stand.\n\nOne model plans, another reviews, one builds and a different provider accepts the result. Requires Python 3.10+ and at least one AI CLI or Ollama.",
+  "author": {
+    "name": "gb-web-de",
+    "url": "https://github.com/gb-web-de"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gb-web-de/claudegravity-loop"
+  },
+  "homepage": "https://github.com/gb-web-de/claudegravity-loop",
+  "documentation": "https://github.com/gb-web-de/claudegravity-loop/blob/main/docs/de/mcp-server.md",
+  "support": "https://github.com/gb-web-de/claudegravity-loop/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "python",
+    "entry_point": "mcp_server.py",
+    "mcp_config": {
+      "command": "/bin/sh",
+      "args": [
+        "${__dirname}/launch.sh",
+        "${__dirname}/mcp_server.py"
+      ],
+      "env": {
+        "CLAUDEGRAVITY_PROJECT": "${user_config.project}",
+        "CLAUDEGRAVITY_ENDPOINT": "${user_config.endpoint}",
+        "CLAUDEGRAVITY_API_KEY": "${user_config.api_key}",
+        "CLAUDEGRAVITY_NOTIFY": "${user_config.notify}",
+        "CLAUDEGRAVITY_LANG": "${user_config.lang}",
+        "CLAUDEGRAVITY_PYTHON": "${user_config.python}",
+        "PYTHONIOENCODING": "utf-8"
+      },
+      "platform_overrides": {
+        "win32": {
+          "command": "py",
+          "args": [
+            "-3",
+            "${__dirname}/mcp_server.py"
+          ]
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "claudegravity_optimize",
+      "description": "Analysiert eine Programmieraufgabe und ermittelt die optimale Kombination aus Modellen, Reasoning-Effort und Rollen (Architekt, Prüfstatiker, Bauleiter) für ClaudeGravity Loop basierend auf dem Ziel (bester Code vs. geringste Kosten vs. 0€ lokale Modelle). Liefert den exakten, plattformunabhängigen Shell-Befehl."
+    },
+    {
+      "name": "claudegravity_run",
+      "description": "Startet den ClaudeGravity Loop mit optimierten Parametern direkt auf dem System. Mit background=true läuft er als eigener Prozess weiter (für Desktop-Apps ohne Terminal); Fortschritt mit claudegravity_status, Abbruch mit claudegravity_stop. Ohne background kommt nur der Befehl zum Starten im Terminal zurück."
+    },
+    {
+      "name": "claudegravity_status",
+      "description": "Zeigt den Stand der letzten Loop-Session eines Projekts: Aufgabe, Phase, Runde/Etappe, Tokens, Abbruchgrund, ob die Fertigmeldung vorliegt, ob ein Hintergrundlauf noch läuft, und die letzten Zeilen von LOG.md und des Hintergrund-Logs. Gedacht zum Nachsehen nach claudegravity_run mit background."
+    },
+    {
+      "name": "claudegravity_stop",
+      "description": "Bricht den letzten mit claudegravity_run (background) gestarteten Lauf eines Projekts ab, samt der gestarteten CLIs. Der Stand bleibt in der Session erhalten und lässt sich mit `claudegravity -c` fortsetzen."
+    },
+    {
+      "name": "claudegravity_info",
+      "description": "Prüft die installierten AI-CLIs (Claude, Antigravity, Gemini, Codex, Copilot, Ollama, LM Studio, eigene Endpunkte) und gibt Empfehlungen."
+    }
+  ],
+  "keywords": [
+    "coding",
+    "agents",
+    "claude-code",
+    "codex",
+    "gemini",
+    "copilot",
+    "ollama",
+    "review",
+    "loop"
+  ],
+  "license": "MIT",
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  },
+  "user_config": {
+    "project": {
+      "type": "directory",
+      "title": "Standard-Projekt",
+      "description": "Projektordner für Aufrufe ohne absoluten project_path (CLAUDEGRAVITY_PROJECT).",
+      "required": false
+    },
+    "endpoint": {
+      "type": "string",
+      "title": "Eigener Endpunkt",
+      "description": "OpenAI-kompatibler Server für lokale Rollen, z. B. http://localhost:11434/v1 (leer: Ollama und LM Studio werden selbst gesucht).",
+      "required": false
+    },
+    "api_key": {
+      "type": "string",
+      "title": "API-Schlüssel des Endpunkts",
+      "description": "Nur für einen eigenen Endpunkt mit Schlüssel; Cloud-Modelle laufen über die angemeldeten CLIs.",
+      "required": false,
+      "sensitive": true
+    },
+    "notify": {
+      "type": "string",
+      "title": "Benachrichtigung",
+      "description": "Melden, wenn ein Lauf auf dich wartet oder fertig ist: desktop, bell, ntfy:<thema>, webhook:<url>; aus schaltet ab.",
+      "required": false,
+      "default": "desktop"
+    },
+    "lang": {
+      "type": "string",
+      "title": "Sprache",
+      "description": "Sprache der Ausgaben und Modellantworten: de, en oder auto.",
+      "required": false,
+      "default": "auto"
+    },
+    "python": {
+      "type": "file",
+      "title": "Python (optional)",
+      "description": "Python 3.10+ für den Server unter macOS und Linux, falls es nicht gefunden wird (z. B. /opt/homebrew/bin/python3).",
+      "required": false
+    }
+  }
+}

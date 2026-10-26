@@ -1262,8 +1262,19 @@ def run_mcp_stdio_server():
         sys.stdout = out
 
 
+def drop_unset_settings(env: dict | None = None) -> list[str]:
+    """Leere CLAUDEGRAVITY_*-Variablen entfernen, auch nicht ersetzte Platzhalter wie `${user_config.endpoint}`
+    (Claude-Desktop-Erweiterung mit leeren Einstellungen). Liefert die Namen der entfernten Variablen."""
+    env = os.environ if env is None else env
+    dropped = [k for k, v in env.items() if k.startswith("CLAUDEGRAVITY_") and (not v.strip() or "${" in v)]
+    for key in dropped:
+        del env[key]
+    return dropped
+
+
 def main():
     """MCP-Server über stdio starten oder, mit Aufgabe bzw. --optimize, eine Empfehlung direkt ausgeben."""
+    drop_unset_settings()
     if sys.version_info < (3, 10):
         print(f"[!] ClaudeGravity benötigt Python 3.10+ (gestartet mit {sys.executable}, {platform.python_version()}).", file=sys.stderr)
         print("    In der MCP-Konfiguration den absoluten Pfad zu einem neueren Python als `command` eintragen.", file=sys.stderr)
