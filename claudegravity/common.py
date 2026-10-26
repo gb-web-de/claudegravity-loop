@@ -56,6 +56,7 @@ class RuntimeSettings:
     budget: "Budget | None" = None  # --budget-max/-warn/-roles
     stop_requested: bool = False  # Strg+C/SIGTERM: aktuelle Runde sauber beenden
     lang: str = dataclasses.field(default_factory=detect_lang)  # --lang / CLAUDEGRAVITY_LANG: de oder en
+    repo_map: str = "auto"  # --repo-map: auto (nur Endpunkte), an (alle Rollen), aus
 
 
 SETTINGS = RuntimeSettings()

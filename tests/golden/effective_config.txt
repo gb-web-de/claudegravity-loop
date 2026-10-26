@@ -41,6 +41,7 @@
   progress               = true                         [Standard]
   proof                  = "vendor/bin/phpunit"         [Projekt-Profil]
   pruefstatiker_endpoint = –                            [Standard]
+  repo_map               = "auto"                       [Standard]
   retries                = –                            [Standard]
   reviewer               = –                            [Standard]
   reviewer_effort        = –                            [Standard]

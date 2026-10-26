@@ -111,6 +111,7 @@ def dry_run_command(args, task: str, strat: str, default_b_model: str | None = N
         ("--kandidaten", getattr(args, "candidates", None)),
         ("--test-guard", None if getattr(args, "test_guard", "warn") == "warn" else args.test_guard),
         ("--lang", getattr(args, "lang", None)),
+        ("--repo-map", None if getattr(args, "repo_map", "auto") == "auto" else args.repo_map),
         ("--abnahme", args.inspector),
         ("--abnahme-model", args.inspector_model),
         ("--abnahme-effort", args.inspector_effort),

@@ -12,6 +12,7 @@
 - Test guard (`--test-guard warn|strict|off`): after a green proof command it detects deleted test files, new skip/only markers and fewer test cases or assertions; audit CG-1504.
 - English output with `--lang en` (also `auto` by locale, `CLAUDEGRAVITY_LANG`, `"lang"` in a profile): status lines, menus, help, error codes linking to the English docs, reports in `.done`/`AUDIT.md`; the models then answer in English as well. German stays the default.
 - Install as a package without cloning: `pipx install git+https://github.com/gb-web-de/claudegravity-loop`, `uv tool install …` or once via `uvx --from … claudegravity`; plus `python -m claudegravity`. No runtime dependencies, `pyproject.toml` is only for installing.
+- Repo map for roles without their own file access (`--repo-map auto|an|aus`): paths with classes and functions, sorted by relevance to the task and limited to 6,000 characters, so Ollama and other endpoints know the project.
 - The benchmark builds directly in the throwaway folder (`--no-worktree`) so the original tests see the result.
 
 ### Changed

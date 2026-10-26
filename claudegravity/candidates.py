@@ -123,6 +123,8 @@ def child_command(args, candidate: Candidate, proof_cmd: str | None) -> list[str
     cmd += ["--no-worktree", "--no-inspect", "--yolo", "--no-guide", "-d", str(args.delay), "--test-guard", args.test_guard]
     if SETTINGS.lang != "de":
         cmd += ["--lang", SETTINGS.lang]
+    if SETTINGS.repo_map != "auto":
+        cmd += ["--repo-map", SETTINGS.repo_map]
     if proof_cmd:
         cmd += ["--proof", proof_cmd]
     if args.max_iterations:

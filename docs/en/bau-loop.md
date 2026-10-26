@@ -56,6 +56,24 @@ If the `## Etappen` section is missing or has fewer than two stages, the Builder
 
 Even outside stage mode, endpoint Builders get the current content of the files they already wrote from the second round on.
 
+## Repo map
+
+Claude Code, Codex and the other CLIs look at the project themselves. An endpoint (Ollama, LM Studio, your own server) only sees what is in the prompt. So that an Architect, Reviewer or Builder on an endpoint still knows which files and functions exist, ClaudeGravity adds a **repo map**:
+
+```
+--- REPO-KARTE (Dateien mit Klassen und Funktionen; …) ---
+src/stats.py: def median(values), def mean(values)
+tests/test_stats.py: class StatsTest [test_median_even, test_median_odd]
+README.md
+--- ENDE REPO-KARTE ---
+```
+
+* One line per file with the top-level classes (with their methods) and functions. ClaudeGravity reads Python with `ast` (with parameter names), and JavaScript/TypeScript, PHP, Go, Rust, Java/Kotlin/C#, Ruby, C/C++ and shell with patterns.
+* Files named in the task, the plan or the stage come first, then matches in the path, then matches in symbol names. The map is limited to 6,000 characters; with more files, only paths follow after the best matches, and a note at the end says how many were left out.
+* The files come from `git ls-files` (without ignored files), otherwise from the folder. `node_modules/`, `vendor/`, `.venv/`, build folders, binary files and secret files such as `.env` or `*.key` are always left out.
+* The Architect and the Reviewer get the map for the task, the Builder for the task and the plan. Continued Builder sessions do not get it again.
+* `--repo-map auto` (default) gives the map only to roles without their own file access, `an` to all roles, `aus` to none. Alias `--repo-karte`, `"repo_map"` in profiles.
+
 ## Candidate mode (Best-of-N)
 
 With `--kandidaten claude,codex` (or `--candidates`) several Builders build the same approved plan **at the same time**, each in its own Git worktree on its own branch (`loop/<session>-<candidate>`). A model per candidate is given with `=`: `--kandidaten codex=gpt-5,ollama=qwen3-coder:30b`.

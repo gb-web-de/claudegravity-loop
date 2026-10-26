@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .common import ENDPOINT_BINARIES, LOCAL_BACKEND_ORDER, SETTINGS, STAGE_MAX_TRIES, ask, say
 from .safety import redact_secrets
+from .repomap import repo_map, wants_repo_map
 from .errors import fail, format_error
 from .metrics import SessionMetrics, append_metrics_to_done, format_metrics_report
 from .backends import AgentCLI, DEFAULT_MODEL_LABEL, create_agent, describe_agent, effort_label, is_placeholder_value, model_flags
@@ -442,6 +443,7 @@ def run_plan_phase(run: "RunContext") -> bool:
     planner, reviewer, planner_flags, reviewer_flags = run.planner, run.reviewer, run.planner_flags, run.reviewer_flags
     auto_switch, ask_mode = run.auto_switch, run.ask_mode
     project_ctx = load_project_context(project_path, task)
+    map_text = repo_map(project_path, task) if wants_repo_map(planner.binary) or wants_repo_map(reviewer.binary) else ""
 
     # ==========================================
     # 1. & 2. Phase: Adversarial Plan Review
@@ -468,6 +470,7 @@ def run_plan_phase(run: "RunContext") -> bool:
             reviewer_flags=reviewer_flags,
             max_rounds=max(1, args.max_rounds),
             ask_mode=ask_mode,
+            repo_map_text=map_text,
         )
 
         if SETTINGS.stop_requested:
@@ -786,6 +789,7 @@ def run_build_phase(run: "RunContext") -> None:
         inspector=inspector,
         written_so_far=list(state.get("written_files", [])),
         resume_builder=not getattr(args, "builder_fresh", False),
+        repo_map=repo_map(work_path, task + "\n" + plan_text_now) if wants_repo_map(builder.binary) else "",
     )
     # Bauleiter-Sitzung nur fortsetzen, wenn sie aus dieser Session stammt (nicht etwa die des Architekten)
     saved = state.get("builder_session") or {}
@@ -855,6 +859,7 @@ def run_build_phase(run: "RunContext") -> None:
                 plan_text=plan_excerpt(plan_text_now, stage_text + "\n" + pending_feedback),
                 file_ctx=file_ctx,
                 stage=(stage_label, stage_text, done_list),
+                repo_map=build_ctx.repo_map,
             )
             resuming = not is_endpoint_builder and bool(builder_resume_flags(builder, build_ctx.resume_builder))
             prompt_short = (
@@ -976,6 +981,7 @@ def run_build_phase(run: "RunContext") -> None:
             plan_text=plan_text_now,
             file_ctx=file_ctx,
             rel_done_path=rel_done_path,
+            repo_map=build_ctx.repo_map,
         )
         resuming = not is_endpoint_builder and bool(builder_resume_flags(builder, build_ctx.resume_builder))
         prompt_short = (

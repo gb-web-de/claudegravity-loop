@@ -56,6 +56,24 @@ Fehlt der Abschnitt `## Etappen` oder hat er weniger als zwei Etappen, baut der 
 
 Auch ohne Etappen-Modus bekommen Endpunkt-Bauleiter ab der zweiten Runde den aktuellen Inhalt der Dateien mit, die sie schon geschrieben haben.
 
+## Repo-Karte
+
+Claude Code, Codex und die anderen CLIs schauen sich das Projekt selbst an. Ein Endpunkt (Ollama, LM Studio, eigener Server) sieht dagegen nur, was im Prompt steht. Damit Architekt, Prüfstatiker und Bauleiter auf einem Endpunkt trotzdem wissen, welche Dateien und Funktionen es gibt, legt ClaudeGravity eine **Repo-Karte** dazu:
+
+```
+--- REPO-KARTE (Dateien mit Klassen und Funktionen; …) ---
+src/stats.py: def median(values), def mean(values)
+tests/test_stats.py: class StatsTest [test_median_even, test_median_odd]
+README.md
+--- ENDE REPO-KARTE ---
+```
+
+* Eine Zeile je Datei mit den Klassen (samt Methoden) und Funktionen der obersten Ebene. Python liest ClaudeGravity mit `ast` (mit Parameternamen), JavaScript/TypeScript, PHP, Go, Rust, Java/Kotlin/C#, Ruby, C/C++ und Shell über Muster.
+* Dateien, die die Aufgabe, der Plan oder die Etappe nennt, stehen oben, dann Treffer im Pfad, dann Treffer in Symbolnamen. Die Karte ist auf 6 000 Zeichen begrenzt; sind es mehr Dateien, folgen nach den passendsten nur noch Pfade und am Ende ein Hinweis, wie viele ausgelassen wurden.
+* Die Dateien kommen aus `git ls-files` (ohne Ignoriertes), sonst aus dem Ordner. `node_modules/`, `vendor/`, `.venv/`, Build-Ordner, Binärdateien und Geheimnis-Dateien wie `.env` oder `*.key` fehlen immer.
+* Architekt und Prüfstatiker bekommen die Karte zur Aufgabe, der Bauleiter zur Aufgabe und zum Plan. Fortgesetzte Bauleiter-Sitzungen bekommen sie nicht noch einmal.
+* `--repo-map auto` (Standard) gibt die Karte nur Rollen ohne eigenen Dateizugriff, `an` allen Rollen, `aus` keiner. Alias `--repo-karte`, in Profilen `"repo_map"`.
+
 ## Kandidaten-Modus (Best-of-N)
 
 Mit `--kandidaten claude,codex` bauen mehrere Bauleiter denselben freigegebenen Plan **gleichzeitig**, jeder in einem eigenen Git-Worktree auf einem eigenen Branch (`loop/<session>-<kandidat>`). Ein Modell pro Kandidat gibst du mit `=` an: `--kandidaten codex=gpt-5,ollama=qwen3-coder:30b`.

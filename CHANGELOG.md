@@ -12,6 +12,7 @@
 - Testwächter (`--test-guard warn|strict|off`): erkennt nach grünem Prüfbefehl gelöschte Testdateien, neue Skip-/Only-Marker und weniger Testfälle oder Prüfungen; Audit CG-1504.
 - Englische Ausgabe mit `--lang en` (auch `auto` nach Locale, `CLAUDEGRAVITY_LANG`, `"lang"` im Profil): Statuszeilen, Menüs, Hilfe, Fehlercodes mit Link auf die englische Doku, Berichte in `.done`/`AUDIT.md`; die Modelle antworten dann ebenfalls auf Englisch. Standard bleibt Deutsch.
 - Installation als Paket ohne Klon: `pipx install git+https://github.com/gb-web-de/claudegravity-loop`, `uv tool install …` oder einmalig `uvx --from … claudegravity`; dazu `python -m claudegravity`. Keine Laufzeit-Abhängigkeiten, `pyproject.toml` nur für die Installation.
+- Repo-Karte für Rollen ohne eigenen Dateizugriff (`--repo-map auto|an|aus`): Pfade mit Klassen und Funktionen, nach Bezug zur Aufgabe sortiert und auf 6 000 Zeichen begrenzt, damit Ollama und andere Endpunkte das Projekt kennen.
 - Der Benchmark baut direkt im Wegwerf-Ordner (`--no-worktree`), damit die Original-Tests das Ergebnis sehen.
 
 ### Geändert

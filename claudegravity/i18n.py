@@ -719,6 +719,7 @@ HELP = {
     "Plan ohne Rückfrage freigeben, sobald der Prüfstatiker APPROVED meldet (sonst kein Bau); für Läufe ohne Terminal": "Approve the plan without asking once the Reviewer reports APPROVED (otherwise no build); for runs without a terminal",
     "Bauleiter jede Runde in neuer Sitzung starten; Standard: claude und codex setzen ihre Sitzung fort und bekommen nur Rückmeldung und nächsten Schritt": "Start the Builder in a new session every round; default: claude and codex resume their session and only get feedback and the next step",
     "Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)": "Stage mode: the Architect plans stages, the Builder implements them one by one, the loop checks each with --proof (auto: on for local/endpoint Builders)",
+    "Repo-Karte (Dateien mit Klassen und Funktionen) im Prompt: auto nur für Endpunkte ohne Dateizugriff, an für alle Rollen, aus nie": "Repo map (files with classes and functions) in the prompt: auto only for endpoints without file access, an for all roles, aus never",
     "Maximale autonome Iterationen (Standard: 10, im Etappen-Modus 2 pro Etappe + 2)": "Maximum autonomous iterations (default: 10, in stage mode 2 per stage + 2)",
     "Maximale Review-Runden für den Plan (Standard: 2)": "Maximum review rounds for the plan (default: 2)",
     "Maximale Abnahme-Runden pro Lauf (Standard: 2)": "Maximum acceptance rounds per run (default: 2)",

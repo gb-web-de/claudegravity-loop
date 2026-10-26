@@ -15,6 +15,7 @@ ORDER = [
     "i18n",
     "common",
     "safety",
+    "repomap",
     "errors",
     "metrics",
     "backends",

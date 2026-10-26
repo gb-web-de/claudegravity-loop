@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from .common import RESUMABLE_CLIS, say
 from .safety import apply_code_blocks, apply_edit_blocks, mask_secrets, resolve_project_target
+from .repomap import repo_map_block
 from .backends import AgentCLI, build_cli_command
 from .session import (
     REVIEW_FORMAT,
@@ -236,11 +237,13 @@ def compose_build_prompt(
     stage: tuple[str, str, str] | None = None,
     rel_done_path: Path | None = None,
     resumed: bool = False,
+    repo_map: str = "",
 ) -> str:
     """Prompt für eine Bau-Runde. `stage` = (Bezeichnung, Etappentext, Liste erledigter Etappen) im Etappen-Modus;
     sonst baut der Bauleiter den ganzen Plan und legt selbst die Fertigmeldung unter `rel_done_path` an.
     Endpunkte bekommen Plan und Dateistand als Text, weil sie keine Dateien öffnen können.
     `resumed`: Der Bauleiter setzt seine Sitzung fort und kennt Aufgabe und Plan schon; er bekommt nur den neuen Teil.
+    `repo_map`: Repo-Karte (repomap.repo_map) für Bauleiter ohne Dateizugriff, steht im gleichbleibenden Teil.
     Aufbau für Prompt-Caching der Anbieter: gleichbleibender Teil (Aufgabe, Plan, Format) vorn, wechselnder
     Teil (Etappe, Dateistand, Rückmeldung) hinten."""
     if resumed and not endpoint:
@@ -253,6 +256,7 @@ def compose_build_prompt(
             if plan_text:
                 prompt += f"--- GENEHMIGTER PLAN ---\n{plan_text}\n--- ENDE PLAN ---\n\n"
             prompt += "FORMAT FÜR DATEI-ÄNDERUNGEN:\n" + ENDPOINT_FORMAT_HINT + "\n"
+        prompt += repo_map_block(repo_map)
         prompt += (
             f"Bereits erledigt:\n{done_list}\n\n"
             f"JETZT NUR {label.upper()}: {text}\n\n"
@@ -282,6 +286,7 @@ def compose_build_prompt(
             + ENDPOINT_FORMAT_HINT
             + f"Sobald alles fertig und getestet ist, erstelle die Fertigmeldung mit:\n```filepath: {rel_done_path}\n# Aufgabe abgeschlossen\n```\n\n"
         )
+    prompt += repo_map_block(repo_map)
     if proof_cmd:
         prompt += f"Vereinbarter Prüfbefehl (der Loop führt ihn danach selbst aus): `{proof_cmd}`\n\n"
     if endpoint and file_ctx:
@@ -343,6 +348,7 @@ class BuildContext:
     written_so_far: list[str]
     resume_builder: bool = True
     edit_errors: list[str] = dataclasses.field(default_factory=list)
+    repo_map: str = ""  # einmal zu Baubeginn, damit der Prompt-Anfang gleich bleibt (Prompt-Caching)
 
 
 def edit_errors_note(errors: list[str]) -> str:

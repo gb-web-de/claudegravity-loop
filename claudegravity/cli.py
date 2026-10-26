@@ -326,6 +326,13 @@ def build_parser(full_help: bool = False, lang: str | None = None) -> argparse.A
         help="Etappen-Modus: Architekt plant Etappen, Bauleiter setzt sie einzeln um, Loop prüft jede mit --proof (auto: an bei lokalen/Endpunkt-Bauleitern)",
     )
     add(
+        "--repo-map",
+        "--repo-karte",
+        default="auto",
+        choices=["auto", "an", "aus", "on", "off"],
+        help="Repo-Karte (Dateien mit Klassen und Funktionen) im Prompt: auto nur für Endpunkte ohne Dateizugriff, an für alle Rollen, aus nie",
+    )
+    add(
         "-m",
         "--max-iterations",
         type=int,
@@ -453,6 +460,7 @@ def apply_runtime_settings(args: argparse.Namespace) -> None:
     """Einstellungen, die tief im Code gebraucht werden (Zeitlimits, Schild, Budget, Ausgabe), modulweit setzen."""
     SETTINGS.lang = resolve_lang(getattr(args, "lang", None))
     SETTINGS.retries = args.retries
+    SETTINGS.repo_map = {"on": "an", "off": "aus"}.get(args.repo_map, args.repo_map)
     SETTINGS.progress = args.progress
     SETTINGS.log_format = args.log_format
     try:
