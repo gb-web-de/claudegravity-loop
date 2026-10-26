@@ -29,9 +29,10 @@ CONFIG_EXCLUDED = {
     "api_key",
     "no_shield",
     "init",
+    "from_issue",
 }
 # Das Projekt-Profil liegt im Projektordner, in den ein Bauleiter schreiben kann: keine Rechte daraus
-PROJECT_PROFILE_FORBIDDEN = {"yolo"}
+PROJECT_PROFILE_FORBIDDEN = {"yolo", "open_pr", "pr_draft"}
 # Standardwerte, die erst später im Lauf gesetzt werden (für --print-effective-config)
 CONFIG_DISPLAY_DEFAULTS = {"strategy": "balanced", "max_iterations": "10 (Etappen: 2 je Etappe + 2)"}
 # Beim Fortsetzen gilt der gespeicherte Stand der Session vor Umgebung und Profil
@@ -59,6 +60,8 @@ SESSION_CONFIG_KEYS = {
     "yolo": "yolo_enabled",
     "inspect": "inspect",
     "template": "template",
+    "open_pr": "open_pr",
+    "pr_draft": "pr_draft",
 }
 TEMPLATE_DEST = "template"
 TEMPLATE_META_KEYS = {"hint", "hinweis", "requires", "pflicht", "beschreibung", "description"}
@@ -297,7 +300,9 @@ def parse_config_entries(entries: dict, label: str, actions: dict, aliases: dict
             warnings.append(f"⚠️ {label}: unbekannte Einstellung `{raw_key}` wird ignoriert.")
             continue
         if dest in forbidden:
-            warnings.append(f"⚠️ {label}: `{raw_key}` wird ignoriert. Schreibrechte nur per Kommandozeile, Umgebung oder globalem Profil.")
+            warnings.append(
+                f"⚠️ {label}: `{raw_key}` wird ignoriert. Schreib- und Veröffentlichungsrechte nur per Kommandozeile, Umgebung oder globalem Profil."
+            )
             continue
         try:
             result[dest] = coerce_config_value(actions[dest], raw_value)

@@ -468,6 +468,8 @@ def optimize_claudegravity_command(
     stages: str = "auto",
     approve_plan: bool = False,
     merge: bool = False,
+    issue: str | None = None,
+    open_pr: bool = False,
 ) -> dict:
     """Berechnet Rollen und Befehl. `roles` überschreibt einzelne Rollen, z. B. {"architekt": "codex", "bauer_model": "qwen3-coder:30b"}."""
     agents = detect_installed_agents()
@@ -638,7 +640,9 @@ def optimize_claudegravity_command(
     builder_model = roles.get("bauer_model", builder_model)
     inspector_cli = roles.get("abnahme")
 
-    cmd_args = [task]
+    cmd_args = [task] if task or not issue else []
+    if issue:
+        cmd_args += ["--from-issue", issue]
     if strategy_flag != "balanced":
         cmd_args += ["--strategy", strategy_flag]
     if endpoint:
@@ -671,6 +675,8 @@ def optimize_claudegravity_command(
         cmd_args.append("--plan-auto")
     if merge:
         cmd_args.append("--merge")
+    if open_pr:
+        cmd_args.append("--open-pr")
     if project_path not in [".", "./", ""]:
         cmd_args += ["-p", project_path]
 
@@ -817,6 +823,15 @@ ROLE_SCHEMA = {
         "default": False,
         "description": "Session-Branch nach erfolgreicher Abnahme in den Ausgangs-Branch mergen (--merge).",
     },
+    "issue": {
+        "type": "string",
+        "description": "GitHub-Issue als Aufgabe (--from-issue): Nummer, owner/repo#12 oder URL. Dann ist `task` optional (Zusatz zum Issue).",
+    },
+    "open_pr": {
+        "type": "boolean",
+        "default": False,
+        "description": "Nach erfolgreichem Abschluss den Session-Branch pushen und einen Pull Request öffnen (--open-pr), mit „Closes #n“ bei `issue`.",
+    },
 }
 
 
@@ -871,7 +886,7 @@ MCP_TOOLS = [
                 },
                 **ROLE_SCHEMA,
             },
-            "required": ["task"],
+            "required": [],
         },
     },
     {
@@ -920,7 +935,7 @@ MCP_TOOLS = [
                 },
                 **ROLE_SCHEMA,
             },
-            "required": ["task"],
+            "required": [],
         },
     },
     {
@@ -1028,14 +1043,17 @@ def optimize_from_arguments(arguments: dict, project_path: str) -> dict:
         stages=arguments.get("stages", "auto"),
         approve_plan=bool(arguments.get("approve_plan", False) or arguments.get("background", False)),
         merge=bool(arguments.get("merge", False)),
+        issue=str(arguments.get("issue") or "").strip() or None,
+        open_pr=bool(arguments.get("open_pr", False)),
     )
 
 
 def handle_tool_call(name: str, arguments: dict) -> dict:
     """Einen MCP-Tool-Aufruf ausführen und das Ergebnis im MCP-Format liefern."""
     arguments = arguments if isinstance(arguments, dict) else {}
-    if name in ("claudegravity_optimize", "claudegravity_run") and not str(arguments.get("task", "")).strip():
-        return text_result("Fehler: Parameter `task` fehlt.", True)
+    has_task = str(arguments.get("task", "")).strip() or str(arguments.get("issue") or "").strip()
+    if name in ("claudegravity_optimize", "claudegravity_run") and not has_task:
+        return text_result("Fehler: Parameter `task` (oder `issue`) fehlt.", True)
 
     if name == "claudegravity_optimize":
         opt = optimize_from_arguments(arguments, arguments.get("project_path", "."))

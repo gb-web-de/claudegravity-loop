@@ -84,7 +84,7 @@ Analysiert die Aufgabe und liefert Rollenbelegung, Kosten-/Qualitäts-Einschätz
 
 | Parameter | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
-| `task` | string | *(Pflicht)* | Aufgabenbeschreibung |
+| `task` | string | *(Pflicht ohne `issue`)* | Aufgabenbeschreibung |
 | `priority` | `auto` \| `best-code` \| `lowest-cost` \| `local-free` \| `hybrid` \| `balanced` | `auto` | Ziel; `auto` wird `hybrid`, wenn ein lokales Modell erreichbar ist, sonst `balanced`; `lowest-cost` entspricht `--strategy eco`, `hybrid` der Strategie `hybrid` (Cloud plant und nimmt ab, Ollama prüft und baut in Etappen) |
 | `endpoint` | string | – | OpenAI-kompatibler Endpunkt für den Bauleiter |
 | `project_path` | string | `.` | Zielprojekt |
@@ -97,6 +97,8 @@ Analysiert die Aufgabe und liefert Rollenbelegung, Kosten-/Qualitäts-Einschätz
 | `stages` | `auto` \| `an` \| `aus` | `auto` | Etappen-Modus (`--etappen`) |
 | `approve_plan` | boolean | `false` | `--plan-auto`: Plan ohne Rückfrage übernehmen, sobald der Prüfstatiker `APPROVED` meldet |
 | `merge` | boolean | `false` | `--merge`: Ergebnis nach der Abnahme in den Ausgangs-Branch mergen |
+| `issue` | string | – | `--from-issue`: GitHub-Issue als Aufgabe (Nummer, `owner/repo#12` oder URL); `task` ist dann optional und gilt als Zusatz ([GitHub](github.md)) |
+| `open_pr` | boolean | `false` | `--open-pr`: nach erfolgreichem Abschluss Branch pushen und Pull Request öffnen |
 
 ### `claudegravity_run`
 
@@ -104,7 +106,7 @@ Berechnet denselben Befehl und startet ihn.
 
 | Parameter | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
-| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, Rollen, `stages`, `approve_plan`, `merge` | | wie oben | |
+| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, Rollen, `stages`, `approve_plan`, `merge`, `issue`, `open_pr` | | wie oben | |
 | `yolo` | boolean | `false` | Volle Rechte für den Bauleiter. Nur auf ausdrücklichen Wunsch setzen; ohne `yolo` kann ein Claude-Bauleiter im Hintergrund nichts schreiben. |
 | `background` | boolean | `false` | `true`: startet den Loop als eigenen Prozess im Projektordner (unter Windows ohne Konsolenfenster) und meldet PID und Log-Datei; setzt immer `--plan-auto` und lässt `-i` weg. Läuft im Projekt schon ein Hintergrundlauf, wird kein zweiter gestartet. `false`: gibt nur den Befehl zum Start im Terminal zurück (Bash bzw. PowerShell, mit dem Python des Servers). |
 

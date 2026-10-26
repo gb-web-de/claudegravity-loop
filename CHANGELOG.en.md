@@ -13,6 +13,7 @@
 - English output with `--lang en` (also `auto` by locale, `CLAUDEGRAVITY_LANG`, `"lang"` in a profile): status lines, menus, help, error codes linking to the English docs, reports in `.done`/`AUDIT.md`; the models then answer in English as well. German stays the default.
 - Install as a package without cloning: `pipx install git+https://github.com/gb-web-de/claudegravity-loop`, `uv tool install …` or once via `uvx --from … claudegravity`; plus `python -m claudegravity`. No runtime dependencies, `pyproject.toml` is only for installing.
 - Repo map for roles without their own file access (`--repo-map auto|an|aus`): paths with classes and functions, sorted by relevance to the task and limited to 6,000 characters, so Ollama and other endpoints know the project.
+- From issue to pull request: `--from-issue 12` (also `owner/repo#12` or a URL) takes title, body and comments as the task, `--open-pr`/`--pr-draft` pushes the session branch after a successful acceptance check and opens a pull request with `Closes #12`, roles, metrics and plan. Via `gh` or the REST API (`GH_TOKEN`), error codes CG-1601/CG-1602. The repository is also a GitHub Action (`uses: gb-web-de/claudegravity-loop@main`) started by a label or `/claudegravity`; the MCP server knows `issue` and `open_pr`.
 - The benchmark builds directly in the throwaway folder (`--no-worktree`) so the original tests see the result.
 
 ### Changed
@@ -21,6 +22,7 @@
 - Copilot runs via the new Copilot CLI (`copilot -s`, prompt via stdin, own session with `--resume`, read-only mode via `--deny-tool`) and is a full Builder. `gh copilot suggest` is no longer supported.
 
 ### Fixed
+- Endpoint Builders (Ollama, LM Studio, your own servers) could never report "done" in the Git workspace without stages: the completion marker lives in the session folder outside the workspace and was blocked as a write attempt outside the project. The loop now writes it itself.
 - A missing Copilot CLI behind `gh` counted as ready because `gh copilot` exits with 0.
 - `gh` without a downloaded Copilot CLI is no longer detected as Copilot; automatic role selection used to pick it as Reviewer.
 - Roles with Copilot via `gh` aborted with "Agent-CLI 'gh' ist nicht verfügbar".

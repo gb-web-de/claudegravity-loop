@@ -37,6 +37,17 @@ class OptimizerTest(unittest.TestCase):
                 self.assertEqual(opt["loop_args"][0], "Neue Seite bauen")
                 self.assertIn("bauleiter", opt["roles"])
 
+    def test_issue_and_pull_request(self):
+        opt = mcp_server.optimize_claudegravity_command("", issue="o/r#12", open_pr=True)
+        self.assertEqual(opt["loop_args"][:2], ["--from-issue", "o/r#12"])
+        self.assertIn("--open-pr", opt["loop_args"])
+        opt = mcp_server.optimize_claudegravity_command("Bitte mit Typen", issue="12")
+        self.assertEqual(opt["loop_args"][:3], ["Bitte mit Typen", "--from-issue", "12"])
+        self.assertNotIn("--open-pr", opt["loop_args"])
+        res = mcp_server.handle_tool_call("claudegravity_optimize", {"issue": "12", "open_pr": True})
+        self.assertFalse(res.get("isError"))
+        self.assertIn("--from-issue 12", res["content"][0]["text"])
+
     def test_hostile_task_stays_one_argument(self):
         opt = mcp_server.optimize_claudegravity_command(HOSTILE_TASK, project_path="/tmp/my project")
         self.assertEqual(shlex.split(opt["recommended_command"])[1], HOSTILE_TASK)

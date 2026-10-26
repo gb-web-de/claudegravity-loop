@@ -84,7 +84,7 @@ Analyzes the task and returns the role assignment, a cost/quality assessment and
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `task` | string | *(required)* | Task description |
+| `task` | string | *(required without `issue`)* | Task description |
 | `priority` | `auto` \| `best-code` \| `lowest-cost` \| `local-free` \| `hybrid` \| `balanced` | `auto` | Goal; `auto` becomes `hybrid` when a local model is reachable, otherwise `balanced`; `lowest-cost` corresponds to `--strategy eco`, `hybrid` to the `hybrid` strategy (cloud plans and accepts, Ollama reviews and builds in stages) |
 | `endpoint` | string | – | OpenAI-compatible endpoint for the Builder |
 | `project_path` | string | `.` | Target project |
@@ -97,6 +97,8 @@ Analyzes the task and returns the role assignment, a cost/quality assessment and
 | `stages` | `auto` \| `an` \| `aus` | `auto` | Stage mode (`--etappen`) |
 | `approve_plan` | boolean | `false` | `--plan-auto`: accept the plan without asking as soon as the Reviewer reports `APPROVED` |
 | `merge` | boolean | `false` | `--merge`: merge the result into the original branch after acceptance |
+| `issue` | string | – | `--from-issue`: GitHub issue as the task (number, `owner/repo#12` or URL); `task` is then optional and counts as an addition ([GitHub](github.md)) |
+| `open_pr` | boolean | `false` | `--open-pr`: push the branch and open a pull request after a successful finish |
 
 ### `claudegravity_run`
 
@@ -104,7 +106,7 @@ Computes the same command and starts it.
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, roles, `stages`, `approve_plan`, `merge` | | as above | |
+| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, roles, `stages`, `approve_plan`, `merge`, `issue`, `open_pr` | | as above | |
 | `yolo` | boolean | `false` | Full permissions for the Builder. Only set this when explicitly requested; without `yolo` a Claude Builder cannot write anything in the background. |
 | `background` | boolean | `false` | `true`: starts the loop as its own process in the project folder (without a console window on Windows) and reports the PID and log file; always sets `--plan-auto` and drops `-i`. If a background run is already active in the project, no second one is started. `false`: only returns the command for starting it in a terminal (Bash or PowerShell, with the server's Python). |
 

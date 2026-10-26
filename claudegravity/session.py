@@ -74,6 +74,15 @@ def sanitize_filename(text: str) -> str:
     return cleaned[:30] or "task"
 
 
+def task_preview(task: str, limit: int = 160) -> str:
+    """Erste Zeile der Aufgabe für Statuszeilen; lange oder mehrzeilige Aufgaben (z. B. aus einem Issue) gekürzt mit „…“."""
+    text = (task or "").strip()
+    first = text.splitlines()[0] if text else ""
+    if len(first) > limit:
+        return first[: limit - 1].rstrip() + "…"
+    return first + (" …" if first != text else "")
+
+
 def check_and_clean_done_marker(session_dir: Path, project_path: Path) -> bool:
     """Prüft, ob die Fertigmeldung (.done) existiert. Liegt im Session-Ordner."""
     session_done = session_dir / ".done"

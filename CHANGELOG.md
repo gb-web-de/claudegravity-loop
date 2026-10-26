@@ -13,6 +13,7 @@
 - Englische Ausgabe mit `--lang en` (auch `auto` nach Locale, `CLAUDEGRAVITY_LANG`, `"lang"` im Profil): Statuszeilen, Menüs, Hilfe, Fehlercodes mit Link auf die englische Doku, Berichte in `.done`/`AUDIT.md`; die Modelle antworten dann ebenfalls auf Englisch. Standard bleibt Deutsch.
 - Installation als Paket ohne Klon: `pipx install git+https://github.com/gb-web-de/claudegravity-loop`, `uv tool install …` oder einmalig `uvx --from … claudegravity`; dazu `python -m claudegravity`. Keine Laufzeit-Abhängigkeiten, `pyproject.toml` nur für die Installation.
 - Repo-Karte für Rollen ohne eigenen Dateizugriff (`--repo-map auto|an|aus`): Pfade mit Klassen und Funktionen, nach Bezug zur Aufgabe sortiert und auf 6 000 Zeichen begrenzt, damit Ollama und andere Endpunkte das Projekt kennen.
+- Vom Issue zum Pull Request: `--from-issue 12` (auch `owner/repo#12` oder URL) nimmt Titel, Text und Kommentare als Aufgabe, `--open-pr`/`--pr-draft` pusht nach erfolgreicher Abnahme den Session-Branch und öffnet einen Pull Request mit `Closes #12`, Rollen, Kennzahlen und Plan. Über `gh` oder die REST-API (`GH_TOKEN`), Fehlercodes CG-1601/CG-1602. Das Repository ist dazu eine GitHub Action (`uses: gb-web-de/claudegravity-loop@main`), die ein Label oder `/claudegravity` startet; der MCP-Server kennt `issue` und `open_pr`.
 - Der Benchmark baut direkt im Wegwerf-Ordner (`--no-worktree`), damit die Original-Tests das Ergebnis sehen.
 
 ### Geändert
@@ -21,6 +22,7 @@
 - Copilot läuft über die neue Copilot CLI (`copilot -s`, Prompt über stdin, eigene Sitzung mit `--resume`, Lesemodus über `--deny-tool`) und ist ein vollwertiger Bauleiter. `gh copilot suggest` wird nicht mehr unterstützt.
 
 ### Behoben
+- Endpunkt-Bauleiter (Ollama, LM Studio, eigene Server) konnten im Git-Workspace ohne Etappen nie „fertig“ melden: Die Fertigmeldung liegt im Session-Ordner außerhalb des Workspace und wurde als Schreibversuch nach außen blockiert. Der Loop schreibt sie jetzt selbst.
 - Eine fehlende Copilot CLI hinter `gh` galt als bereit, weil `gh copilot` mit Rückgabe 0 endet.
 - `gh` ohne heruntergeladene Copilot CLI wird nicht mehr als Copilot erkannt; die automatische Rollenwahl nahm es sonst als Prüfstatiker.
 - Rollen mit Copilot über `gh` brachen mit „Agent-CLI 'gh' ist nicht verfügbar“ ab.

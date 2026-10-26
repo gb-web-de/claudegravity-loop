@@ -43,7 +43,7 @@ Without a Mermaid view: **message with a CG code** → look up the code below. *
 
 ## Error codes
 
-Loop messages carry a code `CG-xxxx` with a fix hint and a link to this section. Ranges: 10xx setup, 11xx configuration, 12xx connection and providers, 13xx limits, 14xx build and acceptance, 15xx security. With `CLAUDEGRAVITY_DEBUG=1` unexpected errors show the full traceback.
+Loop messages carry a code `CG-xxxx` with a fix hint and a link to this section. Ranges: 10xx setup, 11xx configuration, 12xx connection and providers, 13xx limits, 14xx build and acceptance, 15xx security, 16xx GitHub. With `CLAUDEGRAVITY_DEBUG=1` unexpected errors show the full traceback.
 
 <a id="cg-1001"></a>
 **CG-1001 · No AI backend found**  
@@ -137,6 +137,14 @@ Check the answer; use credentials only via environment variables and rotate comp
 <a id="cg-1504"></a>
 **CG-1504 · Tests weakened or removed**  
 Check the diff of the test files. If the change is not intended, restore the tests; with --test-guard strict the loop rejects such completion reports itself.
+
+<a id="cg-1601"></a>
+**CG-1601 · GitHub issue not readable**  
+Check the number and the repository (owner/repo#12 or URL). Sign in to the GitHub CLI (`gh auth login`) or set GH_TOKEN; for private repositories the token needs read access to issues.
+
+<a id="cg-1602"></a>
+**CG-1602 · Pull request not created**  
+The result is on the session branch. Check the permissions (push to the repository; in GitHub Actions `contents: write` and `pull-requests: write`) and `gh auth status`, then by hand: `git push -u origin <branch>` and `gh pr create`.
 
 <a id="cg-1999"></a>
 **CG-1999 · Unexpected error**  

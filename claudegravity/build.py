@@ -351,6 +351,27 @@ class BuildContext:
     repo_map: str = ""  # einmal zu Baubeginn, damit der Prompt-Anfang gleich bleibt (Prompt-Caching)
 
 
+DONE_BLOCK = re.compile(r"```(?:filepath:|file:)\s*([^\s\n\r`]+)\r?\n(.*?)```", re.DOTALL)
+
+
+def take_done_block(text: str, session_dir: Path) -> tuple[str, bool]:
+    """Fertigmeldung eines Endpunkt-Bauleiters (`filepath:`-Block auf eine `.done`) selbst in den Session-Ordner schreiben.
+    Liefert die Antwort ohne diesen Block und ob es einen gab. Im Git-Workspace liegt der Session-Ordner außerhalb des
+    Arbeitsordners; über `apply_code_blocks()` wäre der Block ein blockierter Schreibversuch nach außen."""
+    contents: list[str] = []
+
+    def drop(match: re.Match) -> str:
+        if match.group(1).strip().strip("\"'").replace("\\", "/").rsplit("/", 1)[-1] != ".done":
+            return match.group(0)
+        contents.append(match.group(2))
+        return ""
+
+    rest = DONE_BLOCK.sub(drop, text)
+    if contents:
+        (session_dir / ".done").write_text(contents[0].strip() + "\n" if contents[0].strip() else "fertig\n", encoding="utf-8")
+    return rest, bool(contents)
+
+
 def edit_errors_note(errors: list[str]) -> str:
     """Rückmeldung für den Bauleiter, wenn Suchen/Ersetzen-Blöcke nicht gepasst haben."""
     if not errors:
@@ -422,8 +443,9 @@ def run_build_call(
         def on_blocked(rel: str) -> None:
             record_audit_event(ctx.session_dir, "blocked_write", f"{name} wollte {rel} schreiben", ctx.metrics)
 
-        written = apply_code_blocks(ctx.work_path, res, on_blocked=on_blocked)
-        edited, ctx.edit_errors = apply_edit_blocks(ctx.work_path, res, on_blocked=on_blocked)
+        files_text, _ = take_done_block(res, ctx.session_dir)
+        written = apply_code_blocks(ctx.work_path, files_text, on_blocked=on_blocked)
+        edited, ctx.edit_errors = apply_edit_blocks(ctx.work_path, files_text, on_blocked=on_blocked)
         written += [e for e in edited if e not in written]
         for err in ctx.edit_errors:
             say(f"[!] Suchen/Ersetzen nicht angewendet: {err}")

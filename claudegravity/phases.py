@@ -13,7 +13,7 @@ from .common import ENDPOINT_BINARIES, LOCAL_BACKEND_ORDER, SETTINGS, STAGE_MAX_
 from .safety import redact_secrets
 from .repomap import repo_map, wants_repo_map
 from .errors import fail, format_error
-from .metrics import SessionMetrics, append_metrics_to_done, format_metrics_report
+from .metrics import SessionMetrics, append_metrics_to_done, build_kpis, format_kpi_block, format_metrics_report
 from .backends import AgentCLI, DEFAULT_MODEL_LABEL, create_agent, describe_agent, effort_label, is_placeholder_value, model_flags
 from .session import (
     acquire_worktree,
@@ -34,7 +34,9 @@ from .session import (
     sanitize_filename,
     save_session_state,
     sha256_file,
+    task_preview,
 )
+from .github import open_pull_request, pull_request_body, pull_request_title, repo_slug
 from .budget import format_budget
 from .planning import handle_plan_approval_and_changes, run_adversarial_plan
 from .roles import (
@@ -98,6 +100,8 @@ class RunContext:
     inspector: AgentCLI | None = None
     inspector_flags: list[str] = dataclasses.field(default_factory=list)
     max_iters: int = 0
+    open_pr: bool = False
+    pr_draft: bool = False
 
 
 def open_session(args: argparse.Namespace, project_path: Path, config_report: dict) -> tuple[Path, dict, str]:
@@ -125,12 +129,12 @@ def open_session(args: argparse.Namespace, project_path: Path, config_report: di
         state = load_session_state(session_dir)
         task = state.get("task", args.task)
         say(f"🔄 Setze letzte Sitzung fort: {session_dir.name}")
-        say(f"📌 Ursprüngliche Aufgabe: {task}")
+        say(f"📌 Ursprüngliche Aufgabe: {task_preview(task)}")
     elif not args.task and latest_sess:
         state_candidate = load_session_state(latest_sess)
         if state_candidate and state_candidate.get("phase") != "completed":
             say(f"\n🔍 Unterbrochene Sitzung gefunden: {latest_sess.name}")
-            say(f"📌 Aufgabe: {state_candidate.get('task')}")
+            say(f"📌 Aufgabe: {task_preview(state_candidate.get('task'))}")
             try:
                 res_ans = ask("Möchtest du diese Sitzung fortsetzen? [J/n]: ")
             except (EOFError, KeyboardInterrupt):
@@ -151,7 +155,8 @@ def open_session(args: argparse.Namespace, project_path: Path, config_report: di
     else:
         task = args.task
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        slug = sanitize_filename(task)
+        issue = config_report.get("issue")
+        slug = sanitize_filename(f"issue-{issue['number']} {issue['title']}" if issue else task)
         session_dir = loop_dir / "sessions" / f"{timestamp}_{slug}"
         session_dir.mkdir(parents=True, exist_ok=True)
         state = {
@@ -164,6 +169,8 @@ def open_session(args: argparse.Namespace, project_path: Path, config_report: di
             "last_iteration": 0,
             "max_iterations": args.max_iterations or 10,
         }
+        if issue:
+            state["issue"] = {k: issue.get(k) for k in ("number", "title", "url", "repo")}
         template = config_report.get("template")
         if template:
             state["template"] = template["name"]
@@ -322,6 +329,18 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
     if not use_worktree and not state.get("worktree"):
         state["worktree"] = {"enabled": False}
     merge_worktree = args.merge or state.get("merge_worktree", False)
+    # Pull Request statt Merge: der Branch bleibt für den PR stehen
+    pr_draft = bool(getattr(args, "pr_draft", False) or state.get("pr_draft"))
+    # Kandidaten-Sitzungen öffnen nie selbst einen PR; das macht der Hauptlauf für den Gewinner
+    open_pr = bool(getattr(args, "open_pr", False) or state.get("open_pr") or pr_draft) and not state.get("candidate")
+    if open_pr:
+        state["open_pr"] = True
+        state["pr_draft"] = pr_draft
+        if merge_worktree:
+            say("⚠️  --open-pr und --merge zusammen: es wird nicht gemerged, der Branch geht als Pull Request raus.")
+            merge_worktree = False
+        if not use_worktree:
+            say("⚠️  --open-pr braucht den Git-Workspace der Sitzung; ohne ihn (--no-worktree oder kein Git) gibt es keinen Pull Request.")
     if merge_worktree:
         state["merge_worktree"] = True
 
@@ -353,6 +372,8 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
         use_worktree=use_worktree,
         merge_worktree=merge_worktree,
         ask_mode=ask_mode,
+        open_pr=open_pr,
+        pr_draft=pr_draft,
     )
 
 
@@ -400,6 +421,8 @@ def print_run_banner(run: "RunContext") -> None:
         say("[*] Rollen-Status     : 🔄 Rollen getauscht (--swap)")
     if use_worktree:
         say("[*] Git-Workspace     : 🌿 eigener Worktree pro Session" + (" (Merge nach .done)" if merge_worktree else ""))
+    if run.open_pr:
+        say("[*] Pull Request      : 🔗 nach Abschluss pushen und öffnen" + (" (Entwurf)" if run.pr_draft else ""))
     task_secrets = redact_secrets(task)[1]
     if task_secrets:
         cloud_roles = [a.name for a in (planner, reviewer, builder) if not a.local]
@@ -1041,6 +1064,38 @@ def run_build_phase(run: "RunContext") -> None:
     run.max_iters = max_iters
 
 
+def publish_pull_request(run: "RunContext", worktree: dict | None, builder_name: str | None = None) -> str | None:
+    """--open-pr: Branch des fertigen Laufs pushen und als Pull Request öffnen, mit Rollen, Kennzahlen und Plan im Text."""
+    state = run.state
+    plan_name = state.get("approved_plan_file")
+    plan_path = (run.session_dir / plan_name) if plan_name else run.plan_file
+    try:
+        plan_text = plan_path.read_text(encoding="utf-8") if plan_path else ""
+    except OSError:
+        plan_text = ""
+    roles = [
+        ("Architekt", describe_agent(run.planner)),
+        ("Prüfstatiker", describe_agent(run.reviewer)),
+        ("Bauleiter", builder_name or describe_agent(run.builder)),
+        ("Abnahme", describe_agent(run.inspector) if run.inspector else "–"),
+    ]
+    kpi_lines = [line for line in format_kpi_block(build_kpis(state, run.metrics)).splitlines() if line.startswith("* ")]
+    issue = state.get("issue")
+    body = pull_request_body(
+        run.task,
+        issue,
+        roles,
+        run.proof_cmd or state.get("proof"),
+        kpi_lines,
+        plan_text,
+        run.session_dir.name,
+        target_repo=(issue or {}).get("repo") or repo_slug(run.project_path),
+    )
+    return open_pull_request(
+        run.project_path, run.session_dir, state, worktree, pull_request_title(run.task, issue), body, draft=run.pr_draft
+    )
+
+
 def finish_run(run: "RunContext") -> None:
     """Abschluss: Arbeitsbereich freigeben oder behalten, Abbruchgrund und Kennzahlen ausgeben."""
     project_path, session_dir, state, task = run.project_path, run.session_dir, run.state, run.task
@@ -1048,6 +1103,8 @@ def finish_run(run: "RunContext") -> None:
     session_metrics, max_iters = run.metrics, run.max_iters
     if state.get("phase") == "completed" and in_worktree and not state["worktree"].get("released"):
         release_worktree(project_path, session_dir, state, task, merge=merge_worktree)
+    if state.get("phase") == "completed" and run.open_pr:
+        publish_pull_request(run, state.get("worktree"))
     if state.get("phase") == "stage_open":
         if in_worktree:
             say(f"🌿 Git-Workspace bleibt für die Nacharbeit erhalten: {work_path}")

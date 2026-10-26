@@ -43,7 +43,7 @@ Ohne Mermaid-Ansicht: **Meldung mit CG-Code** → Code unten nachschlagen. **Loo
 
 ## Fehlercodes
 
-Meldungen des Loops tragen einen Code `CG-xxxx` mit Lösungshinweis und Verweis auf diesen Abschnitt. Bereiche: 10xx Einrichtung, 11xx Konfiguration, 12xx Verbindung und Anbieter, 13xx Limits, 14xx Bau und Abnahme, 15xx Sicherheit. Mit `CLAUDEGRAVITY_DEBUG=1` erscheint bei unerwarteten Fehlern der vollständige Traceback.
+Meldungen des Loops tragen einen Code `CG-xxxx` mit Lösungshinweis und Verweis auf diesen Abschnitt. Bereiche: 10xx Einrichtung, 11xx Konfiguration, 12xx Verbindung und Anbieter, 13xx Limits, 14xx Bau und Abnahme, 15xx Sicherheit, 16xx GitHub. Mit `CLAUDEGRAVITY_DEBUG=1` erscheint bei unerwarteten Fehlern der vollständige Traceback.
 
 <a id="cg-1001"></a>
 **CG-1001 · Kein KI-Backend gefunden**  
@@ -137,6 +137,14 @@ Antwort prüfen; Zugangsdaten nur über Umgebungsvariablen nutzen und kompromitt
 <a id="cg-1504"></a>
 **CG-1504 · Tests abgeschwächt oder entfernt**  
 Diff der Testdateien prüfen. Ist die Änderung nicht gewollt, Tests wiederherstellen; mit --test-guard strict weist der Loop solche Fertigmeldungen selbst zurück.
+
+<a id="cg-1601"></a>
+**CG-1601 · GitHub-Issue nicht lesbar**  
+Nummer und Repository prüfen (owner/repo#12 oder URL). Die GitHub CLI anmelden (`gh auth login`) oder GH_TOKEN setzen; für private Repositories braucht der Token Leserechte auf Issues.
+
+<a id="cg-1602"></a>
+**CG-1602 · Pull Request nicht erstellt**  
+Das Ergebnis liegt auf dem Session-Branch. Rechte prüfen (Push auf das Repository, in GitHub Actions `contents: write` und `pull-requests: write`) und `gh auth status`, dann von Hand: `git push -u origin <branch>` und `gh pr create`.
 
 <a id="cg-1999"></a>
 **CG-1999 · Unerwarteter Fehler**  

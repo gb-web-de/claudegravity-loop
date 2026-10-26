@@ -1,0 +1,94 @@
+name: ClaudeGravity Loop
+description: "Aus einem GitHub-Issue wird ein Pull Request: ein Modell plant, ein anderes prüft, eines baut, ein anderer Anbieter nimmt ab."
+author: gb-web-de
+branding:
+  icon: git-pull-request
+  color: purple
+
+inputs:
+  issue:
+    description: "Issue-Nummer, owner/repo#12 oder URL (Standard: das Issue des auslösenden Ereignisses)"
+    required: false
+    default: ${{ github.event.issue.number }}
+  args:
+    description: 'Weitere Optionen für claudegravity, z. B. "--architekt claude --pruefstatiker gemini --strategy best-code"'
+    required: false
+    default: ""
+  proof:
+    description: 'Prüfbefehl, den der Loop selbst ausführt, z. B. "python -m pytest -q"'
+    required: false
+    default: ""
+  draft:
+    description: "Pull Request als Entwurf öffnen (true/false)"
+    required: false
+    default: "false"
+  comment:
+    description: "Das Issue mit dem Ergebnis kommentieren (true/false)"
+    required: false
+    default: "true"
+  lang:
+    description: "Sprache der Ausgaben, des Pull Requests und des Kommentars (de oder en)"
+    required: false
+    default: "de"
+  cli:
+    description: "KI-CLIs, die per npm installiert werden (leer: keine)"
+    required: false
+    default: "@anthropic-ai/claude-code @google/gemini-cli"
+  python-version:
+    description: "Python-Version für den Loop"
+    required: false
+    default: "3.12"
+  working-directory:
+    description: "Projektordner im Checkout"
+    required: false
+    default: "."
+
+outputs:
+  pull-request:
+    description: "URL des geöffneten Pull Requests (leer ohne Erfolg)"
+    value: ${{ steps.loop.outputs.pull-request }}
+  success:
+    description: "true, wenn der Loop die Aufgabe abgeschlossen hat"
+    value: ${{ steps.loop.outputs.success }}
+  session:
+    description: "Name der Sitzung unter .dual-loop/sessions/"
+    value: ${{ steps.loop.outputs.session }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - uses: actions/setup-node@v4
+      if: inputs.cli != ''
+      with:
+        node-version: "22"
+    - name: KI-CLIs installieren
+      if: inputs.cli != ''
+      shell: bash
+      env:
+        CG_CLI: ${{ inputs.cli }}
+      # Absichtlich ohne Anführungszeichen: mehrere Pakete, durch Leerzeichen getrennt
+      run: npm install -g $CG_CLI
+    - name: ClaudeGravity installieren
+      shell: bash
+      run: python -m pip install --quiet "$GITHUB_ACTION_PATH"
+    - name: Git-Autor setzen
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        git config user.name >/dev/null || git config user.name "github-actions[bot]"
+        git config user.email >/dev/null || git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+    - name: Loop starten
+      id: loop
+      shell: bash
+      env:
+        CG_ISSUE: ${{ inputs.issue }}
+        CG_ARGS: ${{ inputs.args }}
+        CG_PROOF: ${{ inputs.proof }}
+        CG_DRAFT: ${{ inputs.draft }}
+        CG_COMMENT: ${{ inputs.comment }}
+        CG_LANG: ${{ inputs.lang }}
+        CG_WORKDIR: ${{ inputs.working-directory }}
+      run: python "$GITHUB_ACTION_PATH/tools/github_action.py"

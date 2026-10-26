@@ -32,6 +32,7 @@ from .session import (
 from .budget import read_session_kpi
 from .runner import safe_agent_run
 from .build import collect_build_changes, git_head, run_proof, test_integrity_findings
+from .phases import publish_pull_request
 
 if TYPE_CHECKING:
     from .phases import RunContext
@@ -57,6 +58,9 @@ CHILD_STATE_DROP = (
     "metrics",
     "abort_reason",
     "candidates",
+    "open_pr",
+    "pr_draft",
+    "pull_request",
 )
 CANDIDATE_DIFF_LIMIT = 25000
 WINNER_LINE = re.compile(r"^\s*\**\s*(?:WINNER|GEWINNER|SIEGER)\s*\**\s*:\s*\**\s*`?([\w.:=-]+)`?", re.IGNORECASE | re.MULTILINE)
@@ -402,6 +406,8 @@ def run_candidates(run: "RunContext") -> None:
             encoding="utf-8",
         )
         append_metrics_to_done(session_dir, project_path, run.metrics, state)
+        if run.open_pr:
+            publish_pull_request(run, winner.state.get("worktree"), builder_name=winner.name)
     else:
         say(f"\n⏹️ Abbruchgrund: {state.get('abort_reason')}")
         (session_dir / "AUDIT.md").write_text(format_candidate_table(candidates, None) + "\n", encoding="utf-8")

@@ -16,6 +16,7 @@
 | [Ollama & Codex](ollama-und-codex.md) | Durchgespielte Rollenaufteilungen, CLI- und MCP-Aufrufe, Modelle für Mac M4 mit 48 GB |
 | [CLI-Referenz](cli-referenz.md) | Alle Flags von `claudegravity`, Profile, Vorlagen |
 | [MCP-Server](mcp-server.md) | Registrierung, Tools, Optimizer im Terminal |
+| [GitHub](github.md) | Issue als Aufgabe, Pull Request nach der Abnahme, GitHub Action |
 | [Plugins](plugins.md) | Ein Befehl für Claude Code, Codex, Antigravity, Copilot CLI, Cursor, Gemini CLI |
 | [Sessions & Dateien](sessions-und-dateien.md) | `.dual-loop/`, `state.json`, Fortsetzen, `.done`-Audit, `CLAUDE.md` & `knowledge/` |
 | [Sicherheit](sicherheit.md) | Bedrohungsmodell: was der Loop schützt, wie, und was du selbst absichern musst |

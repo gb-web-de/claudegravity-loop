@@ -96,6 +96,14 @@ ERROR_CODES = {
         "Diff der Testdateien prüfen. Ist die Änderung nicht gewollt, Tests wiederherstellen; mit --test-guard strict "
         "weist der Loop solche Fertigmeldungen selbst zurück.",
     ),
+    "CG-1601": (
+        "GitHub-Issue nicht lesbar",
+        "Nummer und Repository prüfen (owner/repo#12 oder URL). Die GitHub CLI anmelden (`gh auth login`) oder GH_TOKEN setzen; für private Repositories braucht der Token Leserechte auf Issues.",
+    ),
+    "CG-1602": (
+        "Pull Request nicht erstellt",
+        "Das Ergebnis liegt auf dem Session-Branch. Rechte prüfen (Push auf das Repository, in GitHub Actions `contents: write` und `pull-requests: write`) und `gh auth status`, dann von Hand: `git push -u origin <branch>` und `gh pr create`.",
+    ),
     "CG-1999": ("Unerwarteter Fehler", "Bitte mit der vollständigen Ausgabe als Issue melden."),
 }
 ERROR_CODES_EN = {
@@ -182,6 +190,14 @@ ERROR_CODES_EN = {
         "Tests weakened or removed",
         "Check the diff of the test files. If the change is not intended, restore the tests; with --test-guard strict "
         "the loop rejects such completion reports itself.",
+    ),
+    "CG-1601": (
+        "GitHub issue not readable",
+        "Check the number and the repository (owner/repo#12 or URL). Sign in to the GitHub CLI (`gh auth login`) or set GH_TOKEN; for private repositories the token needs read access to issues.",
+    ),
+    "CG-1602": (
+        "Pull request not created",
+        "The result is on the session branch. Check the permissions (push to the repository; in GitHub Actions `contents: write` and `pull-requests: write`) and `gh auth status`, then by hand: `git push -u origin <branch>` and `gh pr create`.",
     ),
     "CG-1999": ("Unexpected error", "Please report it as an issue with the full output."),
 }

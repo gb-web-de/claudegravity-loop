@@ -129,6 +129,16 @@ Effort is passed on to `agy` (`--effort`) and `codex` (`-c model_reasoning_effor
 
 Details: [Sessions & files](sessions-und-dateien.md#git-workspace-per-session).
 
+## GitHub
+
+| Flag | Aliases | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `--from-issue <no\|url>` | `--issue`, `--aus-issue` | GitHub issue as the task: `12`, `#12`, `owner/repo#12` or the URL. Reads title, body, labels and the latest comments via `gh` or the REST API (`GH_TOKEN`). A task text next to it is an addition. Cannot be set via the environment or a profile. | – |
+| `--open-pr` | `--pr-oeffnen` | After a successful finish, push the session branch and open a pull request, with `Closes #n` for `--from-issue`. Never merges, not even with `--merge`. Not from the project profile. | off |
+| `--pr-draft` | `--pr-entwurf` | Open the pull request as a draft (implies `--open-pr`). | off |
+
+Details and GitHub Action: [GitHub](github.md).
+
 ## Privacy
 
 | Flag | Description |

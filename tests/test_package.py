@@ -20,6 +20,7 @@ ORDER = [
     "metrics",
     "backends",
     "session",
+    "github",
     "budget",
     "runner",
     "planning",

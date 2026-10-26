@@ -90,6 +90,14 @@
    👉 Diff der Testdateien prüfen. Ist die Änderung nicht gewollt, Tests wiederherstellen; mit --test-guard strict weist der Loop solche Fertigmeldungen selbst zurück.
    📖 docs/de/fehlerbehebung.md#cg-1504
 
+❌ [CG-1601] GitHub-Issue nicht lesbar
+   👉 Nummer und Repository prüfen (owner/repo#12 oder URL). Die GitHub CLI anmelden (`gh auth login`) oder GH_TOKEN setzen; für private Repositories braucht der Token Leserechte auf Issues.
+   📖 docs/de/fehlerbehebung.md#cg-1601
+
+❌ [CG-1602] Pull Request nicht erstellt
+   👉 Das Ergebnis liegt auf dem Session-Branch. Rechte prüfen (Push auf das Repository, in GitHub Actions `contents: write` und `pull-requests: write`) und `gh auth status`, dann von Hand: `git push -u origin <branch>` und `gh pr create`.
+   📖 docs/de/fehlerbehebung.md#cg-1602
+
 ❌ [CG-1999] Unerwarteter Fehler
    👉 Bitte mit der vollständigen Ausgabe als Issue melden.
    📖 docs/de/fehlerbehebung.md#cg-1999

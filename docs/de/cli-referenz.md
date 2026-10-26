@@ -129,6 +129,16 @@ Effort wird an `agy` (`--effort`) und `codex` (`-c model_reasoning_effort`, `max
 
 Details: [Sessions & Dateien](sessions-und-dateien.md#git-workspace-pro-session).
 
+## GitHub
+
+| Flag | Aliase | Beschreibung | Standard |
+| :--- | :--- | :--- | :--- |
+| `--from-issue <nr\|url>` | `--issue`, `--aus-issue` | GitHub-Issue als Aufgabe: `12`, `#12`, `owner/repo#12` oder die URL. Liest Titel, Text, Labels und die letzten Kommentare über `gh` oder die REST-API (`GH_TOKEN`). Ein Aufgabentext daneben gilt als Zusatz. Nicht über Umgebung oder Profil setzbar. | – |
+| `--open-pr` | `--pr-oeffnen` | Nach erfolgreichem Abschluss den Session-Branch pushen und einen Pull Request öffnen, bei `--from-issue` mit `Closes #n`. Merged nie, auch nicht mit `--merge`. Nicht aus dem Projekt-Profil. | aus |
+| `--pr-draft` | `--pr-entwurf` | Pull Request als Entwurf öffnen (schließt `--open-pr` ein). | aus |
+
+Details und GitHub Action: [GitHub](github.md).
+
 ## Datenschutz
 
 | Flag | Beschreibung |

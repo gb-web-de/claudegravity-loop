@@ -91,7 +91,12 @@ ROLE_MODEL_FLAGS = {
 
 def dry_run_command(args, task: str, strat: str, default_b_model: str | None = None) -> list[str]:
     """Befehl, der genau die Belegung des Trockenlaufs startet (alle Rollen-, Modell- und Effort-Flags)."""
-    cmd = ["claudegravity", task]
+    if getattr(args, "from_issue", None):
+        # Der Aufgabentext kommt aus dem Issue; nur ein eigener Zusatz steht im Befehl
+        extra = getattr(args, "issue_extra", "")
+        cmd = ["claudegravity"] + ([extra] if extra else []) + ["--from-issue", str(args.from_issue)]
+    else:
+        cmd = ["claudegravity", task]
     if strat != "balanced":
         cmd += ["--strategy", strat]
     pairs = [
@@ -132,6 +137,8 @@ def dry_run_command(args, task: str, strat: str, default_b_model: str | None = N
         ("--plan-auto", args.approve_plan),
         ("--auto-switch", args.auto_switch),
         ("--merge", args.merge),
+        ("--open-pr", getattr(args, "open_pr", False) and not getattr(args, "pr_draft", False)),
+        ("--pr-draft", getattr(args, "pr_draft", False)),
         ("--no-inspect", not args.inspect),
     ):
         if on:

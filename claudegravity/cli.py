@@ -31,7 +31,8 @@ from .backends import (
     effort_label,
     is_private_endpoint,
 )
-from .session import LOG_FORMATS, find_latest_session, get_permission_flags, is_git_repo
+from .session import LOG_FORMATS, find_latest_session, get_permission_flags, is_git_repo, task_preview
+from .github import issue_task, load_issue
 from .budget import (
     Budget,
     BudgetExceeded,
@@ -394,6 +395,27 @@ def build_parser(full_help: bool = False, lang: str | None = None) -> argparse.A
     )
     add("--no-shield", action="store_true", help="Datenschutzschild aus: Zugangsdaten in Prompts an Cloud-Modelle nicht schwärzen")
 
+    add = group("GitHub")
+    add(
+        "--from-issue",
+        "--issue",
+        "--aus-issue",
+        dest="from_issue",
+        default=None,
+        metavar="NR|URL",
+        core=True,
+        help="GitHub-Issue als Aufgabe: Nummer (12, #12), owner/repo#12 oder URL; liest Titel, Text und Kommentare über gh oder GH_TOKEN",
+    )
+    add(
+        "--open-pr",
+        "--pr-oeffnen",
+        dest="open_pr",
+        action="store_true",
+        core=True,
+        help="Nach erfolgreichem Abschluss den Session-Branch pushen und einen Pull Request öffnen (mit „Closes #n“ bei --from-issue)",
+    )
+    add("--pr-draft", "--pr-entwurf", dest="pr_draft", action="store_true", help="Pull Request als Entwurf öffnen (schließt --open-pr ein)")
+
     add = group("Ausgabe")
     add(
         "--lang",
@@ -658,7 +680,7 @@ def show_dry_run(args: argparse.Namespace, agents: dict, project_path: Path, con
     say("\n" + "=" * 68)
     say("🔍 ClaudeGravity Loop — Trockenlauf (Dry Run)")
     say("=" * 68)
-    say(f"📌 Aufgabe        : {dry_task}")
+    say(f"📌 Aufgabe        : {task_preview(dry_task)}")
     say(f"🎯 Strategie      : {strat.upper()}")
     say(f"📁 Ziel-Projekt   : {project_path}")
     say("\n1. 🏗️ Architekt (Phase 1: Planung & Entwurf):")
@@ -782,6 +804,12 @@ def main():
         fail("CG-1003", str(project_path))
     if not agents:
         fail("CG-1001")
+
+    if args.from_issue and not args.resume:
+        issue = load_issue(project_path, args.from_issue)
+        config_report["issue"] = issue
+        args.issue_extra = args.task
+        args.task = issue_task(issue, args.task)
 
     guided_dry_run = maybe_first_run_guide(args, agents, project_path, config_report)
     if guided_dry_run is None:
