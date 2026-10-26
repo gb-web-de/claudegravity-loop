@@ -43,7 +43,7 @@ Without a Mermaid view: **message with a CG code** → look up the code below. *
 
 ## Error codes
 
-Loop messages carry a code `CG-xxxx` with a fix hint and a link to this section. Ranges: 10xx setup, 11xx configuration, 12xx connection and providers, 13xx limits, 14xx build and acceptance, 15xx security, 16xx GitHub. With `CLAUDEGRAVITY_DEBUG=1` unexpected errors show the full traceback.
+Loop messages carry a code `CG-xxxx` with a fix hint and a link to this section. Ranges: 10xx setup, 11xx configuration, 12xx connection and providers, 13xx limits, 14xx build and acceptance, 15xx security, 16xx GitHub, 17xx sandbox. With `CLAUDEGRAVITY_DEBUG=1` unexpected errors show the full traceback.
 
 <a id="cg-1001"></a>
 **CG-1001 · No AI backend found**  
@@ -145,6 +145,14 @@ Check the number and the repository (owner/repo#12 or URL). Sign in to the GitHu
 <a id="cg-1602"></a>
 **CG-1602 · Pull request not created**  
 The result is on the session branch. Check the permissions (push to the repository; in GitHub Actions `contents: write` and `pull-requests: write`) and `gh auth status`, then by hand: `git push -u origin <branch>` and `gh pr create`.
+
+<a id="cg-1701"></a>
+**CG-1701 · Sandbox not available**  
+Install and start Docker or Podman (`docker info` or `podman info` must work), or run without --sandbox.
+
+<a id="cg-1702"></a>
+**CG-1702 · Program missing from the sandbox image**  
+For the AI CLIs, build the bundled image (`docker build -t claudegravity-sandbox sandbox/`) and pass it with --sandbox-image claudegravity-sandbox; add the project's tools and dependencies in your own image on top of it. Alternatively use an endpoint as Builder.
 
 <a id="cg-1999"></a>
 **CG-1999 · Unexpected error**  

@@ -117,6 +117,8 @@ def dry_run_command(args, task: str, strat: str, default_b_model: str | None = N
         ("--test-guard", None if getattr(args, "test_guard", "warn") == "warn" else args.test_guard),
         ("--lang", getattr(args, "lang", None)),
         ("--repo-map", None if getattr(args, "repo_map", "auto") == "auto" else args.repo_map),
+        ("--sandbox", None if getattr(args, "sandbox", "aus") in ("aus", "off") else args.sandbox),
+        ("--sandbox-image", None if getattr(args, "sandbox_image", "python:3.12-slim") == "python:3.12-slim" else args.sandbox_image),
         ("--abnahme", args.inspector),
         ("--abnahme-model", args.inspector_model),
         ("--abnahme-effort", args.inspector_effort),
@@ -139,6 +141,7 @@ def dry_run_command(args, task: str, strat: str, default_b_model: str | None = N
         ("--merge", args.merge),
         ("--open-pr", getattr(args, "open_pr", False) and not getattr(args, "pr_draft", False)),
         ("--pr-draft", getattr(args, "pr_draft", False)),
+        ("--sandbox-net", getattr(args, "sandbox_net", False)),
         ("--no-inspect", not args.inspect),
     ):
         if on:

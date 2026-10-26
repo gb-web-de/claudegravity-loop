@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 import subprocess
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,7 @@ from .common import RESUMABLE_CLIS, say
 from .safety import apply_code_blocks, apply_edit_blocks, mask_secrets, resolve_project_target
 from .repomap import repo_map_block
 from .backends import AgentCLI, build_cli_command
+from . import sandbox
 from .session import (
     REVIEW_FORMAT,
     _git,
@@ -403,19 +405,21 @@ def run_build_call(
     resume = builder_resume_flags(builder, ctx.resume_builder) if full_prompt is not None else []
 
     def call(agent: "AgentCLI", text: str, flags: list[str]):
-        return safe_agent_run(
-            agent=agent,
-            prompt=text,
-            cwd=ctx.work_path,
-            flags=flags,
-            agents=ctx.agents,
-            session_dir=ctx.session_dir,
-            state=ctx.state,
-            auto_switch=ctx.auto_switch,
-            role="builder",
-            metrics_tracker=ctx.metrics,
-            exclude={ctx.inspector.binary} if ctx.inspector is not None else None,
-        )
+        # Mit --sandbox laufen schreibende CLIs hier im Container (siehe sandbox.builder_scope)
+        with sandbox.builder_scope(ctx.work_path, ctx.session_dir):
+            return safe_agent_run(
+                agent=agent,
+                prompt=text,
+                cwd=ctx.work_path,
+                flags=flags,
+                agents=ctx.agents,
+                session_dir=ctx.session_dir,
+                state=ctx.state,
+                auto_switch=ctx.auto_switch,
+                role="builder",
+                metrics_tracker=ctx.metrics,
+                exclude={ctx.inspector.binary} if ctx.inspector is not None else None,
+            )
 
     if not resume:
         res, builder, builder_flags = call(builder, full_prompt if full_prompt is not None else prompt, builder_flags)
@@ -472,15 +476,20 @@ def run_proof_check(ctx: BuildContext, proof_cmd: str) -> tuple[bool, str]:
 
 
 def run_proof(command: str, cwd: Path, timeout: int = 900) -> tuple[bool, str]:
-    """Führt den vereinbarten Prüfbefehl selbst aus, ohne Shell. Liefert (grün, Ausgabe-Ende)."""
-    argv = shlex.split(command, posix=os.name != "nt")
-    if os.name == "nt":
+    """Führt den vereinbarten Prüfbefehl selbst aus, ohne Shell, mit --sandbox im Container. Liefert (grün, Ausgabe-Ende)."""
+    in_sandbox = sandbox.active()
+    # Im Container gilt die Linux-Schreibweise, auch wenn der Loop unter Windows läuft
+    argv = shlex.split(command, posix=in_sandbox or os.name != "nt")
+    if os.name == "nt" and not in_sandbox:
         argv = [a[1:-1] if len(a) >= 2 and a[0] == a[-1] == '"' else a for a in argv]
     if not argv:
         return True, ""
     try:
-        cmd, use_shell = build_cli_command(argv[0], argv[1:])
-        res = subprocess.run(
+        if in_sandbox:
+            cmd, use_shell = sandbox.proof_command(argv, cwd, f"claudegravity-proof-{os.getpid()}-{time.time_ns() % 10**8}"), False
+        else:
+            cmd, use_shell = build_cli_command(argv[0], argv[1:])
+        res = sandbox.run(
             cmd, cwd=str(cwd), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, shell=use_shell
         )
     except (OSError, ValueError) as ex:

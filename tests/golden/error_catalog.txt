@@ -98,6 +98,14 @@
    👉 Das Ergebnis liegt auf dem Session-Branch. Rechte prüfen (Push auf das Repository, in GitHub Actions `contents: write` und `pull-requests: write`) und `gh auth status`, dann von Hand: `git push -u origin <branch>` und `gh pr create`.
    📖 docs/de/fehlerbehebung.md#cg-1602
 
+❌ [CG-1701] Sandbox nicht verfügbar
+   👉 Docker oder Podman installieren und starten (`docker info` bzw. `podman info` muss klappen) oder ohne --sandbox laufen lassen.
+   📖 docs/de/fehlerbehebung.md#cg-1701
+
+❌ [CG-1702] Programm fehlt im Sandbox-Image
+   👉 Für die KI-CLIs das mitgelieferte Image bauen (`docker build -t claudegravity-sandbox sandbox/`) und mit --sandbox-image claudegravity-sandbox angeben; Werkzeuge und Abhängigkeiten des Projekts in einem eigenen Image darauf ergänzen. Alternativ einen Endpunkt als Bauleiter nehmen.
+   📖 docs/de/fehlerbehebung.md#cg-1702
+
 ❌ [CG-1999] Unerwarteter Fehler
    👉 Bitte mit der vollständigen Ausgabe als Issue melden.
    📖 docs/de/fehlerbehebung.md#cg-1999

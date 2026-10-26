@@ -27,6 +27,7 @@ from .common import (
 )
 from .i18n import MODEL_DIRECTIVE
 from .safety import redact_secrets
+from . import sandbox
 from .metrics import SessionMetrics
 
 
@@ -254,13 +255,20 @@ def cli_timeout() -> int | None:
 
 def _exec_cli(binary: str, args: list[str], cwd: Path | None = None, stdin: str | None = None) -> str:
     """Startet eine CLI. Prompts gehen über stdin, damit sie weder in der Prozessliste
-    auftauchen noch an der Windows-Längengrenze (~32 KB) abgeschnitten werden."""
+    auftauchen noch an der Windows-Längengrenze (~32 KB) abgeschnitten werden. Im Bauleiter-Bereich der Sandbox
+    (`sandbox.builder_scope`) läuft eine schreibende CLI im Container."""
+    scope = sandbox.current_scope()
     try:
-        cmd, use_shell = build_cli_command(binary, args)
+        if scope is not None and binary in sandbox.SANDBOX_CLIS:
+            cmd, use_shell = sandbox.cli_command(binary, args, scope, cwd), False
+        else:
+            cmd, use_shell = build_cli_command(binary, args)
+    except sandbox.SandboxPathError as ex:
+        raise RuntimeError(f"{binary}: {ex}") from ex
     except ValueError as ex:
         raise RuntimeError(f"{binary}: {ex} Installiere die native Version (z.B. {binary}.exe) statt eines .bat-Wrappers.") from ex
     try:
-        res = subprocess.run(
+        res = sandbox.run(
             cmd,
             cwd=str(cwd) if cwd else None,
             input=stdin,

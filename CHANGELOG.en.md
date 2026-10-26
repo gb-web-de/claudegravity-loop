@@ -14,6 +14,7 @@
 - Install as a package without cloning: `pipx install git+https://github.com/gb-web-de/claudegravity-loop`, `uv tool install …` or once via `uvx --from … claudegravity`; plus `python -m claudegravity`. No runtime dependencies, `pyproject.toml` is only for installing.
 - Repo map for roles without their own file access (`--repo-map auto|an|aus`): paths with classes and functions, sorted by relevance to the task and limited to 6,000 characters, so Ollama and other endpoints know the project.
 - From issue to pull request: `--from-issue 12` (also `owner/repo#12` or a URL) takes title, body and comments as the task, `--open-pr`/`--pr-draft` pushes the session branch after a successful acceptance check and opens a pull request with `Closes #12`, roles, metrics and plan. Via `gh` or the REST API (`GH_TOKEN`), error codes CG-1601/CG-1602. The repository is also a GitHub Action (`uses: gb-web-de/claudegravity-loop@main`) started by a label or `/claudegravity`; the MCP server knows `issue` and `open_pr`.
+- Sandbox (`--sandbox on|docker|podman`, `--sandbox-image`, `--sandbox-net`): the proof command and CLI Builder run in a fresh container with your user ID, without capabilities and with limits; the proof command without network, the Builder sees only the work and session folders and the credentials of its own CLI. `sandbox/Dockerfile` brings the AI CLIs. Error codes CG-1701/CG-1702; not from the project profile.
 - The benchmark builds directly in the throwaway folder (`--no-worktree`) so the original tests see the result.
 
 ### Changed

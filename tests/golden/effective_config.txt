@@ -48,6 +48,9 @@
   reviewer               = –                            [Standard]
   reviewer_effort        = –                            [Standard]
   reviewer_model         = –                            [Standard]
+  sandbox                = "aus"                        [Standard]
+  sandbox_image          = "python:3.12-slim"           [Standard]
+  sandbox_net            = false                        [Standard]
   strategy               = "eco"                        [Umgebung]  ⚠️ Konflikt
   swap                   = false                        [Standard]
   template               = "typo3"                      [Kommandozeile]

@@ -139,6 +139,16 @@ Details: [Sessions & files](sessions-und-dateien.md#git-workspace-per-session).
 
 Details and GitHub Action: [GitHub](github.md).
 
+## Sandbox
+
+| Flag | Aliases | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `--sandbox on\|docker\|podman\|off` | | Proof command and CLI Builder in a container: only the work folder (for the Builder also the session folder and its own credentials), your user ID, no capabilities. `on` picks Docker, otherwise Podman. On Windows only the proof command. Not from the project profile. | `off` |
+| `--sandbox-image <image>` | | Image for the sandbox. For CLI Builders one with the CLI: `docker build -t claudegravity-sandbox sandbox/`. | `python:3.12-slim` |
+| `--sandbox-net` | | Proof command in the sandbox with network (the CLI Builder always has network). | off |
+
+Details: [Sandbox](sandbox.md).
+
 ## Privacy
 
 | Flag | Description |

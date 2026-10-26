@@ -33,6 +33,7 @@ from .budget import read_session_kpi
 from .runner import safe_agent_run
 from .build import collect_build_changes, git_head, run_proof, test_integrity_findings
 from .phases import publish_pull_request
+from . import sandbox
 
 if TYPE_CHECKING:
     from .phases import RunContext
@@ -129,6 +130,10 @@ def child_command(args, candidate: Candidate, proof_cmd: str | None) -> list[str
         cmd += ["--lang", SETTINGS.lang]
     if SETTINGS.repo_map != "auto":
         cmd += ["--repo-map", SETTINGS.repo_map]
+    if sandbox.active():
+        cmd += ["--sandbox", SETTINGS.sandbox, "--sandbox-image", SETTINGS.sandbox_image] + (
+            ["--sandbox-net"] if SETTINGS.sandbox_net else []
+        )
     if proof_cmd:
         cmd += ["--proof", proof_cmd]
     if args.max_iterations:
@@ -325,6 +330,8 @@ def run_candidates(run: "RunContext") -> None:
         say("Kandidaten nicht gestartet.")
         return
     run.proof_cmd = args.proof or state.get("proof")
+    # Der Hauptlauf prüft jeden Kandidaten selbst; mit --sandbox im Container
+    sandbox.ensure_ready(proof_cmd=run.proof_cmd)
     if not run.proof_cmd:
         say("⚠️ Ohne --proof entscheidet allein die Abnahme, welcher Kandidat fertig ist.")
     base = git_head(project_path)

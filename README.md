@@ -51,6 +51,7 @@ Ohne Klon: `pipx install git+https://github.com/gb-web-de/claudegravity-loop` od
 * **Als Skill:** [`skills/claudegravity/`](skills/claudegravity/SKILL.md) für Claude Code und Codex.
 * **Limits im Griff:** Wechseln, Warten oder Sichern bei Ratenlimits; `--auto-switch` wechselt automatisch.
 * **Vom Issue zum Pull Request:** `claudegravity --from-issue 12 --open-pr` liest das Issue als Aufgabe und öffnet nach der Abnahme einen PR mit `Closes #12`; als GitHub Action startet ein Label oder `/claudegravity` den Lauf. → [GitHub](docs/de/github.md)
+* **Sandbox:** `--sandbox an` lässt Prüfbefehl und CLI-Bauleiter in einem Container laufen (Docker oder Podman), der nur den Arbeitsordner und die Anmeldedaten der bauenden CLI sieht. → [Sandbox](docs/de/sandbox.md)
 * **Fortsetzen:** `claudegravity -c` macht nach Abbruch genau dort weiter. → [Sessions & Dateien](docs/de/sessions-und-dateien.md)
 * **Token- & Kosten-Audit** pro Rolle, Modell und Effort in der `.done`-Datei, mit Kennzahlen (Kosten je Aufgabe, Runden bis Erfolg, Nacharbeitsquote) zum Vergleichen von Sessions.
 * **Robust & nachvollziehbar:** automatische Neuversuche mit Backoff bei Überlastung und Netzfehlern; geschwärzte Logs und ein Audit, wenn eine lesende Rolle doch schreibt.
@@ -72,6 +73,7 @@ Ohne Klon: `pipx install git+https://github.com/gb-web-de/claudegravity-loop` od
 | [CLI-Referenz](docs/de/cli-referenz.md) | Alle Flags |
 | [MCP-Server](docs/de/mcp-server.md) | Registrierung, Tools, Optimizer |
 | [GitHub](docs/de/github.md) | Issue als Aufgabe, Pull Request, GitHub Action |
+| [Sandbox](docs/de/sandbox.md) | Prüfbefehl und Bauleiter im Container |
 | [Plugins](docs/de/plugins.md) | Claude Code, Codex, Antigravity, Copilot CLI, Cursor, Gemini CLI |
 | [Sessions & Dateien](docs/de/sessions-und-dateien.md) | `.dual-loop/`, `state.json`, `.done`, Projektkontext |
 | [Sicherheit](docs/de/sicherheit.md) | Bedrohungsmodell, Schutzmaßnahmen, Empfehlungen |
@@ -99,7 +101,7 @@ Choose your path:
 
 Install without cloning: `pipx install git+https://github.com/gb-web-de/claudegravity-loop` (or `uv tool install …`). Not sure? `claudegravity init` asks three questions and saves a profile; `--dry-run` shows the role assignment first. The loop talks German by default; `--lang en` (or `export CLAUDEGRAVITY_LANG=en`) switches the output, the help, error codes, reports and the models' answers to English.
 
-Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`, `--from-issue 12 --open-pr` (GitHub issue in, pull request out; also as a GitHub Action: [GitHub](docs/en/github.md)). Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md). Threat model: [Security](docs/en/sicherheit.md). Changes per version: [Changelog](CHANGELOG.en.md).
+Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`, `--from-issue 12 --open-pr` (GitHub issue in, pull request out; also as a GitHub Action: [GitHub](docs/en/github.md)), `--sandbox on` (proof command and Builder in a container: [Sandbox](docs/en/sandbox.md)). Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md). Threat model: [Security](docs/en/sicherheit.md). Changes per version: [Changelog](CHANGELOG.en.md).
 
 Plugins for Claude Code, Codex, Antigravity, Copilot CLI, Cursor and Gemini CLI bundle the MCP server, the skill and `run`/`optimize`/`status` commands: [Plugins](docs/en/plugins.md). In Claude Code:
 

@@ -46,6 +46,24 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
+  sandbox:
+    name: sandbox (docker)
+    # Prüfbefehl und CLI-Bauleiter wirklich im Container; dazu das mitgelieferte Image mit den KI-CLIs bauen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Sandbox-Tests mit Docker
+        env:
+          CLAUDEGRAVITY_TEST_SANDBOX: "1"
+        run: python -m unittest tests.test_sandbox -v
+      - name: Image sandbox/Dockerfile
+        run: |
+          docker build -t claudegravity-sandbox sandbox/
+          docker run --rm --user 1001:1001 -e HOME=/tmp claudegravity-sandbox sh -c 'claude --version && codex --version && gemini --version && copilot --version && python -m pytest --version && git --version'
+
   smoke:
     name: smoke (${{ matrix.os }}, ${{ matrix.strategy }})
     # Ganzer Ablauf (Plan, Review, Bau, Prüfbefehl, Abnahme) mit einem Fake-Server statt KI-Abos

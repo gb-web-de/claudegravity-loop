@@ -104,6 +104,14 @@ ERROR_CODES = {
         "Pull Request nicht erstellt",
         "Das Ergebnis liegt auf dem Session-Branch. Rechte prüfen (Push auf das Repository, in GitHub Actions `contents: write` und `pull-requests: write`) und `gh auth status`, dann von Hand: `git push -u origin <branch>` und `gh pr create`.",
     ),
+    "CG-1701": (
+        "Sandbox nicht verfügbar",
+        "Docker oder Podman installieren und starten (`docker info` bzw. `podman info` muss klappen) oder ohne --sandbox laufen lassen.",
+    ),
+    "CG-1702": (
+        "Programm fehlt im Sandbox-Image",
+        "Für die KI-CLIs das mitgelieferte Image bauen (`docker build -t claudegravity-sandbox sandbox/`) und mit --sandbox-image claudegravity-sandbox angeben; Werkzeuge und Abhängigkeiten des Projekts in einem eigenen Image darauf ergänzen. Alternativ einen Endpunkt als Bauleiter nehmen.",
+    ),
     "CG-1999": ("Unerwarteter Fehler", "Bitte mit der vollständigen Ausgabe als Issue melden."),
 }
 ERROR_CODES_EN = {
@@ -198,6 +206,14 @@ ERROR_CODES_EN = {
     "CG-1602": (
         "Pull request not created",
         "The result is on the session branch. Check the permissions (push to the repository; in GitHub Actions `contents: write` and `pull-requests: write`) and `gh auth status`, then by hand: `git push -u origin <branch>` and `gh pr create`.",
+    ),
+    "CG-1701": (
+        "Sandbox not available",
+        "Install and start Docker or Podman (`docker info` or `podman info` must work), or run without --sandbox.",
+    ),
+    "CG-1702": (
+        "Program missing from the sandbox image",
+        "For the AI CLIs, build the bundled image (`docker build -t claudegravity-sandbox sandbox/`) and pass it with --sandbox-image claudegravity-sandbox; add the project's tools and dependencies in your own image on top of it. Alternatively use an endpoint as Builder.",
     ),
     "CG-1999": ("Unexpected error", "Please report it as an issue with the full output."),
 }

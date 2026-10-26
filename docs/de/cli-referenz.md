@@ -139,6 +139,16 @@ Details: [Sessions & Dateien](sessions-und-dateien.md#git-workspace-pro-session)
 
 Details und GitHub Action: [GitHub](github.md).
 
+## Sandbox
+
+| Flag | Aliase | Beschreibung | Standard |
+| :--- | :--- | :--- | :--- |
+| `--sandbox an\|docker\|podman\|aus` | | Prüfbefehl und CLI-Bauleiter in einem Container: nur Arbeitsordner (und beim Bauleiter Session-Ordner und eigene Anmeldedaten), deine Benutzer-ID, keine Capabilities. `an` nimmt Docker, sonst Podman. Unter Windows nur der Prüfbefehl. Nicht aus dem Projekt-Profil. | `aus` |
+| `--sandbox-image <image>` | | Image für die Sandbox. Für CLI-Bauleiter eines mit der CLI: `docker build -t claudegravity-sandbox sandbox/`. | `python:3.12-slim` |
+| `--sandbox-net` | | Prüfbefehl in der Sandbox mit Netz (der CLI-Bauleiter hat immer Netz). | aus |
+
+Details: [Sandbox](sandbox.md).
+
 ## Datenschutz
 
 | Flag | Beschreibung |

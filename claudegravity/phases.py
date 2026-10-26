@@ -36,6 +36,7 @@ from .session import (
     sha256_file,
     task_preview,
 )
+from . import sandbox
 from .github import open_pull_request, pull_request_body, pull_request_title, repo_slug
 from .budget import format_budget
 from .planning import handle_plan_approval_and_changes, run_adversarial_plan
@@ -343,6 +344,8 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
             say("⚠️  --open-pr braucht den Git-Workspace der Sitzung; ohne ihn (--no-worktree oder kein Git) gibt es keinen Pull Request.")
     if merge_worktree:
         state["merge_worktree"] = True
+    if sandbox.active():
+        state.update(sandbox=SETTINGS.sandbox, sandbox_image=SETTINGS.sandbox_image, sandbox_net=SETTINGS.sandbox_net)
 
     # Fragen-Modus
     ask_mode = args.ask or state.get("ask_mode", False)
@@ -423,6 +426,8 @@ def print_run_banner(run: "RunContext") -> None:
         say("[*] Git-Workspace     : 🌿 eigener Worktree pro Session" + (" (Merge nach .done)" if merge_worktree else ""))
     if run.open_pr:
         say("[*] Pull Request      : 🔗 nach Abschluss pushen und öffnen" + (" (Entwurf)" if run.pr_draft else ""))
+    if sandbox.active():
+        say(f"[*] Sandbox           : {sandbox.describe()}")
     task_secrets = redact_secrets(task)[1]
     if task_secrets:
         cloud_roles = [a.name for a in (planner, reviewer, builder) if not a.local]
@@ -572,6 +577,10 @@ def prepare_build(run: "RunContext") -> None:
     # Rechte- und Modell-Flags passend zum tatsächlichen Bauleiter neu aufbauen
     builder_flags = role_flags(builder.binary, "builder", yolo_active)
     builder_flags.extend(model_flags(builder.binary, builder_model, b_effort))
+
+    # Sandbox: Engine und Image prüfen, bevor gebaut wird
+    sandbox.warn_windows()
+    sandbox.ensure_ready(builder.binary, args.proof or state.get("proof"))
 
     # Falls YOLO noch nicht aktiv war, vor Phase 3 fragen
     if not yolo_active:

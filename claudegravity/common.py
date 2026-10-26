@@ -57,6 +57,9 @@ class RuntimeSettings:
     stop_requested: bool = False  # Strg+C/SIGTERM: aktuelle Runde sauber beenden
     lang: str = dataclasses.field(default_factory=detect_lang)  # --lang / CLAUDEGRAVITY_LANG: de oder en
     repo_map: str = "auto"  # --repo-map: auto (nur Endpunkte), an (alle Rollen), aus
+    sandbox: str = "aus"  # --sandbox: aus, docker oder podman (an ist schon aufgelöst)
+    sandbox_image: str = "python:3.12-slim"  # --sandbox-image
+    sandbox_net: bool = False  # --sandbox-net: Prüfbefehl im Container mit Netz
 
 
 SETTINGS = RuntimeSettings()

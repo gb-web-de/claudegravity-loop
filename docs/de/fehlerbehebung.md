@@ -43,7 +43,7 @@ Ohne Mermaid-Ansicht: **Meldung mit CG-Code** → Code unten nachschlagen. **Loo
 
 ## Fehlercodes
 
-Meldungen des Loops tragen einen Code `CG-xxxx` mit Lösungshinweis und Verweis auf diesen Abschnitt. Bereiche: 10xx Einrichtung, 11xx Konfiguration, 12xx Verbindung und Anbieter, 13xx Limits, 14xx Bau und Abnahme, 15xx Sicherheit, 16xx GitHub. Mit `CLAUDEGRAVITY_DEBUG=1` erscheint bei unerwarteten Fehlern der vollständige Traceback.
+Meldungen des Loops tragen einen Code `CG-xxxx` mit Lösungshinweis und Verweis auf diesen Abschnitt. Bereiche: 10xx Einrichtung, 11xx Konfiguration, 12xx Verbindung und Anbieter, 13xx Limits, 14xx Bau und Abnahme, 15xx Sicherheit, 16xx GitHub, 17xx Sandbox. Mit `CLAUDEGRAVITY_DEBUG=1` erscheint bei unerwarteten Fehlern der vollständige Traceback.
 
 <a id="cg-1001"></a>
 **CG-1001 · Kein KI-Backend gefunden**  
@@ -145,6 +145,14 @@ Nummer und Repository prüfen (owner/repo#12 oder URL). Die GitHub CLI anmelden 
 <a id="cg-1602"></a>
 **CG-1602 · Pull Request nicht erstellt**  
 Das Ergebnis liegt auf dem Session-Branch. Rechte prüfen (Push auf das Repository, in GitHub Actions `contents: write` und `pull-requests: write`) und `gh auth status`, dann von Hand: `git push -u origin <branch>` und `gh pr create`.
+
+<a id="cg-1701"></a>
+**CG-1701 · Sandbox nicht verfügbar**  
+Docker oder Podman installieren und starten (`docker info` bzw. `podman info` muss klappen) oder ohne --sandbox laufen lassen.
+
+<a id="cg-1702"></a>
+**CG-1702 · Programm fehlt im Sandbox-Image**  
+Für die KI-CLIs das mitgelieferte Image bauen (`docker build -t claudegravity-sandbox sandbox/`) und mit --sandbox-image claudegravity-sandbox angeben; Werkzeuge und Abhängigkeiten des Projekts in einem eigenen Image darauf ergänzen. Alternativ einen Endpunkt als Bauleiter nehmen.
 
 <a id="cg-1999"></a>
 **CG-1999 · Unerwarteter Fehler**  

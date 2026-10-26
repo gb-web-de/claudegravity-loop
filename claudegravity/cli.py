@@ -33,6 +33,7 @@ from .backends import (
 )
 from .session import LOG_FORMATS, find_latest_session, get_permission_flags, is_git_repo, task_preview
 from .github import issue_task, load_issue
+from .sandbox import DEFAULT_SANDBOX_IMAGE, resolve_engine
 from .budget import (
     Budget,
     BudgetExceeded,
@@ -393,6 +394,21 @@ def build_parser(full_help: bool = False, lang: str | None = None) -> argparse.A
         action="store_true",
         help="Session-Branch nach erfolgreichem Abschluss (.done) in den Ausgangs-Branch mergen",
     )
+    add(
+        "--sandbox",
+        choices=["aus", "an", "docker", "podman", "on", "off"],
+        default="aus",
+        core=True,
+        help="Prüfbefehl und CLI-Bauleiter in einem Container (Docker oder Podman): nur Arbeitsordner, deine Benutzer-ID, "
+        "keine Rechte; an nimmt die installierte Engine",
+    )
+    add(
+        "--sandbox-image",
+        default="python:3.12-slim",
+        metavar="IMAGE",
+        help="Image für die Sandbox; für CLI-Bauleiter eines mit den KI-CLIs (docker build -t claudegravity-sandbox sandbox/)",
+    )
+    add("--sandbox-net", action="store_true", help="Prüfbefehl in der Sandbox mit Netz (Standard: ohne Netz)")
     add("--no-shield", action="store_true", help="Datenschutzschild aus: Zugangsdaten in Prompts an Cloud-Modelle nicht schwärzen")
 
     add = group("GitHub")
@@ -483,6 +499,9 @@ def apply_runtime_settings(args: argparse.Namespace) -> None:
     SETTINGS.lang = resolve_lang(getattr(args, "lang", None))
     SETTINGS.retries = args.retries
     SETTINGS.repo_map = {"on": "an", "off": "aus"}.get(args.repo_map, args.repo_map)
+    SETTINGS.sandbox = resolve_engine(args.sandbox)
+    SETTINGS.sandbox_image = args.sandbox_image or DEFAULT_SANDBOX_IMAGE
+    SETTINGS.sandbox_net = bool(args.sandbox_net)
     SETTINGS.progress = args.progress
     SETTINGS.log_format = args.log_format
     try:

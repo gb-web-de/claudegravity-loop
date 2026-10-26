@@ -17,6 +17,7 @@ ORDER = [
     "safety",
     "repomap",
     "errors",
+    "sandbox",
     "metrics",
     "backends",
     "session",

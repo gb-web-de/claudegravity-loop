@@ -32,7 +32,7 @@ CONFIG_EXCLUDED = {
     "from_issue",
 }
 # Das Projekt-Profil liegt im Projektordner, in den ein Bauleiter schreiben kann: keine Rechte daraus
-PROJECT_PROFILE_FORBIDDEN = {"yolo", "open_pr", "pr_draft"}
+PROJECT_PROFILE_FORBIDDEN = {"yolo", "open_pr", "pr_draft", "sandbox", "sandbox_image", "sandbox_net"}
 # Standardwerte, die erst später im Lauf gesetzt werden (für --print-effective-config)
 CONFIG_DISPLAY_DEFAULTS = {"strategy": "balanced", "max_iterations": "10 (Etappen: 2 je Etappe + 2)"}
 # Beim Fortsetzen gilt der gespeicherte Stand der Session vor Umgebung und Profil
@@ -62,6 +62,9 @@ SESSION_CONFIG_KEYS = {
     "template": "template",
     "open_pr": "open_pr",
     "pr_draft": "pr_draft",
+    "sandbox": "sandbox",
+    "sandbox_image": "sandbox_image",
+    "sandbox_net": "sandbox_net",
 }
 TEMPLATE_DEST = "template"
 TEMPLATE_META_KEYS = {"hint", "hinweis", "requires", "pflicht", "beschreibung", "description"}

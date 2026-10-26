@@ -39,6 +39,7 @@ from claudegravity import (  # noqa: E402
     roles,
     runner,
     safety,
+    sandbox,
     session,
     wizard,
 )
@@ -50,6 +51,7 @@ for _module in (
     safety,
     repomap,
     errors,
+    sandbox,
     metrics,
     backends,
     session,
