@@ -390,6 +390,15 @@ def stop_background_run(project_dir: Path) -> tuple[bool, str]:
     return True, f"🛑 Hintergrundlauf (PID {pid}) beendet. Fortsetzen mit `claudegravity -c` im Projekt `{project_dir}`."
 
 
+def read_json_dict(path: Path) -> dict:
+    """JSON-Datei als dict; fehlt sie oder ist sie kaputt, ein leeres dict."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def tail_lines(path: Path, count: int) -> list[str]:
     """Letzte `count` Zeilen einer Textdatei; leere Liste, wenn sie fehlt oder unlesbar ist."""
     if count <= 0 or not path.is_file():
@@ -434,6 +443,9 @@ def format_session_status(project_dir: Path, log_lines: int = 15) -> str:
         ]
         if state.get("abort_reason"):
             lines.append(f"* **Abbruchgrund:** {state['abort_reason']}")
+        live_url = read_json_dict(session / "live.json").get("url")
+        if isinstance(live_url, str) and live_url.startswith("http://127.0.0.1:"):
+            lines.append(f"* **Live-Ansicht:** {live_url}")
         log_tail = tail_lines(session / "LOG.md", log_lines)
         if log_tail:
             lines += ["", "**LOG.md (Ende):**", "```", *log_tail, "```"]
@@ -470,6 +482,8 @@ def optimize_claudegravity_command(
     merge: bool = False,
     issue: str | None = None,
     open_pr: bool = False,
+    notify: str | None = None,
+    watch: bool = False,
 ) -> dict:
     """Berechnet Rollen und Befehl. `roles` überschreibt einzelne Rollen, z. B. {"architekt": "codex", "bauer_model": "qwen3-coder:30b"}."""
     agents = detect_installed_agents()
@@ -677,6 +691,10 @@ def optimize_claudegravity_command(
         cmd_args.append("--merge")
     if open_pr:
         cmd_args.append("--open-pr")
+    if notify:
+        cmd_args += ["--notify", notify]
+    if watch:
+        cmd_args.append("--watch")
     if project_path not in [".", "./", ""]:
         cmd_args += ["-p", project_path]
 
@@ -831,6 +849,15 @@ ROLE_SCHEMA = {
         "type": "boolean",
         "default": False,
         "description": "Nach erfolgreichem Abschluss den Session-Branch pushen und einen Pull Request öffnen (--open-pr), mit „Closes #n“ bei `issue`.",
+    },
+    "notify": {
+        "type": "string",
+        "description": "Melden, wenn der Lauf auf eine Antwort wartet oder fertig ist (--notify): desktop, bell, ntfy:<thema>, webhook:<url>, mit Komma getrennt.",
+    },
+    "watch": {
+        "type": "boolean",
+        "default": False,
+        "description": "Live-Ansicht im Browser neben dem Lauf (--watch); die Adresse zeigt claudegravity_status.",
     },
 }
 
@@ -1045,6 +1072,8 @@ def optimize_from_arguments(arguments: dict, project_path: str) -> dict:
         merge=bool(arguments.get("merge", False)),
         issue=str(arguments.get("issue") or "").strip() or None,
         open_pr=bool(arguments.get("open_pr", False)),
+        notify=str(arguments.get("notify") or "").strip() or None,
+        watch=bool(arguments.get("watch", False)),
     )
 
 

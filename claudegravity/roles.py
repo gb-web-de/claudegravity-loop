@@ -3,6 +3,8 @@
 from .common import CLOUD_PLANNER_ORDER, ENDPOINT_BINARIES, HYBRID_STRATEGIES, LOCAL_BACKEND_ORDER, OLLAMA_KEYS
 from .backends import AgentCLI, DEFAULT_MODEL_LABEL, list_ollama_models, ollama_base_url, pick_ollama_model
 from .session import get_permission_flags
+from .notify import redact as redact_notify
+from .watch import DEFAULT_PORT as DEFAULT_WATCH_PORT
 
 
 def stages_wanted(mode: str | None, builder_binary: str) -> bool:
@@ -119,6 +121,9 @@ def dry_run_command(args, task: str, strat: str, default_b_model: str | None = N
         ("--repo-map", None if getattr(args, "repo_map", "auto") == "auto" else args.repo_map),
         ("--sandbox", None if getattr(args, "sandbox", "aus") in ("aus", "off") else args.sandbox),
         ("--sandbox-image", None if getattr(args, "sandbox_image", "python:3.12-slim") == "python:3.12-slim" else args.sandbox_image),
+        # Thema und Webhook-Pfad sind Geheimnisse: im angezeigten Befehl gekürzt
+        ("--notify", redact_notify(getattr(args, "notify", "")) or None),
+        ("--watch-port", None if getattr(args, "watch_port", DEFAULT_WATCH_PORT) == DEFAULT_WATCH_PORT else args.watch_port),
         ("--abnahme", args.inspector),
         ("--abnahme-model", args.inspector_model),
         ("--abnahme-effort", args.inspector_effort),
@@ -142,6 +147,7 @@ def dry_run_command(args, task: str, strat: str, default_b_model: str | None = N
         ("--open-pr", getattr(args, "open_pr", False) and not getattr(args, "pr_draft", False)),
         ("--pr-draft", getattr(args, "pr_draft", False)),
         ("--sandbox-net", getattr(args, "sandbox_net", False)),
+        ("--watch", getattr(args, "watch", False)),
         ("--no-inspect", not args.inspect),
     ):
         if on:

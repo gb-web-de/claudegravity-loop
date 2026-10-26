@@ -33,6 +33,7 @@ from claudegravity import (  # noqa: E402
     github,
     i18n,
     metrics,
+    notify,
     phases,
     planning,
     repomap,
@@ -41,6 +42,7 @@ from claudegravity import (  # noqa: E402
     safety,
     sandbox,
     session,
+    watch,
     wizard,
 )
 
@@ -56,6 +58,8 @@ for _module in (
     backends,
     session,
     github,
+    notify,
+    watch,
     budget,
     runner,
     planning,

@@ -48,6 +48,20 @@ class OptimizerTest(unittest.TestCase):
         self.assertFalse(res.get("isError"))
         self.assertIn("--from-issue 12", res["content"][0]["text"])
 
+    def test_notify_and_watch(self):
+        res = mcp_server.handle_tool_call("claudegravity_optimize", {"task": "x", "notify": "desktop", "watch": True})
+        self.assertFalse(res.get("isError"))
+        opt = mcp_server.optimize_claudegravity_command("x", notify="ntfy:mein-thema", watch=True)
+        self.assertEqual(opt["loop_args"][opt["loop_args"].index("--notify") + 1], "ntfy:mein-thema")
+        self.assertIn("--watch", opt["loop_args"])
+        self.assertNotIn("--watch", mcp_server.optimize_claudegravity_command("x")["loop_args"])
+        with tempfile.TemporaryDirectory() as tmp:
+            session = Path(tmp) / ".dual-loop" / "sessions" / "20261026_010000_x"
+            session.mkdir(parents=True)
+            (session / "state.json").write_text('{"task": "x", "phase": "build"}', encoding="utf-8")
+            (session / "live.json").write_text('{"url": "http://127.0.0.1:8765/?t=abc"}', encoding="utf-8")
+            self.assertIn("Live-Ansicht:** http://127.0.0.1:8765/?t=abc", mcp_server.format_session_status(Path(tmp)))
+
     def test_hostile_task_stays_one_argument(self):
         opt = mcp_server.optimize_claudegravity_command(HOSTILE_TASK, project_path="/tmp/my project")
         self.assertEqual(shlex.split(opt["recommended_command"])[1], HOSTILE_TASK)

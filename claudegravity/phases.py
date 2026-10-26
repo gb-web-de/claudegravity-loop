@@ -36,7 +36,7 @@ from .session import (
     sha256_file,
     task_preview,
 )
-from . import sandbox
+from . import notify, sandbox, watch
 from .github import open_pull_request, pull_request_body, pull_request_title, repo_slug
 from .budget import format_budget
 from .planning import handle_plan_approval_and_changes, run_adversarial_plan
@@ -428,6 +428,10 @@ def print_run_banner(run: "RunContext") -> None:
         say("[*] Pull Request      : 🔗 nach Abschluss pushen und öffnen" + (" (Entwurf)" if run.pr_draft else ""))
     if sandbox.active():
         say(f"[*] Sandbox           : {sandbox.describe()}")
+    if watch.current_url():
+        say(f"[*] Live-Ansicht      : {watch.current_url()}")
+    if notify.active():
+        say(f"[*] Benachrichtigung  : {notify.redact(SETTINGS.notify)}")
     task_secrets = redact_secrets(task)[1]
     if task_secrets:
         cloud_roles = [a.name for a in (planner, reviewer, builder) if not a.local]

@@ -154,6 +154,9 @@ def child_env(args) -> dict:
     """Umgebung der Kandidaten: wie der Hauptlauf, ein API-Schlüssel nur über die Umgebung (nicht in der Prozessliste)."""
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
+    # Der Hauptlauf meldet das Ergebnis; Kandidaten benachrichtigen nicht und starten keine eigene Live-Ansicht
+    env["CLAUDEGRAVITY_NOTIFY"] = "aus"
+    env["CLAUDEGRAVITY_WATCH"] = "false"
     if args.api_key:
         env["CLAUDEGRAVITY_API_KEY"] = args.api_key
     return env

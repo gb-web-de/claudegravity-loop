@@ -22,6 +22,8 @@ ORDER = [
     "backends",
     "session",
     "github",
+    "notify",
+    "watch",
     "budget",
     "runner",
     "planning",

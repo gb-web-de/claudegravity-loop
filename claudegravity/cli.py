@@ -34,6 +34,8 @@ from .backends import (
 from .session import LOG_FORMATS, find_latest_session, get_permission_flags, is_git_repo, task_preview
 from .github import issue_task, load_issue
 from .sandbox import DEFAULT_SANDBOX_IMAGE, resolve_engine
+from . import notify, watch
+from .watch import DEFAULT_PORT as DEFAULT_WATCH_PORT
 from .budget import (
     Budget,
     BudgetExceeded,
@@ -456,6 +458,21 @@ def build_parser(full_help: bool = False, lang: str | None = None) -> argparse.A
         action="store_false",
         help='Hinweis beim ersten Lauf ohne Profil nicht zeigen (im Profil: "guide": false)',
     )
+    add = group("Live-Ansicht und Benachrichtigung")
+    add(
+        "--watch",
+        "--live",
+        action="store_true",
+        help="Live-Ansicht im Browser neben dem Lauf (Phase, Runde, Tokens, Diff); ohne Lauf: claudegravity watch",
+    )
+    add("--watch-port", type=int, default=DEFAULT_WATCH_PORT, metavar="PORT", help="Port der Live-Ansicht (belegt: ein freier)")
+    add(
+        "--notify",
+        "--benachrichtigen",
+        default="",
+        metavar="KANÄLE",
+        help="Melden, wenn der Loop auf dich wartet oder fertig ist: desktop, bell, ntfy:<thema>, webhook:<url> (mit Komma getrennt)",
+    )
     return parser
 
 
@@ -504,6 +521,7 @@ def apply_runtime_settings(args: argparse.Namespace) -> None:
     SETTINGS.sandbox_net = bool(args.sandbox_net)
     SETTINGS.progress = args.progress
     SETTINGS.log_format = args.log_format
+    SETTINGS.notify = args.notify or ""
     try:
         SETTINGS.budget = Budget(args.budget_max, args.budget_warn, args.budget_roles)
     except ValueError as exc:
@@ -807,6 +825,9 @@ def main():
         return
     _parser, args, config_report = loaded
     apply_runtime_settings(args)
+    if args.task.strip().lower() == "watch" and not args.resume:
+        watch.run_watch(Path(args.project).resolve(), args.watch_port)
+        return
     agents = setup_agents(args)
 
     if args.init or (args.task.strip().lower() == "init" and not args.resume):
@@ -844,7 +865,11 @@ def main():
     if not args.task and not args.resume and find_latest_session(project_path / ".dual-loop") is None:
         print_welcome()
         return
+    notify.warn_problems()
     session_dir, state, task = open_session(args, project_path, config_report)
+    watch.bind(session_dir, task)
+    if args.watch:
+        watch.start_for_run(project_path, args.watch_port)
     run = setup_run(args, agents, project_path, session_dir, state, task)
     print_run_banner(run)
     if not run_plan_phase(run):
@@ -858,12 +883,18 @@ def main():
 
 
 def run_cli():
-    """Einstieg: unerwartete Fehler mit Fehlercode, Lösungshinweis und Doku-Verweis statt Traceback."""
+    """Einstieg: unerwartete Fehler mit Fehlercode, Lösungshinweis und Doku-Verweis statt Traceback.
+    Endet ein Lauf mit Fehler, geht eine Benachrichtigung raus (--notify)."""
     try:
-        main()
-    except BudgetExceeded as exc:
-        handle_budget_exceeded(exc)
-    except (RuntimeError, ValueError, OSError) as exc:
-        if os.environ.get("CLAUDEGRAVITY_DEBUG"):
-            raise
-        fail(classify_error(str(exc)), str(exc), exit_code=2)
+        try:
+            main()
+        except BudgetExceeded as exc:
+            handle_budget_exceeded(exc)
+        except (RuntimeError, ValueError, OSError) as exc:
+            if os.environ.get("CLAUDEGRAVITY_DEBUG"):
+                raise
+            fail(classify_error(str(exc)), str(exc), exit_code=2)
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            watch.notify_failure()
+        raise

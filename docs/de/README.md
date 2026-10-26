@@ -17,6 +17,7 @@
 | [CLI-Referenz](cli-referenz.md) | Alle Flags von `claudegravity`, Profile, Vorlagen |
 | [MCP-Server](mcp-server.md) | Registrierung, Tools, Optimizer im Terminal |
 | [GitHub](github.md) | Issue als Aufgabe, Pull Request nach der Abnahme, GitHub Action |
+| [Live-Ansicht](live-ansicht.md) | Stand im Browser (`--watch`, `claudegravity watch`), Meldungen per Desktop, ntfy oder Webhook |
 | [Sandbox](sandbox.md) | Prüfbefehl und Bauleiter im Container (Docker, Podman), Image, Anmeldedaten |
 | [Plugins](plugins.md) | Ein Befehl für Claude Code, Codex, Antigravity, Copilot CLI, Cursor, Gemini CLI |
 | [Sessions & Dateien](sessions-und-dateien.md) | `.dual-loop/`, `state.json`, Fortsetzen, `.done`-Audit, `CLAUDE.md` & `knowledge/` |

@@ -19,6 +19,7 @@
 │           ├── LOG.md               # Verlauf von Plan, Review, Abnahme, Limit-Wechseln, Neuversuchen
 │           ├── audit-events.jsonl   # Sicherheitsereignisse (siehe Rechte-Audit)
 │           ├── events.jsonl         # strukturiertes Ereignis-Log (nur mit --log-format json)
+│           ├── live.json            # Live-Stand des laufenden Prozesses (siehe Live-Ansicht)
 │           ├── workspace/           # Git-Worktree der Session (Branch loop/<session>)
 │           ├── AUDIT.md             # Audit-Bericht, wenn der Lauf ohne Fertigmeldung endet
 │           └── .done                # Fertigmeldung + Audit-Bericht
@@ -157,6 +158,8 @@ Mit `--log-format json` (oder `"log_format": "json"` im Profil) schreibt der Loo
 | `event` | Felder |
 | :--- | :--- |
 | `call` | `role`, `agent`, `model`, `phase`, `iteration` (Bau), `duration_s`, `tokens` (dieser Aufruf), `tokens_total`, `cost_usd_total`, `retries` |
+| `call_start` | `role`, `agent`, `phase` (vor jedem KI-Aufruf) |
+| `proof_start` | `command`, `iteration` (vor dem Prüfbefehl) |
 | `proof` | `ok`, `command`, `iteration` |
 | `audit` | `level`, `kind`, `code`, `detail` |
 | `escalation` | `from`, `to`, `iteration`, `reason` |

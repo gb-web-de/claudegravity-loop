@@ -199,6 +199,7 @@ def safe_agent_run(
             tracker = metrics_tracker or agent.metrics_tracker
             tokens_before = tracker.total_tokens if tracker is not None else 0
             started = time.monotonic()
+            log_event(session_dir, "call_start", role=role, agent=agent.name, phase=state.get("phase"))
             res = agent.run(prompt, cwd=cwd, extra_flags=flags)
             tracker = metrics_tracker or agent.metrics_tracker
             if watch:

@@ -459,8 +459,16 @@ def plan_diff(old: str, new: str) -> str:
 LOG_FORMATS = ("text", "json")
 
 
+# Rückrufe hook(session_dir, event, fields) für jedes Ereignis, auch ohne --log-format json (Live-Ansicht)
+EVENT_HOOKS: list = []
+
+
 def log_event(session_dir: Path | None, event: str, **fields) -> None:
-    """Eine JSON-Zeile pro Ereignis in events.jsonl (nur mit --log-format json); Texte werden geschwärzt."""
+    """Eine JSON-Zeile pro Ereignis in events.jsonl (nur mit --log-format json); Texte werden geschwärzt.
+    Die Rückrufe in EVENT_HOOKS bekommen jedes Ereignis."""
+    for hook in list(EVENT_HOOKS):
+        with contextlib.suppress(Exception):
+            hook(session_dir, event, fields)
     if SETTINGS.log_format != "json" or session_dir is None:
         return
     record = {"time": datetime.datetime.now().isoformat(timespec="seconds"), "session": session_dir.name, "event": event}

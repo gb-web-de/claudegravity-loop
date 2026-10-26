@@ -149,6 +149,16 @@ Details und GitHub Action: [GitHub](github.md).
 
 Details: [Sandbox](sandbox.md).
 
+## Live-Ansicht und Benachrichtigung
+
+| Flag | Aliase | Beschreibung | Standard |
+| :--- | :--- | :--- | :--- |
+| `--watch` | `--live` | Live-Ansicht im Browser neben dem Lauf (Phase, Runde, Tokens, Diff), nur auf `127.0.0.1` mit Token. Ohne Lauf: `claudegravity watch`. | aus |
+| `--watch-port <port>` | | Port der Live-Ansicht; ist er belegt, ein freier. | `8765` |
+| `--notify <kanäle>` | `--benachrichtigen` | Melden, wenn der Loop auf dich wartet oder fertig ist: `desktop`, `bell`, `ntfy:<thema>`, `webhook:<url>`, mit Komma getrennt. Nicht aus dem Projekt-Profil. | aus |
+
+Details: [Live-Ansicht & Benachrichtigungen](live-ansicht.md).
+
 ## Datenschutz
 
 | Flag | Beschreibung |

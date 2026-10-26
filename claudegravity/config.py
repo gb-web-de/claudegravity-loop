@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from .common import tr
+from .notify import redact as redact_notify
 from .session import find_latest_session, load_session_state
 
 
@@ -32,7 +33,7 @@ CONFIG_EXCLUDED = {
     "from_issue",
 }
 # Das Projekt-Profil liegt im Projektordner, in den ein Bauleiter schreiben kann: keine Rechte daraus
-PROJECT_PROFILE_FORBIDDEN = {"yolo", "open_pr", "pr_draft", "sandbox", "sandbox_image", "sandbox_net"}
+PROJECT_PROFILE_FORBIDDEN = {"yolo", "open_pr", "pr_draft", "sandbox", "sandbox_image", "sandbox_net", "notify"}
 # Standardwerte, die erst später im Lauf gesetzt werden (für --print-effective-config)
 CONFIG_DISPLAY_DEFAULTS = {"strategy": "balanced", "max_iterations": "10 (Etappen: 2 je Etappe + 2)"}
 # Beim Fortsetzen gilt der gespeicherte Stand der Session vor Umgebung und Profil
@@ -387,6 +388,8 @@ def format_effective_config(report: dict) -> str:
         value = report["values"][dest]
         if value is None and report["sources"][dest] == "default" and dest in CONFIG_DISPLAY_DEFAULTS:
             value = tr(CONFIG_DISPLAY_DEFAULTS[dest])
+        if dest == "notify" and value:
+            value = redact_notify(value)
         shown = "–" if value is None else (json.dumps(value, ensure_ascii=False) if isinstance(value, str) else str(value).lower())
         mark = tr("  ⚠️ Konflikt") if dest in conflict_keys else ""
         lines.append(f"  {dest:<{width}} = {shown:<28} [{source_label(report['sources'][dest])}]{mark}")

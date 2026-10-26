@@ -1,5 +1,6 @@
 """Gemeinsame Grundlagen: Ausgabe (say), Laufzeit-Einstellungen, Abbruch, Ratenlimits und Neuversuche."""
 
+import contextlib
 import dataclasses
 import datetime
 import random
@@ -38,9 +39,24 @@ def tr(text: str) -> str:
     return translate(text, SETTINGS.lang)
 
 
+# Rückrufe hook(prompt, wartet) rund um jede Rückfrage (Live-Ansicht, Benachrichtigung „wartet auf dich“)
+WAIT_HOOKS: list = []
+
+
+def _call_wait_hooks(prompt: str, waiting: bool) -> None:
+    for hook in list(WAIT_HOOKS):
+        with contextlib.suppress(Exception):
+            hook(prompt, waiting)
+
+
 def ask(prompt: str) -> str:
     """Rückfrage im Terminal (input) in der Sprache des Laufs."""
-    return input(tr(prompt))
+    text = tr(prompt)
+    _call_wait_hooks(text, True)
+    try:
+        return input(text)
+    finally:
+        _call_wait_hooks(text, False)
 
 
 @dataclasses.dataclass
@@ -48,6 +64,7 @@ class RuntimeSettings:
     """Einstellungen eines Laufs, die tief im Code gebraucht werden. main() setzt sie einmal (apply_runtime_settings)."""
 
     endpoint_timeout: int | None = None  # Sekunden pro Runde für Endpunkte (None = automatisch, siehe endpoint_timeout)
+    notify: str = ""  # --notify: Kanäle für Benachrichtigungen (siehe notify.py)
     shield: bool = True  # Datenschutzschild: Zugangsdaten vor dem Versand an Cloud-Modelle schwärzen
     stage_planning: bool = False  # Architekt schneidet den Plan in Etappen
     retries: int | None = None  # --retries

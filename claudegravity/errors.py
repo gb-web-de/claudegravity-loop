@@ -258,7 +258,12 @@ def format_error(code: str, detail: str | None = None) -> str:
     return "\n".join(lines)
 
 
+# Letzter Fehler aus fail(), für die Benachrichtigung am Ende eines abgebrochenen Laufs
+LAST_ERROR: dict = {}
+
+
 def fail(code: str, detail: str | None = None, exit_code: int = 1):
     """Beendet mit Fehlercode, Lösungshinweis und Doku-Verweis."""
+    LAST_ERROR.update(code=code, detail=mask_secrets(detail.strip())[:200] if detail else None)
     say(format_error(code, detail), file=sys.stderr)
     sys.exit(exit_code)

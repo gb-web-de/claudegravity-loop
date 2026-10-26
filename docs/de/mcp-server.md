@@ -99,6 +99,8 @@ Analysiert die Aufgabe und liefert Rollenbelegung, Kosten-/Qualitäts-Einschätz
 | `merge` | boolean | `false` | `--merge`: Ergebnis nach der Abnahme in den Ausgangs-Branch mergen |
 | `issue` | string | – | `--from-issue`: GitHub-Issue als Aufgabe (Nummer, `owner/repo#12` oder URL); `task` ist dann optional und gilt als Zusatz ([GitHub](github.md)) |
 | `open_pr` | boolean | `false` | `--open-pr`: nach erfolgreichem Abschluss Branch pushen und Pull Request öffnen |
+| `notify` | string | – | `--notify`: melden, wenn der Lauf wartet oder fertig ist (`desktop`, `bell`, `ntfy:<thema>`, `webhook:<url>`; [Live-Ansicht](live-ansicht.md)) |
+| `watch` | boolean | `false` | `--watch`: Live-Ansicht im Browser; die Adresse zeigt `claudegravity_status` |
 
 ### `claudegravity_run`
 
@@ -106,7 +108,7 @@ Berechnet denselben Befehl und startet ihn.
 
 | Parameter | Typ | Standard | Beschreibung |
 | :--- | :--- | :--- | :--- |
-| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, Rollen, `stages`, `approve_plan`, `merge`, `issue`, `open_pr` | | wie oben | |
+| `task`, `priority`, `endpoint`, `project_path`, `ask_mode`, `max_iterations`, `proof`, Rollen, `stages`, `approve_plan`, `merge`, `issue`, `open_pr`, `notify`, `watch` | | wie oben | |
 | `yolo` | boolean | `false` | Volle Rechte für den Bauleiter. Nur auf ausdrücklichen Wunsch setzen; ohne `yolo` kann ein Claude-Bauleiter im Hintergrund nichts schreiben. |
 | `background` | boolean | `false` | `true`: startet den Loop als eigenen Prozess im Projektordner (unter Windows ohne Konsolenfenster) und meldet PID und Log-Datei; setzt immer `--plan-auto` und lässt `-i` weg. Läuft im Projekt schon ein Hintergrundlauf, wird kein zweiter gestartet. `false`: gibt nur den Befehl zum Start im Terminal zurück (Bash bzw. PowerShell, mit dem Python des Servers). |
 

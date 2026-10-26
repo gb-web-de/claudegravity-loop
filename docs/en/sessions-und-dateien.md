@@ -19,6 +19,7 @@
 │           ├── LOG.md               # history of plan, review, acceptance check, limit switches, retries
 │           ├── audit-events.jsonl   # security events (see permission audit)
 │           ├── events.jsonl         # structured event log (only with --log-format json)
+│           ├── live.json            # live state of the running process (see live view)
 │           ├── workspace/           # the session's Git worktree (branch loop/<session>)
 │           ├── AUDIT.md             # audit report if the run ends without a completion signal
 │           └── .done                # completion signal + audit report
@@ -157,6 +158,8 @@ With `--log-format json` (or `"log_format": "json"` in a profile) the loop addit
 | `event` | Fields |
 | :--- | :--- |
 | `call` | `role`, `agent`, `model`, `phase`, `iteration` (build), `duration_s`, `tokens` (this call), `tokens_total`, `cost_usd_total`, `retries` |
+| `call_start` | `role`, `agent`, `phase` (before every AI call) |
+| `proof_start` | `command`, `iteration` (before the proof command) |
 | `proof` | `ok`, `command`, `iteration` |
 | `audit` | `level`, `kind`, `code`, `detail` |
 | `escalation` | `from`, `to`, `iteration`, `reason` |

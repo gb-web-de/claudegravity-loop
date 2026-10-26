@@ -4,6 +4,7 @@ INSPECTION_round1.md
 LOG.md
 PLAN_v1.md
 REVIEW_round1.md
+live.json
 state.json
 state.json.bak
 

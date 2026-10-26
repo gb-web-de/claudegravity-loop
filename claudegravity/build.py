@@ -469,6 +469,7 @@ def run_build_call(
 
 def run_proof_check(ctx: BuildContext, proof_cmd: str) -> tuple[bool, str]:
     """Prüfbefehl ausführen, zählen und als Ereignis protokollieren."""
+    log_event(ctx.session_dir, "proof_start", command=proof_cmd, iteration=ctx.state.get("last_iteration"))
     ok, output = run_proof(proof_cmd, ctx.work_path)
     ctx.metrics.count("proof_green" if ok else "proof_red")
     log_event(ctx.session_dir, "proof", ok=ok, command=proof_cmd, iteration=ctx.state.get("last_iteration"))
