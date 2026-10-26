@@ -48,7 +48,7 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 # Neueste zuerst; der Server antwortet mit der Version des Clients, wenn er sie kennt
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", MCP_PROTOCOL_VERSION)
 SERVER_NAME = "claudegravity-mcp"
-SERVER_VERSION = "1.5.0"
+SERVER_VERSION = "1.6.0"
 PROJECT_ENV = "CLAUDEGRAVITY_PROJECT"
 HOST_ENV = "CLAUDEGRAVITY_HOST"
 # clientInfo.name aus initialize → Backend-Schlüssel des Loops (Teilstring, klein geschrieben, erster Treffer gilt)
@@ -301,7 +301,10 @@ def format_shell_command(argv: list[str], shell: str = "bash") -> str:
 
 def loop_launch_argv(loop_args: list[str]) -> list[str]:
     """Startbefehl für loop.py ohne Shell: Aufgabentext wird nie von einer Shell interpretiert.
-    Installiert mit pipx/uv/pip liegt kein loop.py daneben; dann startet `python -m claudegravity`."""
+    Installiert mit pipx/uv/pip liegt kein loop.py daneben; dann startet `python -m claudegravity`.
+    Das eigenständige Programm aus dem Release ist Server und Loop zugleich und startet sich selbst."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable] + loop_args
     script = Path(__file__).resolve().parent / "loop.py"
     if script.exists():
         return [sys.executable, str(script)] + loop_args
@@ -1148,8 +1151,8 @@ def format_info() -> str:
     agents = detect_installed_agents()
     lines = [
         f"### 🖥️ Betriebssystem: {platform.system()} {platform.release()} (Python {platform.python_version()})",
-        f"* **Python des Servers:** `{sys.executable}`",
-        f"* **Skript:** `{Path(__file__).resolve()}`",
+        f"* **{'Programm' if getattr(sys, 'frozen', False) else 'Python des Servers'}:** `{sys.executable}`",
+        f"* **Skript:** `{'–' if getattr(sys, 'frozen', False) else Path(__file__).resolve()}`",
         f"* **Arbeitsverzeichnis:** `{Path.cwd()}`",
         f"* **{PROJECT_ENV}:** `{os.environ.get(PROJECT_ENV) or '–'}`",
         f"* **Aufrufender Client:** {HOST_CLIENT.get('name') or '–'}" + (f" → Architekt `{host_backend()}`" if host_backend() else ""),

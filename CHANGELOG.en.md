@@ -4,7 +4,10 @@
 
 ## [Unreleased]
 
+## [1.6.0] – 2026-10-26
+
 ### Added
+- Ready-made programs on the GitHub release for macOS (Apple Silicon, Intel), Linux (x64, arm64) and Windows, with their own Python: `curl -fsSL …/claudegravity-install.sh | sh` or `irm …/claudegravity-install.ps1 | iex` downloads the matching archive, checks the SHA-256 sum and installs. One program is the loop, the MCP server (`claudegravity mcp`) and the installer (`claudegravity install` copies itself to `~/.local/bin` or `%LOCALAPPDATA%\ClaudeGravity\bin` and registers itself as the server). The release also carries `claudegravity.mcpb`, wheel, sdist and `SHA256SUMS`; `release.yml` builds everything on a `v*` tag and tests the install on every system.
 - `tools/realrun.py`: checks every installed backend with real models (answer, read-only mode holds, `--resume` continues the session, with `--full` a complete run as Builder).
 - Benchmark with ten tasks; a run only counts if the unchanged original tests are green. `--baseline <cli>` compares with a single CLI without the loop, plus `--repeat` and `--tasks-dir`.
 - `claudegravity --version`.
@@ -16,7 +19,7 @@
 - From issue to pull request: `--from-issue 12` (also `owner/repo#12` or a URL) takes title, body and comments as the task, `--open-pr`/`--pr-draft` pushes the session branch after a successful acceptance check and opens a pull request with `Closes #12`, roles, metrics and plan. Via `gh` or the REST API (`GH_TOKEN`), error codes CG-1601/CG-1602. The repository is also a GitHub Action (`uses: gb-web-de/claudegravity-loop@main`) started by a label or `/claudegravity`; the MCP server knows `issue` and `open_pr`.
 - Sandbox (`--sandbox on|docker|podman`, `--sandbox-image`, `--sandbox-net`): the proof command and CLI Builder run in a fresh container with your user ID, without capabilities and with limits; the proof command without network, the Builder sees only the work and session folders and the credentials of its own CLI. `sandbox/Dockerfile` brings the AI CLIs. Error codes CG-1701/CG-1702; not from the project profile.
 - Live view and notifications: `--watch` (or `claudegravity watch` without a run) shows phase, current role, round, tokens, cost, changed files, diff and log in the browser, only on `127.0.0.1` with a token. `--notify desktop,bell,ntfy:<topic>,webhook:<url>` reports when a question has been open for 20 s and when the run is done or stops. New file `live.json` in the session folder, events `call_start`/`proof_start`; the MCP server knows `notify` and `watch`.
-- Claude Desktop extension `claudegravity-<version>.mcpb` (MCP Bundle): a double-click installs the MCP server with settings for project, endpoint, API key, notification, language and Python. `tools/build_mcpb.py` builds it reproducibly, CI checks the manifest with `mcpb validate`, a version tag attaches it to the release. On macOS/Linux `launch.sh` looks for Python 3.10+.
+- Claude Desktop extension `claudegravity.mcpb` (MCP Bundle): a double-click installs the MCP server with settings for project, endpoint, API key, notification, language and Python. `tools/build_mcpb.py` builds it reproducibly, CI checks the manifest with `mcpb validate`, a version tag attaches it to the release. On macOS/Linux `launch.sh` looks for Python 3.10+.
 - The benchmark builds directly in the throwaway folder (`--no-worktree`) so the original tests see the result.
 
 ### Changed

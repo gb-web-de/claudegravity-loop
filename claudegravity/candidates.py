@@ -121,7 +121,12 @@ def child_state(state: dict, candidate: Candidate) -> dict:
 
 def child_command(args, candidate: Candidate, proof_cmd: str | None) -> list[str]:
     """Aufruf des Loops für einen Kandidaten: setzt die kopierte Session fort und baut nur (ohne eigene Abnahme)."""
-    entry = [sys.executable, str(ROOT / "loop.py")] if (ROOT / "loop.py").exists() else [sys.executable, "-m", "claudegravity"]
+    if getattr(sys, "frozen", False):
+        entry = [sys.executable]  # eigenständiges Programm aus dem Release
+    elif (ROOT / "loop.py").exists():
+        entry = [sys.executable, str(ROOT / "loop.py")]
+    else:
+        entry = [sys.executable, "-m", "claudegravity"]
     cmd = entry + ["-c", "-p", str(candidate.work_dir), "--bauer", candidate.binary]
     if candidate.model:
         cmd += ["--bauer-model", candidate.model]

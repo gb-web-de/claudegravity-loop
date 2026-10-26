@@ -1,6 +1,6 @@
 {
   "name": "claudegravity",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Plan, Review, Bau und Abnahme mit getrennten KI-Anbietern (Claude, Antigravity, Codex, Ollama, eigene Server): kein Modell benotet sich selbst.",
   "author": { "name": "gb-web-de", "url": "https://github.com/gb-web-de" },
   "homepage": "https://github.com/gb-web-de/claudegravity-loop",

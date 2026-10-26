@@ -2,13 +2,45 @@
 
 [← Zurück zur Übersicht](../../README.md) · [Dokumentations-Index](README.md) · 🇬🇧 [English](../en/installation.md)
 
-ClaudeGravity besteht aus zwei Startdateien (`loop.py` und `mcp_server.py`) und dem Paketordner `claudegravity/`, den `loop.py` aus dem eigenen Verzeichnis lädt. Der Ordner muss deshalb neben `loop.py` liegen bleiben; Symlinks auf `loop.py` funktionieren. Alles nutzt ausschließlich die Standardbibliothek. Ein `pip install` ist **nicht nötig**: keine Abhängigkeiten, keine virtuelle Umgebung, nichts zu kompilieren. Wer Befehle lieber über pipx oder uv verwaltet, kann ClaudeGravity trotzdem als Paket installieren (siehe [unten](#mit-pipx-oder-uv)).
+ClaudeGravity besteht aus zwei Startdateien (`loop.py` und `mcp_server.py`) und dem Paketordner `claudegravity/`, den `loop.py` aus dem eigenen Verzeichnis lädt. Der Ordner muss deshalb neben `loop.py` liegen bleiben; Symlinks auf `loop.py` funktionieren. Alles nutzt ausschließlich die Standardbibliothek. Ein `pip install` ist **nicht nötig**: keine Abhängigkeiten, keine virtuelle Umgebung, nichts zu kompilieren. Wer Befehle lieber über pipx oder uv verwaltet, kann ClaudeGravity trotzdem als Paket installieren (siehe [unten](#mit-pipx-oder-uv)). Ganz ohne Python geht es mit dem [fertigen Programm](#fertiges-programm-ohne-python) aus dem Release.
+
+## Fertiges Programm (ohne Python)
+
+Jedes [Release](https://github.com/gb-web-de/claudegravity-loop/releases) enthält ClaudeGravity als eigenständiges Programm, das sein eigenes Python mitbringt. Ein Befehl lädt es, prüft die SHA-256-Summe, legt `claudegravity`, `claudegravity-loop` und `claudegravity-mcp` an und trägt den MCP-Server und den Skill in alle gefundenen Clients ein:
+
+```bash
+# macOS (Apple Silicon und Intel) und Linux (x64 und arm64, z. B. Raspberry Pi)
+curl -fsSL https://github.com/gb-web-de/claudegravity-loop/releases/latest/download/claudegravity-install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://github.com/gb-web-de/claudegravity-loop/releases/latest/download/claudegravity-install.ps1 | iex
+```
+
+Danach ein neues Terminal öffnen und `claudegravity --info` aufrufen. Argumente gehen an den Installer, z. B. `curl … | sh -s -- --project ~/projekte/shop` (Standardprojekt für Desktop-Apps) oder `--no-path`. Eine bestimmte Version nimmst du mit `CLAUDEGRAVITY_VERSION=v1.6.0`.
+
+| Release-Datei | Für |
+| :--- | :--- |
+| `claudegravity-macos-arm64.tar.gz` | macOS mit Apple Silicon (M1 bis M4) |
+| `claudegravity-macos-x86_64.tar.gz` | macOS mit Intel-Prozessor |
+| `claudegravity-linux-x86_64.tar.gz` | Linux x64 mit glibc 2.35 oder neuer (Ubuntu 22.04, Debian 12 …) |
+| `claudegravity-linux-arm64.tar.gz` | Linux arm64, z. B. Raspberry Pi 4/5 mit 64-Bit-System |
+| `claudegravity-windows-x86_64.zip` | Windows 10/11 (auf ARM-Geräten über die eingebaute Emulation) |
+| `claudegravity.mcpb` | Claude Desktop, siehe [Erweiterung](mcp-server.md#claude-desktop-erweiterung-mit-einem-klick) |
+| `claudegravity_loop-<version>-py3-none-any.whl` | Python 3.10+ mit pipx oder uv, siehe [unten](#mit-pipx-oder-uv) |
+| `SHA256SUMS` | Prüfsummen aller Dateien |
+
+* **Von Hand:** Archiv entpacken und `./claudegravity/claudegravity install` aufrufen (Windows: `claudegravity\claudegravity.exe install`). Das Programm kopiert sich nach `~/.local/bin` bzw. `%LOCALAPPDATA%\ClaudeGravity\bin` und ergänzt den `PATH`; es läuft aber auch ohne Installation direkt aus dem Ordner.
+* **Ein Programm für alles:** `claudegravity "Aufgabe"` startet den Loop, `claudegravity mcp` den MCP-Server (so trägt der Installer ihn ein), `claudegravity install` installiert. Die KI-CLIs (`claude`, `codex`, `gemini`, `ollama` …) brauchst du weiterhin.
+* **Nicht signiert:** Über den Browser geladen blockiert macOS den ersten Start („Apple konnte nicht überprüfen …“). Dann `xattr -d com.apple.quarantine claudegravity/claudegravity` ausführen oder unter *Systemeinstellungen → Datenschutz & Sicherheit* „Dennoch öffnen“ wählen. Windows SmartScreen meldet sich mit „Der Computer wurde durch Windows geschützt“: *Weitere Informationen → Trotzdem ausführen*. Die Ein-Befehl-Installation lädt ohne Browser und ist davon normalerweise nicht betroffen.
+* **Aktualisieren:** denselben Befehl noch einmal ausführen. **Entfernen:** `claudegravity install --uninstall` (Programm, Befehle, MCP-Einträge und Skill).
 
 ## Voraussetzungen
 
 | Komponente | Pflicht? | Zweck |
 | :--- | :--- | :--- |
-| **Python 3.10+** | Ja | Laufzeit für `loop.py` und `mcp_server.py` (es werden `str \| None`-Typannotationen genutzt, daher mindestens 3.10). |
+| **Python 3.10+** | Ja (nicht beim [fertigen Programm](#fertiges-programm-ohne-python)) | Laufzeit für `loop.py` und `mcp_server.py` (es werden `str \| None`-Typannotationen genutzt, daher mindestens 3.10). |
 | **Mindestens eine KI-CLI** oder ein **OpenAI-kompatibler Endpunkt** | Ja | Ohne Backend kann keine Rolle besetzt werden. Siehe [Backends](backends.md). |
 | **Zwei verschiedene Backends** | Empfohlen | Das 4-Augen-Prinzip greift nur, wenn Architekt und Prüfstatiker unterschiedliche Modelle sind. Mit nur einer CLI prüft sich das Modell selbst. |
 | `git` | Optional | Zum Klonen und Aktualisieren. |
@@ -86,8 +118,8 @@ Unter Windows entsprechend `claudegravity.bat --info` bzw. `.\claudegravity.ps1 
 
 ## Aktualisieren & Deinstallieren
 
-* **Aktualisieren:** `git pull` im Repository-Ordner (mit pipx/uv: `pipx upgrade claudegravity-loop` bzw. `uv tool upgrade claudegravity-loop`).
-* **Deinstallieren:** Symlinks in `~/.local/bin` bzw. den `PATH`-Eintrag entfernen und den Ordner löschen. Projektbezogene Daten liegen in `.dual-loop/` und `logs/` des jeweiligen Zielprojekts.
+* **Aktualisieren:** `git pull` im Repository-Ordner (mit pipx/uv: `pipx upgrade claudegravity-loop` bzw. `uv tool upgrade claudegravity-loop`; fertiges Programm: den [Ein-Befehl-Installer](#fertiges-programm-ohne-python) noch einmal ausführen).
+* **Deinstallieren:** fertiges Programm mit `claudegravity install --uninstall`, sonst Symlinks in `~/.local/bin` bzw. den `PATH`-Eintrag entfernen und den Ordner löschen. Projektbezogene Daten liegen in `.dual-loop/` und `logs/` des jeweiligen Zielprojekts.
 
 ## Weiter
 

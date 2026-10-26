@@ -5,6 +5,10 @@ Registriert den ClaudeGravity MCP-Server (mcp_server.py) in allen gefundenen MCP
 und macht die Befehle `claudegravity`, `claudegravity-loop` und `claudegravity-mcp`
 global aus jedem Ordner aufrufbar. Nur Python-Standardbibliothek, idempotent.
 
+Im eigenständigen Programm aus dem Release (`claudegravity install`) kopiert er das Programm in den
+Befehlsordner und trägt es selbst als Server ein (`claudegravity mcp`); Skill und Befehlsvorlagen landen
+unter `share_dir_default()`.
+
 Usage:
   python3 install.py              # installieren / aktualisieren
   python3 install.py --uninstall  # alles wieder entfernen
@@ -49,6 +53,8 @@ MARK_END = "# <<< claudegravity <<<"
 DRY_RUN = False
 # Standardprojekt für Desktop-Apps (--project): landet als CLAUDEGRAVITY_PROJECT in der Server-Umgebung
 PROJECT_DIR: Path | None = None
+# Eigenständiges Programm: installierter Pfad des Programms, das zugleich Loop und MCP-Server ist
+PROGRAM: Path | None = None
 
 
 def say(symbol: str, msg: str) -> None:
@@ -59,9 +65,21 @@ def verb(done: str, would: str) -> str:
     return would if DRY_RUN else done
 
 
+def is_standalone() -> bool:
+    """Läuft als eigenständiges Programm aus dem Release (PyInstaller) statt aus dem Klon."""
+    return bool(getattr(sys, "frozen", False))
+
+
 def python_command() -> str:
-    """Absoluter Python-Pfad: MCP-Clients starten Server ohne Shell-PATH."""
+    """Absoluter Pfad des Server-Befehls (Python oder das eigenständige Programm): MCP-Clients starten ohne Shell-PATH."""
+    if PROGRAM is not None:
+        return str(PROGRAM)
     return str(Path(sys.executable).absolute())
+
+
+def server_args() -> list[str]:
+    """Argumente für den Server-Befehl."""
+    return ["mcp"] if PROGRAM is not None else [str(MCP_SCRIPT)]
 
 
 def server_env(host: str | None = None) -> dict:
@@ -77,7 +95,7 @@ def server_env(host: str | None = None) -> dict:
 def server_entry(extra: dict | None = None, host: str | None = None) -> dict:
     entry = {
         "command": python_command(),
-        "args": [str(MCP_SCRIPT)],
+        "args": server_args(),
         "env": server_env(host),
     }
     if extra:
@@ -192,7 +210,7 @@ def codex_client():
                 MARK_BEGIN,
                 f"[mcp_servers.{SERVER_NAME}]",
                 f"command = {json.dumps(python_command())}",
-                f"args = [{json.dumps(str(MCP_SCRIPT))}]",
+                f"args = [{', '.join(json.dumps(a) for a in server_args())}]",
                 "env = { " + ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in server_env("codex").items()) + " }",
                 MARK_END,
                 "",
@@ -265,7 +283,7 @@ def claude_code_client():
         if status():
             run_cli([exe, "mcp", "remove", SERVER_NAME, "--scope", "user"])
         env_args = [arg for k, v in server_env("claude").items() for arg in ("-e", f"{k}={v}")]
-        res = run_cli([exe, "mcp", "add", "--scope", "user", SERVER_NAME, *env_args, "--", python_command(), str(MCP_SCRIPT)])
+        res = run_cli([exe, "mcp", "add", "--scope", "user", SERVER_NAME, *env_args, "--", python_command(), *server_args()])
         if res.returncode != 0:
             say("!", f"claude mcp add fehlgeschlagen: {(res.stderr or res.stdout).strip()}")
             return False
@@ -354,7 +372,8 @@ def skill_targets(home: Path | None = None) -> dict[str, tuple[str, bool, Path]]
     }
 
 
-def is_skill_installed(target: Path, source: Path = SKILL_SOURCE) -> bool:
+def is_skill_installed(target: Path, source: Path | None = None) -> bool:
+    source = source or SKILL_SOURCE
     if target.is_symlink():
         try:
             return target.resolve() == source.resolve()
@@ -363,8 +382,10 @@ def is_skill_installed(target: Path, source: Path = SKILL_SOURCE) -> bool:
     return (target / "SKILL.md").is_file()
 
 
-def install_skill(target: Path, source: Path = SKILL_SOURCE) -> bool:
-    if not source.is_dir():
+def install_skill(target: Path, source: Path | None = None) -> bool:
+    source = source or SKILL_SOURCE
+    # Im Trockenlauf des eigenständigen Programms ist die Ablage noch nicht angelegt
+    if not source.is_dir() and not DRY_RUN:
         say("!", f"Skill-Quelle {source} existiert nicht.")
         return False
     if is_skill_installed(target, source):
@@ -411,9 +432,11 @@ def claude_command_targets(home: Path | None = None) -> list[tuple[Path, Path]]:
     """Gibt (Quelle, Ziel) Paare für globale Claude-Code-Befehlsvorlagen zurück."""
     h = home or HOME
     dest_dir = h / ".claude" / "commands"
-    if not COMMANDS_DIR.is_dir():
+    # Namen aus dem Programm, falls die Ablage des eigenständigen Programms (noch) fehlt
+    listing = COMMANDS_DIR if COMMANDS_DIR.is_dir() else REPO_DIR / "commands"
+    if not listing.is_dir():
         return []
-    return [(src, dest_dir / src.name) for src in sorted(COMMANDS_DIR.glob("*.md"))]
+    return [(COMMANDS_DIR / src.name, dest_dir / src.name) for src in sorted(listing.glob("*.md"))]
 
 
 def is_claude_command_installed(target: Path, source: Path) -> bool:
@@ -478,6 +501,67 @@ def bin_dir_default() -> Path:
     return HOME / ".local" / "bin"
 
 
+def share_dir_default() -> Path:
+    """Ablage für Skill und Befehlsvorlagen des eigenständigen Programms (die Clients verlinken dorthin)."""
+    if IS_WINDOWS:
+        return Path(os.environ.get("LOCALAPPDATA", HOME / "AppData" / "Local")) / "ClaudeGravity" / "share"
+    return Path(os.environ.get("XDG_DATA_HOME", HOME / ".local" / "share")) / "claudegravity"
+
+
+def program_name() -> str:
+    return "claudegravity.exe" if IS_WINDOWS else "claudegravity"
+
+
+def command_targets() -> dict[str, Path]:
+    """Globale Befehle -> Ziel. Im eigenständigen Programm ist `claudegravity` das Programm selbst, die anderen verweisen darauf."""
+    if PROGRAM is not None:
+        return {"claudegravity-loop": PROGRAM, "claudegravity-mcp": PROGRAM}
+    return COMMANDS
+
+
+def install_program(bin_dir: Path) -> Path:
+    """Eigenständiges Programm in den Befehlsordner kopieren (Update überschreibt) und den neuen Pfad liefern."""
+    source = Path(sys.executable).resolve()
+    target = bin_dir / program_name()
+    if target.exists() and target.resolve() == source:
+        say("=", f"{target}")
+        return target
+    if not DRY_RUN:
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            try:
+                target.unlink()
+            except PermissionError:
+                # Windows: ein laufendes Programm (z. B. der MCP-Server einer Desktop-App) lässt sich nur umbenennen
+                old = target.with_name(target.name + ".old")
+                old.unlink(missing_ok=True)
+                target.rename(old)
+        shutil.copy2(source, target)
+        target.chmod(0o755)
+    say("+", f"{target} {verb('installiert', 'würde installiert')}")
+    return target
+
+
+def install_data(share_dir: Path) -> None:
+    """Skill und Befehlsvorlagen aus dem Programm an einen festen Ort kopieren; die Clients verlinken dorthin."""
+    for name in ("skills", "commands"):
+        source, target = REPO_DIR / name, share_dir / name
+        if not source.is_dir():
+            continue
+        if not DRY_RUN:
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(source, target)
+    say("+", f"Skill und Befehlsvorlagen {verb('abgelegt', 'würden abgelegt')} in {share_dir}")
+
+
+def use_share_dir(share_dir: Path) -> None:
+    """Skill und Befehlsvorlagen ab jetzt aus share_dir verlinken."""
+    global SKILL_SOURCE, COMMANDS_DIR
+    SKILL_SOURCE = share_dir / "skills" / "claudegravity"
+    COMMANDS_DIR = share_dir / "commands"
+
+
 def path_contains(directory: Path) -> bool:
     norm = lambda p: os.path.normcase(os.path.normpath(p))
     return any(norm(p) == norm(str(directory)) for p in os.environ.get("PATH", "").split(os.pathsep) if p)
@@ -501,12 +585,12 @@ def unix_path_block(bin_dir: Path) -> str:
 def install_commands_unix(bin_dir: Path, touch_path: bool) -> None:
     if not DRY_RUN:
         bin_dir.mkdir(parents=True, exist_ok=True)
-    for script in set(COMMANDS.values()):
-        if not DRY_RUN:
+    for script in set(command_targets().values()):
+        if not DRY_RUN and script.exists():
             script.chmod(script.stat().st_mode | 0o111)
-    for name, target in COMMANDS.items():
+    for name, target in command_targets().items():
         link = bin_dir / name
-        if link.is_symlink() and link.resolve() == target:
+        if link.is_symlink() and link.resolve() == target.resolve():
             say("=", f"{name} -> {target}")
             continue
         if link.exists() and not link.is_symlink():
@@ -531,12 +615,16 @@ def install_commands_unix(bin_dir: Path, touch_path: bool) -> None:
 
 
 def uninstall_commands_unix(bin_dir: Path) -> None:
-    for name, target in COMMANDS.items():
+    for name, target in command_targets().items():
         link = bin_dir / name
-        if link.is_symlink() and link.resolve() == target:
+        if link.is_symlink() and link.resolve() == target.resolve():
             if not DRY_RUN:
                 link.unlink()
             say("-", f"{link}")
+    if PROGRAM is not None and PROGRAM.is_file():
+        if not DRY_RUN:
+            PROGRAM.unlink()
+        say("-", f"{PROGRAM}")
     for rc in [HOME / ".bashrc", HOME / ".zshrc", HOME / ".bash_profile"]:
         if rc.exists() and MARK_BEGIN in rc.read_text(encoding="utf-8"):
             if not DRY_RUN:
@@ -571,12 +659,21 @@ def win_user_path(new_value: str | None = None) -> str:
         return value
 
 
+def windows_shims() -> dict[str, str]:
+    """Name -> Inhalt der .cmd-Datei. Im eigenständigen Programm liegt claudegravity.exe selbst im Befehlsordner."""
+    if PROGRAM is not None:
+        return {
+            "claudegravity-loop": f'@echo off\r\n"{PROGRAM}" %*\r\nexit /b %ERRORLEVEL%\r\n',
+            "claudegravity-mcp": f'@echo off\r\n"{PROGRAM}" mcp %*\r\nexit /b %ERRORLEVEL%\r\n',
+        }
+    return {name: f'@echo off\r\ncall "{REPO_DIR / launcher}" %*\r\nexit /b %ERRORLEVEL%\r\n' for name, launcher in WIN_LAUNCHERS.items()}
+
+
 def install_commands_windows(bin_dir: Path, touch_path: bool) -> None:
     if not DRY_RUN:
         bin_dir.mkdir(parents=True, exist_ok=True)
-    for name, launcher in WIN_LAUNCHERS.items():
+    for name, content in windows_shims().items():
         shim = bin_dir / f"{name}.cmd"
-        content = f'@echo off\r\ncall "{REPO_DIR / launcher}" %*\r\nexit /b %ERRORLEVEL%\r\n'
         if shim.exists() and shim.read_text(encoding="utf-8", errors="replace") == content:
             say("=", f"{shim}")
             continue
@@ -603,6 +700,17 @@ def uninstall_commands_windows(bin_dir: Path) -> None:
             if not DRY_RUN:
                 shim.unlink()
             say("-", f"{shim}")
+    if PROGRAM is not None and PROGRAM.is_file():
+        if not DRY_RUN:
+            try:
+                PROGRAM.unlink()
+            except PermissionError:
+                # Das laufende Programm lässt sich unter Windows nicht löschen, nur umbenennen
+                old = PROGRAM.with_name(PROGRAM.name + ".old")
+                old.unlink(missing_ok=True)
+                PROGRAM.rename(old)
+                say("!", f"{old} bitte später von Hand löschen (Programm läuft noch).")
+        say("-", f"{PROGRAM}")
     if bin_dir.is_dir() and not any(bin_dir.iterdir()) and not DRY_RUN:
         bin_dir.rmdir()
     current = win_user_path()
@@ -620,7 +728,7 @@ def uninstall_commands_windows(bin_dir: Path) -> None:
 
 
 def main() -> int:
-    global DRY_RUN, PROJECT_DIR
+    global DRY_RUN, PROJECT_DIR, PROGRAM
     parser = argparse.ArgumentParser(description="ClaudeGravity Installer: MCP-Server in alle Clients eintragen & globale Befehle anlegen")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--uninstall", action="store_true", help="MCP-Einträge und globale Befehle wieder entfernen")
@@ -656,9 +764,23 @@ def main() -> int:
             return 1
     bin_dir = Path(args.bin_dir).expanduser().resolve() if args.bin_dir else bin_dir_default()
 
-    print(f"ClaudeGravity Installer ({platform.system()}) – Repo: {REPO_DIR}")
+    standalone = is_standalone()
+    if standalone:
+        share_dir = share_dir_default()
+        PROGRAM = bin_dir / program_name() if not args.no_commands else Path(sys.executable).resolve()
+        print(f"ClaudeGravity Installer ({platform.system()}) – Programm: {PROGRAM}")
+    else:
+        print(f"ClaudeGravity Installer ({platform.system()}) – Repo: {REPO_DIR}")
     if DRY_RUN:
         print("  (Trockenlauf: es wird nichts verändert)")
+    if standalone and not args.status and not args.uninstall:
+        print("\nProgramm:")
+        if not args.no_commands:
+            PROGRAM = install_program(bin_dir)
+        if not args.no_skills:
+            install_data(share_dir)
+    if standalone:
+        use_share_dir(share_dir)
 
     if args.status:
         print("\nMCP-Clients:")
@@ -721,6 +843,11 @@ def main() -> int:
             (uninstall_commands_windows(bin_dir) if args.uninstall else install_commands_windows(bin_dir, not args.no_path))
         else:
             (uninstall_commands_unix(bin_dir) if args.uninstall else install_commands_unix(bin_dir, not args.no_path))
+
+    if standalone and args.uninstall and not args.no_skills and share_dir.is_dir():
+        if not DRY_RUN:
+            shutil.rmtree(share_dir)
+        say("-", f"{share_dir}")
 
     print()
     if DRY_RUN:

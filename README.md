@@ -2,7 +2,7 @@
 
 > **Universeller Cross-Model Dual-Loop für Claude Code, Google Antigravity, OpenAI Codex, GitHub Copilot & lokale Modelle (Ollama, LM Studio, eigene Server im Heimnetz oder Intranet).**
 > Verhindert KI-Betriebsblindheit durch ein unabhängiges 4-Augen-Prinzip: *Wer den Plan entwirft oder Code baut, darf ihn niemals selbst benoten.*
-> **Plattformunabhängig:** Läuft auf **Windows, macOS und Linux** nur mit Python 3.10+ – kein `pip install` nötig.
+> **Plattformunabhängig:** Läuft auf **Windows, macOS und Linux**, als fertiges Programm ohne Python oder mit Python 3.10+ ohne `pip install`.
 
 📖 Dokumentation: 🇩🇪 [Deutsch](docs/de/README.md) · 🇬🇧 [English](docs/en/README.md) · [English summary below](#-english-summary)
 
@@ -19,6 +19,15 @@ Dazwischen gibst du den Plan frei, änderst ihn oder tauschst die Rollen. Mehr d
 
 ## In 60 Sekunden starten
 
+Fertiges Programm ohne Python, ein Befehl installiert alles (Befehle, MCP-Server, Skill):
+
+```bash
+curl -fsSL https://github.com/gb-web-de/claudegravity-loop/releases/latest/download/claudegravity-install.sh | sh     # macOS, Linux
+irm https://github.com/gb-web-de/claudegravity-loop/releases/latest/download/claudegravity-install.ps1 | iex          # Windows (PowerShell)
+```
+
+Oder aus dem Klon:
+
 ```bash
 git clone https://github.com/gb-web-de/claudegravity-loop.git ~/Projekte/claudegravity-loop
 cd ~/Projekte/claudegravity-loop && chmod +x loop.py mcp_server.py
@@ -28,7 +37,7 @@ claudegravity init                                     # Erkennt KIs, fragt 3 Di
 claudegravity "Erstelle ein Python-Skript für Wetterabfragen mit Fehlerbehandlung"
 ```
 
-Ohne Klon: `pipx install git+https://github.com/gb-web-de/claudegravity-loop` oder `uvx --from git+https://github.com/gb-web-de/claudegravity-loop claudegravity --dry-run "Aufgabe"`. Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell). Details: [Installation](docs/de/installation.md) · [Schnellstart](docs/de/schnellstart.md).
+Downloads je System, Claude Desktop (`claudegravity.mcpb`) und Wheel stehen am [Release](https://github.com/gb-web-de/claudegravity-loop/releases/latest). Mit Python ohne Klon: `pipx install git+https://github.com/gb-web-de/claudegravity-loop` oder `uvx --from git+https://github.com/gb-web-de/claudegravity-loop claudegravity --dry-run "Aufgabe"`. Unter Windows: `claudegravity.bat` (CMD) bzw. `.\claudegravity.ps1` (PowerShell). Details: [Installation](docs/de/installation.md) · [Schnellstart](docs/de/schnellstart.md).
 
 ## Wähle deinen Weg
 
@@ -57,7 +66,7 @@ Ohne Klon: `pipx install git+https://github.com/gb-web-de/claudegravity-loop` od
 * **Token- & Kosten-Audit** pro Rolle, Modell und Effort in der `.done`-Datei, mit Kennzahlen (Kosten je Aufgabe, Runden bis Erfolg, Nacharbeitsquote) zum Vergleichen von Sessions.
 * **Robust & nachvollziehbar:** automatische Neuversuche mit Backoff bei Überlastung und Netzfehlern; geschwärzte Logs und ein Audit, wenn eine lesende Rolle doch schreibt.
 * **MCP-Server** (`mcp_server.py`), mit dem Claude Code & Co. den optimalen Befehl berechnen und starten. → [MCP-Server](docs/de/mcp-server.md)
-* **Claude Desktop mit einem Klick:** die Erweiterung `claudegravity-<version>.mcpb` doppelklicken, Projekt und Benachrichtigung in den Einstellungen wählen. → [MCP-Server](docs/de/mcp-server.md#claude-desktop-erweiterung-mit-einem-klick)
+* **Claude Desktop mit einem Klick:** die Erweiterung `claudegravity.mcpb` vom [Release](https://github.com/gb-web-de/claudegravity-loop/releases/latest) doppelklicken, Projekt und Benachrichtigung in den Einstellungen wählen. → [MCP-Server](docs/de/mcp-server.md#claude-desktop-erweiterung-mit-einem-klick)
 * **Plugins** für Claude Code, Codex, Antigravity, Copilot CLI, Cursor und Gemini CLI: ein Befehl, z. B. `/plugin marketplace add gb-web-de/claudegravity-loop`, bringt MCP-Server, Skill und `/loop_run`. → [Plugins](docs/de/plugins.md)
 
 ## Dokumentation
@@ -102,7 +111,7 @@ Choose your path:
 | 💶 **Cheap** | `claudegravity "Your task" --strategy hybrid --proof "npm test"` (cloud plans and accepts, local model reviews and builds; without a local model: `--strategy eco`) |
 | 🏆 **Maximum quality** | `claudegravity "Your task" --strategy best-code --template refactor --proof "npm test"` |
 
-Install without cloning: `pipx install git+https://github.com/gb-web-de/claudegravity-loop` (or `uv tool install …`). Not sure? `claudegravity init` asks three questions and saves a profile; `--dry-run` shows the role assignment first. The loop talks German by default; `--lang en` (or `export CLAUDEGRAVITY_LANG=en`) switches the output, the help, error codes, reports and the models' answers to English.
+Install the ready-made program without Python: `curl -fsSL https://github.com/gb-web-de/claudegravity-loop/releases/latest/download/claudegravity-install.sh | sh` (macOS, Linux) or `irm https://github.com/gb-web-de/claudegravity-loop/releases/latest/download/claudegravity-install.ps1 | iex` (Windows); all downloads are on the [release](https://github.com/gb-web-de/claudegravity-loop/releases/latest). With Python and without cloning: `pipx install git+https://github.com/gb-web-de/claudegravity-loop` (or `uv tool install …`). Not sure? `claudegravity init` asks three questions and saves a profile; `--dry-run` shows the role assignment first. The loop talks German by default; `--lang en` (or `export CLAUDEGRAVITY_LANG=en`) switches the output, the help, error codes, reports and the models' answers to English.
 
 Key flags: `--strategy best-code|eco|local-free|hybrid|balanced`, `--template bugfix|feature|refactor`, `--print-effective-config`, `--etappen auto|an|aus` (build in stages), `--plan-auto`, `--dry-run`, `--proof "<test command>"`, `--abnahme <cli>`, `--auto-switch`, `-i`/`--ask`, `--yolo`, `-c`/`--resume`, `--from-issue 12 --open-pr` (GitHub issue in, pull request out; also as a GitHub Action: [GitHub](docs/en/github.md)), `--sandbox on` (proof command and Builder in a container: [Sandbox](docs/en/sandbox.md)), `--watch` and `--notify desktop` (live view in the browser, notification when the loop waits or is done: [Live view](docs/en/live-ansicht.md)). Full documentation: 🇬🇧 [English](docs/en/README.md) · 🇩🇪 [Deutsch](docs/de/README.md). Role splits between local Ollama and Codex: [Ollama & Codex](docs/en/ollama-und-codex.md). Threat model: [Security](docs/en/sicherheit.md). Changes per version: [Changelog](CHANGELOG.en.md).
 

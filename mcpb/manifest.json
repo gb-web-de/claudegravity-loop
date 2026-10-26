@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "claudegravity",
   "display_name": "ClaudeGravity Loop",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Ein Modell plant, ein anderes prüft, eines baut, ein anderer Anbieter nimmt ab: Claude Code, Codex, Gemini, Copilot und Ollama im Loop.",
   "long_description": "ClaudeGravity Loop verteilt eine Programmieraufgabe auf getrennte Rollen: Architekt (Plan), Prüfstatiker (Review), Bauleiter (Umsetzung) und Abnahme durch einen anderen Anbieter. Das Modell, das plant oder baut, benotet sich nie selbst; den Prüfbefehl führt der Loop selbst aus. Aus Claude Desktop plant Claude, geprüft und gebaut wird mit den CLIs und lokalen Modellen auf deinem Rechner (Codex, Gemini CLI, Copilot CLI, Ollama, LM Studio).\n\nVoraussetzungen: Python 3.10 oder neuer und mindestens eine der KI-CLIs oder Ollama. Läufe starten mit `claudegravity_run` (background) im Hintergrund, `claudegravity_status` zeigt den Stand.\n\nOne model plans, another reviews, one builds and a different provider accepts the result. Requires Python 3.10+ and at least one AI CLI or Ollama.",
   "author": {

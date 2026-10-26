@@ -12,7 +12,7 @@
 
 Für Claude Desktop gibt es den Server als Erweiterung (`.mcpb`, MCP Bundle): Datei herunterladen, doppelklicken oder unter *Einstellungen → Erweiterungen* hineinziehen, fertig. Kein Klon, kein Installer, keine JSON-Datei.
 
-* **Herunterladen:** am [Release](https://github.com/gb-web-de/claudegravity-loop/releases) als `claudegravity-<version>.mcpb`, bis dahin aus dem CI-Lauf auf `main` (Artefakt `claudegravity-mcpb`), oder selbst bauen: `python tools/build_mcpb.py` legt sie unter `dist/` ab.
+* **Herunterladen:** am [Release](https://github.com/gb-web-de/claudegravity-loop/releases/latest) als `claudegravity.mcpb`, den neuesten Stand aus dem CI-Lauf auf `main` (Artefakt `claudegravity-mcpb`), oder selbst bauen: `python tools/build_mcpb.py` legt sie unter `dist/` ab.
 * **Einstellungen** in Claude Desktop (alle optional): Standard-Projekt (`CLAUDEGRAVITY_PROJECT`), eigener Endpunkt und sein API-Schlüssel (geschützt gespeichert), Benachrichtigung (Standard `desktop`: Meldung, wenn ein Hintergrundlauf fertig ist, siehe [Live-Ansicht](live-ansicht.md)), Sprache und der Pfad zu Python.
 * **Voraussetzung ist Python 3.10+.** Unter macOS und Linux sucht die Erweiterung selbst (Homebrew, `/usr/local/bin`, `~/.local/bin`, pyenv, PATH, zuletzt `uv run`); das alte `/usr/bin/python3` (3.9) überspringt sie. Findet sie keins, den Pfad in den Einstellungen angeben. Unter Windows startet sie über den Python-Launcher `py` (bei der Installation von python.org dabei).
 * Die KI-CLIs (`codex`, `gemini`, `copilot`, `ollama` …) brauchst du weiterhin auf dem Rechner; der Server findet sie auch ohne Shell-PATH (siehe [Desktop-Apps](#desktop-apps-claude-desktop-cursor-)). Aus Claude Desktop plant `claude`, sofern die Claude-Code-CLI installiert ist.
@@ -25,7 +25,7 @@ Für Claude Desktop gibt es den Server als Erweiterung (`.mcpb`, MCP Bundle): Da
 ./install.sh --only claude-desktop,codex        # nur bestimmte Clients
 ```
 
-Der Installer trägt den Server in alle gefundenen Clients ein (Claude Code, Claude Desktop, Gemini CLI, Antigravity, Codex, Copilot CLI, Cursor, Windsurf, VS Code), immer mit dem **absoluten Pfad** des Pythons, mit dem er gestartet wurde. `--project` setzt `CLAUDEGRAVITY_PROJECT` in der Server-Umgebung (siehe [Desktop-Apps](#desktop-apps-claude-desktop-cursor-)). Danach den Client neu starten.
+Der Installer trägt den Server in alle gefundenen Clients ein (Claude Code, Claude Desktop, Gemini CLI, Antigravity, Codex, Copilot CLI, Cursor, Windsurf, VS Code), immer mit dem **absoluten Pfad** des Pythons, mit dem er gestartet wurde. Das [fertige Programm](installation.md#fertiges-programm-ohne-python) macht dasselbe mit `claudegravity install` und trägt sich selbst ein (`"command": "…/claudegravity", "args": ["mcp"]`). `--project` setzt `CLAUDEGRAVITY_PROJECT` in der Server-Umgebung (siehe [Desktop-Apps](#desktop-apps-claude-desktop-cursor-)). Danach den Client neu starten.
 
 ### Von Hand
 
