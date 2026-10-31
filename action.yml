@@ -60,7 +60,7 @@ runs:
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       if: inputs.cli != ''
       with:
         node-version: "22"
