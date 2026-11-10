@@ -70,12 +70,15 @@ If the task leaves room for interpretation, Architect and Reviewer may output a 
 | **[3] Swap** | Swap Architect and Reviewer (including model and effort). Applies to further change rounds in the menu; the menu then appears again. |
 | **[4] Anzeigen** (show) | Print the plan in the terminal. |
 | **[5] Beenden** (quit) | Abort. Resume later with `claudegravity -c`. |
+| **Type a sentence** | Instead of a number, write what should be different in the plan: works like Changes → [3]. |
+
+Above the menu you see whether the Reviewer approved the plan or findings are still open. After every change to the plan (feedback, editor, interactive session) the Reviewer checks the new version before the menu appears again. In the [chat interface](chat.md) the same steps are buttons.
 
 **Changes** submenu:
 
 | Key | Action |
 | :--- | :--- |
-| [1] | Open the plan in the editor (`$EDITOR`, otherwise `xdg-open`). Afterwards it is saved as `PLAN_vN_manual.md`. |
+| [1] | Open a copy of the plan (`PLAN_vN_manual.md`) in the editor: `$VISUAL`/`$EDITOR`, otherwise the system's default program (`open -t`, `xdg-open`, on Windows the file association). |
 | [2] | Show the path for the Claude web/desktop UI, edit it there, then [Enter]. |
 | [3] | Type feedback; the Architect produces a new plan version. |
 | [4] | Start an interactive CLI session of the Architect in the project folder. |

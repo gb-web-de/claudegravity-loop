@@ -8,6 +8,7 @@ import re
 import signal
 import sys
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .i18n import detect_lang, translate
@@ -39,24 +40,65 @@ def tr(text: str) -> str:
     return translate(text, SETTINGS.lang)
 
 
-# Rückrufe hook(prompt, wartet) rund um jede Rückfrage (Live-Ansicht, Benachrichtigung „wartet auf dich“)
+# Rückrufe hook(prompt, wartet, frage) rund um jede Rückfrage (Live-Ansicht, Chat, Benachrichtigung „wartet auf dich“).
+# `frage` beschreibt beim Start die Rückfrage ({"kind", "choices", "detail", "text"}) und trägt am Ende die Antwort
+# ({"kind", "answer"}; answer ist None, wenn die Rückfrage abgebrochen wurde).
 WAIT_HOOKS: list = []
+# Zeilenumbruch in einer Antwort aus der Chat-Oberfläche: Eine Antwort ist dort immer genau eine Zeile auf stdin
+ANSWER_NEWLINE = "\u2028"
+# Umgebungsvariable, mit der die Chat-Oberfläche ihrem Loop-Prozess sagt, dass sie die Rückfragen beantwortet
+CHAT_CHILD_ENV = "CLAUDEGRAVITY_CHAT_CHILD"
+YES_NO_PROMPT = re.compile(r"\[\s*[JjYy]\s*/\s*[Nn]\s*\]")
+_ASKING = False
 
 
-def _call_wait_hooks(prompt: str, waiting: bool) -> None:
+def _call_wait_hooks(prompt: str, waiting: bool, question: dict | None = None) -> None:
     for hook in list(WAIT_HOOKS):
         with contextlib.suppress(Exception):
-            hook(prompt, waiting)
+            hook(prompt, waiting, question)
 
 
-def ask(prompt: str) -> str:
-    """Rückfrage im Terminal (input) in der Sprache des Laufs."""
+def yes_no_choices(prompt: str) -> list[tuple[str, str]]:
+    """Antworten für Ja/Nein-Rückfragen ("[J/n]", "[j/N]"); leer, wenn die Rückfrage keine solche ist."""
+    return [("j", "Ja"), ("n", "Nein")] if YES_NO_PROMPT.search(prompt) else []
+
+
+def ask(prompt: str, choices: list[tuple[str, str]] | None = None, kind: str = "", detail: str = "", free_text: bool | None = None) -> str:
+    """Rückfrage im Terminal (input) in der Sprache des Laufs.
+
+    Oberflächen mit Knöpfen (Chat, Live-Ansicht) bekommen über WAIT_HOOKS die Art der Rückfrage (`kind`), die
+    möglichen Antworten (`choices` als (Antwort, Beschriftung); bei "[J/n]" von selbst Ja/Nein), einen erläuternden
+    Text (`detail`) und ob freier Text erlaubt ist (`free_text`, Standard: nur ohne `choices`).
+    Strg+C bricht die Rückfrage sofort ab (KeyboardInterrupt), statt auf die Eingabetaste zu warten."""
+    global _ASKING
     text = tr(prompt)
-    _call_wait_hooks(text, True)
+    options = choices if choices is not None else yes_no_choices(text)
+    question = {
+        "kind": kind,
+        "choices": [{"value": value, "label": tr(label)} for value, label in options],
+        "detail": detail,
+        "text": bool(free_text) if free_text is not None else not options,
+    }
+    _call_wait_hooks(text, True, question)
+    answer: str | None = None
     try:
-        return input(text)
+        _ASKING = True
+        answer = input(text).replace(ANSWER_NEWLINE, "\n")
+        return answer
     finally:
-        _call_wait_hooks(text, False)
+        _ASKING = False
+        _call_wait_hooks(text, False, {"kind": kind, "answer": answer})
+
+
+def loop_entry() -> list[str]:
+    """Startbefehl für einen weiteren Loop-Prozess (Kandidaten, Chat), ohne Shell: das eigenständige Programm selbst,
+    sonst loop.py neben dem Paket, sonst `python -m claudegravity` (installiert mit pipx/uv/pip)."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    script = Path(__file__).resolve().parent.parent / "loop.py"
+    if script.exists():
+        return [sys.executable, str(script)]
+    return [sys.executable, "-m", "claudegravity"]
 
 
 @dataclasses.dataclass
@@ -77,6 +119,7 @@ class RuntimeSettings:
     sandbox: str = "aus"  # --sandbox: aus, docker oder podman (an ist schon aufgelöst)
     sandbox_image: str = "python:3.12-slim"  # --sandbox-image
     sandbox_net: bool = False  # --sandbox-net: Prüfbefehl im Container mit Netz
+    chat: bool = False  # Lauf wird von der Chat-Oberfläche gesteuert (Antworten kommen als Zeilen über stdin)
 
 
 SETTINGS = RuntimeSettings()
@@ -110,6 +153,9 @@ def sigint_handler(signum, frame):
     """Strg+C: Abbruch vormerken, damit die laufende Runde sauber endet."""
     say("\n[!] Abbruch empfangen. Beende aktuelle Iteration sauber...")
     SETTINGS.stop_requested = True
+    if _ASKING:
+        # An einer Rückfrage gibt es nichts sauber zu beenden: sofort raus, statt auf die Eingabetaste zu warten
+        raise KeyboardInterrupt
 
 
 signal.signal(signal.SIGINT, sigint_handler)

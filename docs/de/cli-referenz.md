@@ -19,6 +19,7 @@ Alle deutschen und englischen Schreibweisen eines Flags sind gleichwertig (z. B.
 | `-m`, `--max-iterations` | | Maximale Runden im Bau-Loop (Phase 3). | `10`, im Etappen-Modus 2 pro Etappe + 2 |
 | `-d`, `--delay` | | Pause zwischen Bau-Runden in Sekunden. | `3` |
 | `-c`, `--resume` | `--continue` | Letzte Sitzung im Projekt fortsetzen. | aus |
+| `--session <name>` | | Eine bestimmte Sitzung fortsetzen statt der neuesten (Ordnername unter `.dual-loop/sessions`); schließt `-c` ein. | neueste |
 | `-i`, `--ask` | `--interview`, `--clarify` | Fragen-Modus: Architekt und Prüfstatiker dürfen Rückfragen stellen. | aus |
 | `--yolo` | `--auto-approve` | Volle Schreib- und Tool-Rechte für den **Bauleiter** ohne Nachfrage. Architekt, Prüfstatiker und Abnahme bleiben lesend. | aus |
 | `--max-rounds` | | Maximale Review-Runden für den Plan. | `2` |
@@ -157,7 +158,10 @@ Details: [Sandbox](sandbox.md).
 | `--watch-port <port>` | | Port der Live-Ansicht; ist er belegt, ein freier. | `8765` |
 | `--notify <kanäle>` | `--benachrichtigen` | Melden, wenn der Loop auf dich wartet oder fertig ist: `desktop`, `bell`, `ntfy:<thema>`, `webhook:<url>`, mit Komma getrennt. Nicht aus dem Projekt-Profil. | aus |
 
-Details: [Live-Ansicht & Benachrichtigungen](live-ansicht.md).
+| `chat` (als Aufgabe) | | Chat-Oberfläche im Browser starten: `claudegravity chat`. | |
+| `--chat-port <port>` | | Port der Chat-Oberfläche; ist er belegt, ein freier. | `8766` |
+
+Details: [Live-Ansicht & Benachrichtigungen](live-ansicht.md), [Chat-Oberfläche](chat.md).
 
 ## Datenschutz
 

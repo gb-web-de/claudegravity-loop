@@ -26,6 +26,8 @@ from claudegravity import (  # noqa: E402
     budget,
     build,
     candidates,
+    chat,
+    chatpage,
     cli,
     common,
     config,
@@ -69,6 +71,8 @@ for _module in (
     wizard,
     phases,
     candidates,
+    chatpage,
+    chat,
     cli,
 ):
     globals().update({k: v for k, v in vars(_module).items() if not k.startswith("__")})

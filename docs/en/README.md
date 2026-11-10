@@ -17,6 +17,7 @@
 | [CLI reference](cli-referenz.md) | All flags of `claudegravity`, profiles, templates |
 | [MCP server](mcp-server.md) | Registration, tools, optimizer in the terminal |
 | [GitHub](github.md) | Issue as the task, pull request after acceptance, GitHub Action |
+| [Chat interface](chat.md) | `claudegravity chat`: write the task, approve or change the plan, build and diff in the browser |
 | [Live view](live-ansicht.md) | State in the browser (`--watch`, `claudegravity watch`), notifications via desktop, ntfy or webhook |
 | [Sandbox](sandbox.md) | Proof command and Builder in a container (Docker, Podman), image, credentials |
 | [Plugins](plugins.md) | One command for Claude Code, Codex, Antigravity, Copilot CLI, Cursor, Gemini CLI |

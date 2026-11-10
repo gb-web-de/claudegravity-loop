@@ -7,6 +7,7 @@ import re
 import datetime
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 from .common import ENDPOINT_BINARIES, LOCAL_BACKEND_ORDER, SETTINGS, STAGE_MAX_TRIES, ask, say
@@ -16,19 +17,23 @@ from .errors import fail, format_error
 from .metrics import SessionMetrics, append_metrics_to_done, build_kpis, format_kpi_block, format_metrics_report
 from .backends import AgentCLI, DEFAULT_MODEL_LABEL, create_agent, describe_agent, effort_label, is_placeholder_value, model_flags
 from .session import (
+    create_session_dir,
     acquire_worktree,
     append_log,
     record_audit_event,
     check_and_clean_done_marker,
     find_latest_session,
+    find_session,
     findings_digest,
     parse_review,
     get_permission_flags,
     get_readonly_flags,
     is_git_repo,
+    is_usable_plan,
     load_project_context,
     load_session_state,
     log_event,
+    plan_files,
     release_worktree,
     role_flags,
     sanitize_filename,
@@ -64,6 +69,7 @@ from .build import (
     run_proof_check,
     stage_file_context,
 )
+from .config import ROLE_ENDPOINT_KEYS
 from .wizard import print_welcome
 
 
@@ -122,11 +128,13 @@ def open_session(args: argparse.Namespace, project_path: Path, config_report: di
     session_dir = None
     state = {}
     latest_sess = find_latest_session(loop_dir)
+    wanted_name = getattr(args, "session", None)
 
     if args.resume:
-        if not latest_sess:
-            fail("CG-1004", str(project_path))
-        session_dir = latest_sess
+        target = find_session(loop_dir, wanted_name)
+        if not target:
+            fail("CG-1004", f"{project_path} ({wanted_name})" if wanted_name else str(project_path))
+        session_dir = target
         state = load_session_state(session_dir)
         task = state.get("task", args.task)
         say(f"🔄 Setze letzte Sitzung fort: {session_dir.name}")
@@ -137,7 +145,7 @@ def open_session(args: argparse.Namespace, project_path: Path, config_report: di
             say(f"\n🔍 Unterbrochene Sitzung gefunden: {latest_sess.name}")
             say(f"📌 Aufgabe: {task_preview(state_candidate.get('task'))}")
             try:
-                res_ans = ask("Möchtest du diese Sitzung fortsetzen? [J/n]: ")
+                res_ans = ask("Möchtest du diese Sitzung fortsetzen? [J/n]: ", kind="resume")
             except (EOFError, KeyboardInterrupt):
                 res_ans = "n"
             if res_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:
@@ -158,8 +166,7 @@ def open_session(args: argparse.Namespace, project_path: Path, config_report: di
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         issue = config_report.get("issue")
         slug = sanitize_filename(f"issue-{issue['number']} {issue['title']}" if issue else task)
-        session_dir = loop_dir / "sessions" / f"{timestamp}_{slug}"
-        session_dir.mkdir(parents=True, exist_ok=True)
+        session_dir = create_session_dir(loop_dir / "sessions", f"{timestamp}_{slug}")
         state = {
             "session_id": session_dir.name,
             "task": task,
@@ -225,9 +232,12 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
         builder_perm_flags = get_permission_flags(builder.binary)
         state["yolo_enabled"] = True
         save_session_state(session_dir, state)
-        say(
-            f"🔓 YOLO-Modus aktiv: Bauleiter erhält volle Tool- & Schreibrechte ({' '.join(builder_perm_flags)}); Architekt und Prüfstatiker bleiben lesend."
-        )
+        if builder_perm_flags:
+            say(
+                f"🔓 YOLO-Modus aktiv: Bauleiter erhält volle Tool- & Schreibrechte ({' '.join(builder_perm_flags)}); Architekt und Prüfstatiker bleiben lesend."
+            )
+        else:
+            say("🔓 YOLO-Modus aktiv: Der Bauleiter schreibt ohne Rückfrage; Architekt und Prüfstatiker bleiben lesend.")
 
     planner_flags = list(planner_perm_flags)
     reviewer_flags = list(reviewer_perm_flags)
@@ -319,6 +329,14 @@ def setup_run(args: argparse.Namespace, agents: dict, project_path: Path, sessio
         builder.effort = b_effort
     else:
         builder.effort = planner.effort if builder.binary == planner.binary else ("CLI Default" if builder.binary == "agy" else None)
+
+    # Besetzung und eigene Endpunkte merken, damit ein Fortsetzen (-c) mit denselben Rollen weiterläuft.
+    # Adressen mit Zugangsdaten bleiben draußen; der API-Key kommt nie in den Stand.
+    state["planner_binary"], state["reviewer_binary"], state["builder_binary"] = planner.binary, reviewer.binary, builder.binary
+    for dest, state_key in ROLE_ENDPOINT_KEYS.items():
+        url = getattr(args, dest, None)
+        if url and "@" not in urllib.parse.urlsplit(url).netloc:
+            state[state_key] = url
 
     # Auto-Switch Modus
     auto_switch = args.auto_switch or state.get("auto_switch", False)
@@ -415,6 +433,7 @@ def print_run_banner(run: "RunContext") -> None:
     if builder.effort:
         b_info += f" [Effort: {effort_label(builder.binary, builder.effort)}]"
     say(f"[*] 🔨 Bauleiter      : {b_info}")
+    log_event(session_dir, "roles", strategy=strat, planner=p_info, reviewer=r_info, builder=b_info)
 
     if ask_mode:
         say("[*] Modus             : ❓ Fragen-Modus aktiv (--ask)")
@@ -469,6 +488,27 @@ def converged_findings(session_dir: Path) -> str | None:
     return findings_digest(text)
 
 
+def end_without_build(run: "RunContext", reason: str) -> None:
+    """Der Lauf endet vor dem Bau (Abbruch, Plan nicht freigegeben): Grund sichern, Ende melden, Fortsetzen nennen.
+    Ohne das erführen Live-Ansicht, Chat und --notify nie, dass der Lauf vorbei ist."""
+    state, session_dir = run.state, run.session_dir
+    state["abort_reason"] = reason
+    state["metrics"] = run.metrics.to_dict()
+    save_session_state(session_dir, state)
+    say(f"\n⏹️ Abbruchgrund: {reason}")
+    say("💾 Sitzung gesichert. Setze jederzeit fort mit 'claudegravity -c'.")
+    log_event(
+        session_dir,
+        "session_end",
+        phase=state.get("phase"),
+        success=False,
+        abort_reason=reason,
+        tokens_total=run.metrics.total_tokens,
+        cost_usd_total=round(run.metrics.cost_usd, 4),
+        build_rounds=state.get("last_iteration"),
+    )
+
+
 def run_plan_phase(run: "RunContext") -> bool:
     """Phase 1 und 2: Plan entwerfen, unabhängig prüfen und freigeben. False, wenn nicht gebaut werden soll."""
     args, agents, project_path, session_dir, state, task = run.args, run.agents, run.project_path, run.session_dir, run.state, run.task
@@ -480,15 +520,11 @@ def run_plan_phase(run: "RunContext") -> bool:
     # ==========================================
     # 1. & 2. Phase: Adversarial Plan Review
     # ==========================================
-    existing_plans = sorted(session_dir.glob("PLAN_v*.md"), key=lambda p: p.name)
+    existing_plans = [p for p in plan_files(session_dir) if is_usable_plan(p.read_text(encoding="utf-8", errors="replace"))]
     plan_file = existing_plans[-1] if existing_plans else session_dir / "PLAN_v1.md"
 
-    if state.get("phase") in ["plan", "review"] or not state.get("user_approved", False):
-        state["phase"] = "review"
-        save_session_state(session_dir, state)
-
-        # Plan erstellen / Review durchführen mit planner_flags
-        review_ok, plan_file, planner, reviewer, planner_flags, reviewer_flags = run_adversarial_plan(
+    def review_plan(planner, reviewer, planner_flags, reviewer_flags, rounds: int):
+        return run_adversarial_plan(
             planner=planner,
             reviewer=reviewer,
             task=task,
@@ -500,12 +536,26 @@ def run_plan_phase(run: "RunContext") -> bool:
             auto_switch=auto_switch,
             planner_flags=planner_flags,
             reviewer_flags=reviewer_flags,
-            max_rounds=max(1, args.max_rounds),
+            max_rounds=rounds,
             ask_mode=ask_mode,
             repo_map_text=map_text,
         )
 
+    def review_again(planner, reviewer, planner_flags, reviewer_flags):
+        # Vom Nutzer geänderter Plan: neue Review-Runden, die Zählung läuft weiter (REVIEW_round<n>.md, Kennzahlen)
+        return review_plan(planner, reviewer, planner_flags, reviewer_flags, state.get("rounds_completed", 0) + max(1, args.max_rounds))
+
+    if state.get("phase") in ["plan", "review"] or not state.get("user_approved", False):
+        state["phase"] = "review"
+        save_session_state(session_dir, state)
+
+        # Plan erstellen / Review durchführen mit planner_flags
+        review_ok, plan_file, planner, reviewer, planner_flags, reviewer_flags = review_plan(
+            planner, reviewer, planner_flags, reviewer_flags, max(1, args.max_rounds)
+        )
+
         if SETTINGS.stop_requested:
+            end_without_build(run, "Abgebrochen (Strg+C)")
             return False
 
         if args.approve_plan or state.get("approve_plan"):
@@ -523,7 +573,7 @@ def run_plan_phase(run: "RunContext") -> bool:
             if not review_ok:
                 say(f"🛑 Der Prüfstatiker hat {plan_file.name} nicht freigegeben. Ohne Rückfrage (--plan-auto) wird nicht gebaut.")
                 append_log(session_dir, "Plan nicht freigegeben, Bau mit --plan-auto nicht gestartet")
-                save_session_state(session_dir, state)
+                end_without_build(run, "Plan vom Prüfstatiker nicht freigegeben (--plan-auto)")
                 return False
             say(f"✅ {plan_file.name} vom Prüfstatiker genehmigt, Freigabe ohne Rückfrage (--plan-auto).")
             append_log(session_dir, f"{plan_file.name} automatisch freigegeben (--plan-auto)")
@@ -542,14 +592,19 @@ def run_plan_phase(run: "RunContext") -> bool:
                 auto_switch=auto_switch,
                 planner_flags=planner_flags,
                 reviewer_flags=reviewer_flags,
+                reviewed=review_ok,
+                review_again=review_again,
             )
 
         if not user_confirmed or SETTINGS.stop_requested:
             say("Implementierung nicht gestartet.")
+            end_without_build(run, "Abgebrochen (Strg+C)" if SETTINGS.stop_requested else "Plan nicht freigegeben")
             return False
 
         state["phase"] = "build"
         state["user_approved"] = True
+        state["approved_plan_sha256"] = sha256_file(plan_file) if plan_file.exists() else None
+        state["approved_plan_file"] = plan_file.name
         save_session_state(session_dir, state)
     run.plan_file, run.planner, run.reviewer, run.planner_flags, run.reviewer_flags = (
         plan_file,
@@ -586,12 +641,14 @@ def prepare_build(run: "RunContext") -> None:
     sandbox.warn_windows()
     sandbox.ensure_ready(builder.binary, args.proof or state.get("proof"))
 
-    # Falls YOLO noch nicht aktiv war, vor Phase 3 fragen
-    if not yolo_active:
+    # Falls YOLO noch nicht aktiv war, vor Phase 3 fragen. Endpunkte haben keine eigenen Werkzeuge:
+    # ihre Dateien schreibt der Loop selbst (nur im Projekt), da gibt es nichts freizugeben.
+    if not yolo_active and get_permission_flags(builder.binary):
         try:
             say("\n⚙️  Berechtigungs-Prüfung für Phase 3 (Implementierung):")
             perm_ans = ask(
-                f"Soll 🔨 Bauleiter ({builder.name}) volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(builder.binary))})? [J/n]: "
+                f"Soll 🔨 Bauleiter ({builder.name}) volle Schreib-/Tool-Rechte erhalten ({' / '.join(get_permission_flags(builder.binary))})? [J/n]: ",
+                kind="permission",
             )
             if perm_ans.strip().lower() in ["", "j", "ja", "y", "yes"]:
                 builder_perm_flags = get_permission_flags(builder.binary)
@@ -754,6 +811,12 @@ def run_build_phase(run: "RunContext") -> None:
             auto_switch,
             round_no,
         )
+        if SETTINGS.stop_requested and not answer:
+            # Abbruch mitten in der Abnahme: Die Fertigmeldung bleibt liegen, beim Fortsetzen wird neu abgenommen
+            inspections_used -= 1
+            state["inspection_rounds"] = round_no - 1
+            save_session_state(session_dir, state)
+            return "stop"
         if approved_build:
             say(f"✅ Abnahme erteilt ({reason}).")
             return "finished"
@@ -919,6 +982,11 @@ def run_build_phase(run: "RunContext") -> None:
                     log_header=f"\n{'=' * 20} Iteration {iteration} · {stage_label} {'=' * 20}\n",
                     full_prompt=prompt_build if resuming else None,
                 )
+                if SETTINGS.stop_requested and not res.strip():
+                    # Abbruch mitten im Aufruf: Die Etappe zählt weder als Versuch noch als erledigt
+                    state["metrics"] = session_metrics.to_dict()
+                    save_session_state(session_dir, state)
+                    break
                 if proof_cmd:
                     ok, output = run_proof_check(build_ctx, proof_cmd)
                 else:
@@ -932,6 +1000,7 @@ def run_build_phase(run: "RunContext") -> None:
                 with contextlib.suppress(OSError):
                     (session_dir / ".done").unlink()
 
+            log_event(session_dir, "stage", index=stage_index + 1, total=len(stages), text=stage_text, ok=ok, proof=bool(proof_cmd))
             if ok:
                 note_build_round(True, "")
                 say(f"✅ {stage_label} erledigt" + (f" (`{proof_cmd}` grün)." if proof_cmd else "."))

@@ -70,12 +70,15 @@ Lässt die Aufgabe Spielraum, dürfen Architekt und Prüfstatiker einen Abschnit
 | **[3] Swap** | Architekt und Prüfstatiker tauschen (inkl. Modell und Effort). Gilt für weitere Änderungsrunden im Menü; danach erscheint das Menü erneut. |
 | **[4] Anzeigen** | Plan im Terminal ausgeben. |
 | **[5] Beenden** | Abbrechen. Mit `claudegravity -c` später fortsetzen. |
+| **Satz tippen** | Statt einer Zahl direkt schreiben, was am Plan anders sein soll: wirkt wie Changes → [3]. |
+
+Über dem Menü steht, ob der Prüfstatiker den Plan genehmigt hat oder noch Befunde offen sind. Nach jeder Änderung am Plan (Feedback, Editor, interaktive Sitzung) prüft der Prüfstatiker die neue Fassung, bevor das Menü wieder erscheint. In der [Chat-Oberfläche](chat.md) sind dieselben Schritte Knöpfe.
 
 Untermenü **Changes**:
 
 | Taste | Aktion |
 | :--- | :--- |
-| [1] | Plan im Editor öffnen (`$EDITOR`, sonst `xdg-open`). Danach wird er als `PLAN_vN_manual.md` gesichert. |
+| [1] | Eine Kopie des Plans (`PLAN_vN_manual.md`) im Editor öffnen: `$VISUAL`/`$EDITOR`, sonst das Standardprogramm des Systems (`open -t`, `xdg-open`, unter Windows die Dateizuordnung). |
 | [2] | Pfad für die Claude-Web-/Desktop-UI anzeigen, dort bearbeiten, dann [Enter]. |
 | [3] | Feedback eintippen; der Architekt erzeugt eine neue Planversion. |
 | [4] | Interaktive CLI-Sitzung des Architekten im Projektordner starten. |

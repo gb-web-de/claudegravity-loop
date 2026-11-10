@@ -33,6 +33,8 @@ ORDER = [
     "wizard",
     "phases",
     "candidates",
+    "chatpage",
+    "chat",
     "cli",
 ]
 

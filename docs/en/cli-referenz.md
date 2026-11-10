@@ -19,6 +19,7 @@ All German and English spellings of a flag are equivalent (e.g. `--bauer` = `--b
 | `-m`, `--max-iterations` | | Maximum rounds in the build loop (phase 3). | `10`, in stage mode 2 per stage + 2 |
 | `-d`, `--delay` | | Pause between build rounds in seconds. | `3` |
 | `-c`, `--resume` | `--continue` | Resume the last session in the project. | off |
+| `--session <name>` | | Resume a specific session instead of the latest (folder name under `.dual-loop/sessions`); implies `-c`. | latest |
 | `-i`, `--ask` | `--interview`, `--clarify` | Question mode: Architect and Reviewer may ask follow-up questions. | off |
 | `--yolo` | `--auto-approve` | Full write and tool permissions for the **Builder** without asking. Architect, Reviewer and Acceptance check stay read-only. | off |
 | `--max-rounds` | | Maximum review rounds for the plan. | `2` |
@@ -157,7 +158,10 @@ Details: [Sandbox](sandbox.md).
 | `--watch-port <port>` | | Port of the live view; if it is taken, a free one. | `8765` |
 | `--notify <channels>` | `--benachrichtigen` | Notify when the loop waits for you or is done: `desktop`, `bell`, `ntfy:<topic>`, `webhook:<url>`, comma-separated. Not from the project profile. | off |
 
-Details: [Live view & notifications](live-ansicht.md).
+| `chat` (as the task) | | Start the chat interface in the browser: `claudegravity chat`. | |
+| `--chat-port <port>` | | Port of the chat interface; if taken, a free one. | `8766` |
+
+Details: [Live view & notifications](live-ansicht.md), [Chat interface](chat.md).
 
 ## Privacy
 

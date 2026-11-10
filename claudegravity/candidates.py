@@ -7,12 +7,11 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .common import SETTINGS, ask, say
+from .common import SETTINGS, ask, loop_entry, say
 from .backends import create_agent, describe_agent
 from .metrics import append_metrics_to_done
 from .session import (
@@ -38,7 +37,6 @@ from . import sandbox
 if TYPE_CHECKING:
     from .phases import RunContext
 
-ROOT = Path(__file__).resolve().parents[1]
 # Diese Schlüssel gehören zum Bau des Hauptlaufs und dürfen nicht in die Kandidaten-Sessions wandern
 CHILD_STATE_DROP = (
     "builder_model",
@@ -121,13 +119,7 @@ def child_state(state: dict, candidate: Candidate) -> dict:
 
 def child_command(args, candidate: Candidate, proof_cmd: str | None) -> list[str]:
     """Aufruf des Loops für einen Kandidaten: setzt die kopierte Session fort und baut nur (ohne eigene Abnahme)."""
-    if getattr(sys, "frozen", False):
-        entry = [sys.executable]  # eigenständiges Programm aus dem Release
-    elif (ROOT / "loop.py").exists():
-        entry = [sys.executable, str(ROOT / "loop.py")]
-    else:
-        entry = [sys.executable, "-m", "claudegravity"]
-    cmd = entry + ["-c", "-p", str(candidate.work_dir), "--bauer", candidate.binary]
+    cmd = loop_entry() + ["-c", "-p", str(candidate.work_dir), "--bauer", candidate.binary]
     if candidate.model:
         cmd += ["--bauer-model", candidate.model]
     cmd += ["--no-worktree", "--no-inspect", "--yolo", "--no-guide", "-d", str(args.delay), "--test-guard", args.test_guard]
@@ -317,7 +309,10 @@ def ensure_write_permission(run: "RunContext") -> bool:
     if run.yolo_active:
         return True
     try:
-        answer = ask("Die Kandidaten bauen parallel ohne Rückfrage und brauchen volle Schreibrechte in ihren Worktrees. Erlauben? [J/n]: ")
+        answer = ask(
+            "Die Kandidaten bauen parallel ohne Rückfrage und brauchen volle Schreibrechte in ihren Worktrees. Erlauben? [J/n]: ",
+            kind="permission",
+        )
     except (EOFError, KeyboardInterrupt):
         return False
     return answer.strip().lower() in ("", "j", "ja", "y", "yes")

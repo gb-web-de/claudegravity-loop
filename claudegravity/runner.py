@@ -101,8 +101,12 @@ def handle_rate_limit(
     say("  [3] 💾 Beenden        -> Stand sichern und beenden (Fortsetzen später mit 'claudegravity -c')")
     say("-" * 65)
 
+    options = ([("1", f"Zu {alt_agent.name} wechseln")] if alt_agent else []) + [
+        ("2", "Warten und wiederholen"),
+        ("3", "Sichern und beenden"),
+    ]
     try:
-        choice = ask("Auswahl [1/2/3] (Standard: 1): ").strip()
+        choice = ask("Auswahl [1/2/3] (Standard: 1): ", choices=options, kind="limit", detail=err.message).strip()
     except (EOFError, KeyboardInterrupt):
         return "exit", None
 
@@ -112,7 +116,12 @@ def handle_rate_limit(
         secs = err.reset_seconds
         if not secs:
             try:
-                user_min = ask("Wieviele Minuten soll gewartet werden? [Standard: 15]: ").strip()
+                user_min = ask(
+                    "Wieviele Minuten soll gewartet werden? [Standard: 15]: ",
+                    choices=[("15", "15 Minuten")],
+                    kind="minutes",
+                    free_text=True,
+                ).strip()
                 secs = int(user_min) * 60 if user_min else 15 * 60
             except (ValueError, EOFError, KeyboardInterrupt):
                 secs = 15 * 60
@@ -190,6 +199,7 @@ def safe_agent_run(
 
     Vorübergehende Störungen (Überlastung, 5xx, abgerissene Verbindung) werden zuerst automatisch
     mit exponentiellem Backoff und Jitter wiederholt; erst danach erscheint das Limit-Menü.
+    Nach einem Abbruch (Strg+C, Stopp) kommt eine leere Antwort zurück; Aufrufer speichern sie nicht als Ergebnis.
     """
     attempt = 0
     while not SETTINGS.stop_requested:
@@ -238,6 +248,10 @@ def safe_agent_run(
                 append_log(session_dir, f"Neuversuch {attempt} bei {agent.name} erfolgreich")
             return res, agent, flags
         except (RateLimitError, RuntimeError) as exc:
+            if SETTINGS.stop_requested:
+                # Strg+C oder Stopp aus dem Chat trifft auch die laufende CLI; ihr Abbruch ist kein Fehler des Laufs
+                append_log(session_dir, f"Aufruf von {agent.name} ({role}) durch Abbruch beendet")
+                break
             message = exc.message if isinstance(exc, RateLimitError) else str(exc)
             hard_limit = isinstance(exc, RateLimitError) and bool(exc.reset_time)
             if hard_limit or not is_transient_error(message, local=agent.local):

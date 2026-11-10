@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .common import RESUMABLE_CLIS, say
+from .common import RESUMABLE_CLIS, SETTINGS, say
 from .safety import apply_code_blocks, apply_edit_blocks, mask_secrets, resolve_project_target
 from .repomap import repo_map_block
 from .backends import AgentCLI, build_cli_command
@@ -464,7 +464,23 @@ def run_build_call(
     with open(ctx.session_log, "a", encoding="utf-8") as f_log:
         f_log.write(log_header)
         f_log.write(mask_secrets(res) + "\n")
+    if res.strip():
+        log_event(
+            ctx.session_dir,
+            "build_round",
+            iteration=ctx.state.get("last_iteration"),
+            label=label,
+            agent=builder.name,
+            files=written or None,
+            summary=res[:BUILD_EVENT_SUMMARY],
+        )
     return res, builder, builder_flags, written
+
+
+# So viel von der Antwort des Bauleiters und vom Ende der Ausgabe eines roten Prüfbefehls steht im Ereignis
+# (Verlauf der Chat-Oberfläche, events.jsonl); die volle Antwort steht in logs/loop_<session>.log
+BUILD_EVENT_SUMMARY = 6000
+PROOF_EVENT_TAIL = 2000
 
 
 def run_proof_check(ctx: BuildContext, proof_cmd: str) -> tuple[bool, str]:
@@ -472,7 +488,14 @@ def run_proof_check(ctx: BuildContext, proof_cmd: str) -> tuple[bool, str]:
     log_event(ctx.session_dir, "proof_start", command=proof_cmd, iteration=ctx.state.get("last_iteration"))
     ok, output = run_proof(proof_cmd, ctx.work_path)
     ctx.metrics.count("proof_green" if ok else "proof_red")
-    log_event(ctx.session_dir, "proof", ok=ok, command=proof_cmd, iteration=ctx.state.get("last_iteration"))
+    log_event(
+        ctx.session_dir,
+        "proof",
+        ok=ok,
+        command=proof_cmd,
+        iteration=ctx.state.get("last_iteration"),
+        output=None if ok else output[-PROOF_EVENT_TAIL:],
+    )
     return ok, output
 
 
@@ -543,7 +566,23 @@ def run_inspection(
         role="inspector",
         exclude={builder.binary},
     )
-    (session_dir / f"INSPECTION_round{round_no}.md").write_text(answer, encoding="utf-8")
-    approved, reason = review_decision(parse_review(answer))
+    if SETTINGS.stop_requested and not answer.strip():
+        # Abbruch mitten in der Abnahme: kein Urteil, keine leere Abnahme-Datei
+        return False, "abgebrochen", ""
+    inspection_file = session_dir / f"INSPECTION_round{round_no}.md"
+    inspection_file.write_text(answer, encoding="utf-8")
+    parsed = parse_review(answer)
+    approved, reason = review_decision(parsed)
+    log_event(
+        session_dir,
+        "inspection",
+        file=inspection_file.name,
+        round=round_no,
+        agent=inspector.name,
+        approved=approved,
+        verdict=parsed["verdict"],
+        reason=reason,
+        findings=len(parsed["findings"]),
+    )
     append_log(session_dir, f"Abnahme Runde {round_no} durch {model_report(inspector)}: {'APPROVED' if approved else 'REVISE'} ({reason})")
     return approved, reason, answer

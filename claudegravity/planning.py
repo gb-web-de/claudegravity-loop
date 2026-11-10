@@ -3,10 +3,14 @@
 import contextlib
 import datetime
 import os
+import shlex
+import shutil
 import subprocess
+import sys
+from collections.abc import Callable
 from pathlib import Path
 
-from .common import RESUMABLE_CLIS, SETTINGS, ask, planning_directive, say
+from .common import ENDPOINT_BINARIES, RESUMABLE_CLIS, SETTINGS, ask, planning_directive, say
 from .backends import AgentCLI, describe_agent, model_flags
 from .session import (
     REVIEW_FORMAT,
@@ -15,10 +19,13 @@ from .session import (
     findings_digest,
     get_readonly_flags,
     is_permission_error_response,
+    is_usable_plan,
+    log_event,
     model_report,
     next_plan_file,
     parse_review,
     plan_diff,
+    plan_files,
     review_decision,
     save_session_state,
     sha256_file,
@@ -30,6 +37,21 @@ from .runner import safe_agent_run
 # ==========================================
 # Plan-Erstellung & Adversarial Review
 # ==========================================
+def plan_delivered(plan: str, planner: AgentCLI) -> bool:
+    """True, wenn der Architekt einen Plan mit Inhalt geliefert hat. Leer nach Strg+C heißt Abbruch (False);
+    eine leere Antwort ohne Abbruch ist ein Fehler. Ein leerer Plan wird nie gespeichert."""
+    if plan.strip():
+        return True
+    if SETTINGS.stop_requested:
+        return False
+    raise RuntimeError(f"{planner.name} hat einen leeren Plan geliefert.")
+
+
+def note_plan(session_dir: Path, plan_file: Path, planner: AgentCLI, source: str) -> None:
+    """Neue Plan-Fassung als Ereignis festhalten (Verlauf der Chat-Oberfläche, events.jsonl)."""
+    log_event(session_dir, "plan", file=plan_file.name, agent=planner.name, source=source)
+
+
 def run_adversarial_plan(
     planner: AgentCLI,
     reviewer: AgentCLI,
@@ -64,8 +86,12 @@ def run_adversarial_plan(
     planner_flags = list(planner_flags or [])
     reviewer_flags = list(reviewer_flags or [])
 
-    # Wenn Plan v1 noch nicht existiert (oder von vorn begonnen wird):
-    if not plan_v1_file.exists():
+    # Brauchbare Pläne der Session; leere Dateien (Abbruch mitten im Aufruf) und Fehlermeldungen zählen nicht
+    all_plans = plan_files(session_dir)
+    existing_plans = [p for p in all_plans if is_usable_plan(p.read_text(encoding="utf-8", errors="replace"))]
+
+    # Wenn es noch keinen Plan gibt (oder von vorn begonnen wird):
+    if not existing_plans:
         p_desc = describe_agent(planner)
         say(f"\n📁 Session-Ordner: {session_dir.relative_to(project_path)}")
         say(f"🚀 Phase 1: Plan-Entwurf durch 🏗️ Architekt ({p_desc}) im Kontext von {project_path.name}...")
@@ -125,7 +151,13 @@ def run_adversarial_plan(
                 say(questions)
                 say("-" * 60)
                 try:
-                    user_ans = ask("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
+                    user_ans = ask(
+                        "📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ",
+                        choices=[("", "Überspringen")],
+                        kind="questions",
+                        detail=questions,
+                        free_text=True,
+                    ).strip()
                 except (EOFError, KeyboardInterrupt):
                     user_ans = ""
                 if user_ans:
@@ -163,21 +195,18 @@ def run_adversarial_plan(
                             exclude={reviewer.binary},
                         )
 
+        if not plan_delivered(plan, planner):
+            return False, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
         plan_v1_file.write_text(plan, encoding="utf-8")
         current_plan_file = plan_v1_file
         say(f"📄 Plan v1 gespeichert in {plan_v1_file.relative_to(project_path)}")
+        note_plan(session_dir, plan_v1_file, planner, "draft")
     else:
-        # Resume: Den neuesten Plan aus der Session laden (aber Permission-Errors überspringen)
-        existing_plans = sorted(session_dir.glob("PLAN_v*.md"), key=lambda p: p.name)
+        # Resume: Den neuesten brauchbaren Plan aus der Session laden
         active_plan_file_source = existing_plans[-1]
-        plan_content = active_plan_file_source.read_text(encoding="utf-8")
-
-        if is_permission_error_response(plan_content) and len(existing_plans) > 1:
-            say(f"⚠️ {active_plan_file_source.name} enthielt einen Berechtigungsfehler. Nutze Vorgängerversion.")
-            active_plan_file_source = existing_plans[-2]
-            plan_content = active_plan_file_source.read_text(encoding="utf-8")
-
-        plan = plan_content
+        if all_plans[-1] != active_plan_file_source:
+            say(f"⚠️ {all_plans[-1].name} ist leer oder enthält eine Fehlermeldung. Nutze {active_plan_file_source.name}.")
+        plan = active_plan_file_source.read_text(encoding="utf-8", errors="replace")
         current_plan_file = active_plan_file_source
         say(f"🔄 Wiederaufnahme: Geladen {active_plan_file_source.name}")
 
@@ -289,6 +318,11 @@ def run_adversarial_plan(
             )
         if "--resume" not in call_flags:
             reviewer_flags = call_flags
+        if SETTINGS.stop_requested and not review.strip():
+            # Abbruch mitten im Review: Die Runde zählt nicht und hinterlässt keine leere Review-Datei
+            state["rounds_completed"] = r - 1
+            save_session_state(session_dir, state)
+            return False, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
         reviewed_plan = plan
 
         review_r_file = session_dir / f"REVIEW_round{r}.md"
@@ -302,6 +336,17 @@ def run_adversarial_plan(
         if reason not in ("APPROVED", "REVISE"):
             say(f"ℹ️  Urteil: {reason}")
 
+        log_event(
+            session_dir,
+            "review",
+            file=review_r_file.name,
+            round=r,
+            agent=reviewer.name,
+            approved=is_approved,
+            verdict=parsed["verdict"],
+            reason=reason,
+            findings=len(parsed["findings"]),
+        )
         state["rounds_completed"] = r
         if is_approved:
             say(f"🎉 Plan von 🧐 Prüfstatiker ({reviewer.name}) genehmigt!")
@@ -322,7 +367,13 @@ def run_adversarial_plan(
                     say(rev_questions)
                     say("-" * 60)
                     try:
-                        user_rev_ans = ask("📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ").strip()
+                        user_rev_ans = ask(
+                            "📝 Deine Antwort / Klärung (oder [Enter] zum Überspringen): ",
+                            choices=[("", "Überspringen")],
+                            kind="questions",
+                            detail=rev_questions,
+                            free_text=True,
+                        ).strip()
                     except (EOFError, KeyboardInterrupt):
                         user_rev_ans = ""
                     if user_rev_ans:
@@ -371,10 +422,16 @@ def run_adversarial_plan(
                     exclude={reviewer.binary},
                 )
 
+            if not plan_delivered(plan, planner):
+                # Abbruch mitten in der Überarbeitung: Die Runde zählt nicht, beim Fortsetzen wird sie wiederholt
+                state["rounds_completed"] = r - 1
+                save_session_state(session_dir, state)
+                return False, current_plan_file, planner, reviewer, planner_flags, reviewer_flags
             plan_next_file = next_plan_file(session_dir)
             plan_next_file.write_text(plan, encoding="utf-8")
             current_plan_file = plan_next_file
             say(f"📄 Plan v{r + 1} gespeichert in {plan_next_file.relative_to(project_path)}")
+            note_plan(session_dir, plan_next_file, planner, "revision")
             save_session_state(session_dir, state)
         else:
             say("🛑 Maximale Review-Runden erreicht.")
@@ -393,6 +450,107 @@ def run_adversarial_plan(
 # ==========================================
 # Interaktive Plan-Bestätigung & Change-Routing
 # ==========================================
+APPROVE_ANSWERS = ("", "1", "approve", "a", "j", "ja", "y", "yes", "ok")
+PLAN_CHOICES = [("1", "Plan freigeben und bauen"), ("3", "Rollen tauschen"), ("5", "Abbrechen")]
+ReviewAgain = Callable[[AgentCLI, AgentCLI, list[str], list[str]], tuple[bool, Path, AgentCLI, AgentCLI, list[str], list[str]]]
+
+
+def is_feedback_text(answer: str) -> bool:
+    """Ob eine Antwort im Freigabe-Menü ein Änderungswunsch in Worten ist statt einer Menü-Auswahl."""
+    return len(answer) >= 8 or " " in answer.strip()
+
+
+def editor_command(path: Path) -> list[str] | None:
+    """Befehl, der eine Datei zum Bearbeiten öffnet: $VISUAL/$EDITOR, sonst das Standardprogramm des Systems.
+    None unter Windows ohne $EDITOR (dort öffnet os.startfile) oder wenn kein Programm gefunden wird."""
+    custom = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if custom:
+        return shlex.split(custom, posix=os.name != "nt") + [str(path)]
+    if sys.platform == "darwin":
+        return ["open", "-t", str(path)]
+    if os.name == "nt":
+        return None
+    return ["xdg-open", str(path)] if shutil.which("xdg-open") else None
+
+
+def open_in_editor(path: Path) -> bool:
+    """Datei im Editor öffnen; False (mit Hinweis), wenn das auf diesem System nicht geht."""
+    cmd = editor_command(path)
+    try:
+        if cmd:
+            say(f"🚀 Öffne {path.name} mit {cmd[0]}...")
+            subprocess.run(cmd)
+        elif os.name == "nt":
+            say(f"🚀 Öffne {path.name} mit dem Standardprogramm...")
+            os.startfile(str(path))  # noqa: S606 - nur unter Windows vorhanden
+        else:
+            say(f"[!] Kein Editor gefunden. Setze EDITOR oder bearbeite die Datei selbst: {path}")
+            return False
+    except OSError as exc:
+        say(f"[!] Editor ließ sich nicht starten ({exc}). Bearbeite die Datei selbst: {path}")
+        return False
+    return True
+
+
+def start_interactive_session(agent: AgentCLI, label: str, project_path: Path) -> None:
+    """Die CLI einer Rolle interaktiv im Projekt starten; Endpunkte und fehlende Programme haben keine."""
+    if agent.binary in ENDPOINT_BINARIES or not shutil.which(agent.binary):
+        say(f"[!] {agent.name} hat keine interaktive CLI-Sitzung (Endpunkt oder Programm nicht gefunden).")
+        return
+    say(f"🚀 Starte interaktive {agent.name}-Sitzung ({label}) in {project_path}...")
+    try:
+        subprocess.run([agent.binary], cwd=str(project_path))
+    except OSError as exc:
+        say(f"[!] {agent.name} ließ sich nicht starten: {exc}")
+        return
+    say("Zurück im Loop.")
+
+
+def revise_plan_on_feedback(
+    feedback: str,
+    plan_file: Path,
+    planner: AgentCLI,
+    reviewer: AgentCLI,
+    project_path: Path,
+    session_dir: Path,
+    state: dict,
+    agents: dict[str, AgentCLI],
+    auto_switch: bool,
+    planner_flags: list[str],
+) -> tuple[Path | None, AgentCLI, list[str]]:
+    """Der Architekt überarbeitet den Plan nach dem Änderungswunsch des Nutzers.
+    Liefert (neue Plan-Datei oder None bei Abbruch, Architekt, Flags)."""
+    say(f"⏳ {planner.name} überarbeitet den Plan basierend auf deinem Feedback...")
+    old_plan = plan_file.read_text(encoding="utf-8", errors="replace")
+    prompt_user_fix = (
+        f"Der Nutzer hat folgende Änderungswünsche am Plan geäußert:\n\n"
+        f"Feedback: {feedback}\n\n"
+        f"Aktueller Plan:\n{old_plan}\n\n"
+        f"Bitte überarbeite den Plan und gib den vollständigen neuen Markdown-Plan aus."
+        f"{planning_directive()}"
+    )
+    new_plan, planner, planner_flags = safe_agent_run(
+        agent=planner,
+        prompt=prompt_user_fix,
+        cwd=project_path,
+        flags=planner_flags,
+        agents=agents,
+        session_dir=session_dir,
+        state=state,
+        auto_switch=auto_switch,
+        role="planner",
+        exclude={reviewer.binary},
+    )
+    if not plan_delivered(new_plan, planner):
+        return None, planner, planner_flags
+    new_v_file = next_plan_file(session_dir)
+    new_v_file.write_text(new_plan, encoding="utf-8")
+    say(f"✅ Plan aktualisiert und als {new_v_file.name} gesichert!")
+    append_log(session_dir, f"Plan nach Änderungswunsch des Nutzers überarbeitet: {new_v_file.name}")
+    note_plan(session_dir, new_v_file, planner, "feedback")
+    return new_v_file, planner, planner_flags
+
+
 def handle_plan_approval_and_changes(
     plan_file: Path,
     planner: AgentCLI,
@@ -405,16 +563,24 @@ def handle_plan_approval_and_changes(
     auto_switch: bool = False,
     planner_flags: list[str] | None = None,
     reviewer_flags: list[str] | None = None,
+    reviewed: bool = True,
+    review_again: ReviewAgain | None = None,
 ) -> tuple[bool, Path, AgentCLI, AgentCLI, list[str], list[str]]:
-    """Plan zur Freigabe zeigen: freigeben, ändern lassen (mit erneuter Prüfung) oder abbrechen.
-    Rückgabe wie bei run_adversarial_plan."""
+    """Plan zur Freigabe zeigen: freigeben, ändern lassen oder abbrechen.
+
+    `reviewed` sagt, ob der Prüfstatiker die gezeigte Fassung genehmigt hat. Ändert der Nutzer den Plan
+    (Änderungswunsch in Worten oder von Hand), prüft `review_again` die neue Fassung erneut: gebaut wird
+    nie ein Plan, den der Prüfstatiker nicht gesehen hat. Rückgabe wie bei run_adversarial_plan."""
     planner_flags = list(planner_flags or [])
     reviewer_flags = list(reviewer_flags or [])
     while not SETTINGS.stop_requested:
         p_desc = describe_agent(planner)
         r_desc = describe_agent(reviewer)
         say("\n" + "=" * 60)
-        say("📋 PLAN-STATUS: Fertiggestellt & Geprüft")
+        if reviewed:
+            say("📋 PLAN-STATUS: Vom Prüfstatiker genehmigt")
+        else:
+            say("📋 PLAN-STATUS: Der Prüfstatiker hat noch Befunde (siehe letztes REVIEW_round*.md)")
         say(f"📄 Aktuelle Plan-Datei             : {plan_file.relative_to(project_path)}")
         say(f"🏗️ Architekt (Planung & Bau)       : {p_desc}")
         say(f"🧐 Prüfstatiker (Prüfung & Review) : {r_desc}")
@@ -425,19 +591,33 @@ def handle_plan_approval_and_changes(
         say("  [3] Swap     -> Rollen tauschen (Architekt <-> Prüfstatiker)")
         say("  [4] Anzeigen -> Plan direkt hier im Terminal lesen")
         say("  [5] Beenden  -> Abbrechen (Fortsetzen später mit --resume möglich)")
+        say("  Oder schreibe direkt, was am Plan anders sein soll.")
         say("-" * 60)
 
         try:
-            choice = ask("Auswahl [1/2/3/4/5] (Standard: 1): ").strip()
+            choice = ask(
+                "Auswahl [1/2/3/4/5] (Standard: 1): ",
+                choices=PLAN_CHOICES,
+                kind="plan" if reviewed else "plan_open",
+                detail=plan_file.name,
+                free_text=True,
+            ).strip()
         except (EOFError, KeyboardInterrupt):
             return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
+        key = choice.lower()
+        feedback = ""
+        changed = False
 
-        if choice in ["", "1", "approve", "a"]:
+        if key in APPROVE_ANSWERS:
             state["user_approved"] = True
+            state["approved_plan_sha256"] = sha256_file(plan_file)
+            state["approved_plan_file"] = plan_file.name
             save_session_state(session_dir, state)
+            if not reviewed:
+                append_log(session_dir, f"{plan_file.name} vom Nutzer trotz offener Befunde des Prüfstatikers freigegeben")
             return True, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
-        elif choice in ["3", "swap", "s"]:
+        elif key in ["3", "swap", "s"]:
             planner, reviewer = reviewer, planner
             planner.role = "🏗️ Architekt (Planung & Entwurf)"
             reviewer.role = "🧐 Prüfstatiker (Prüfung & Review)"
@@ -456,17 +636,24 @@ def handle_plan_approval_and_changes(
             say(f"   🧐 Neuer Prüfstatiker (Prüfung & Review): {describe_agent(reviewer)}")
             continue
 
-        elif choice in ["4", "view", "v"]:
+        elif key in ["4", "view", "v"]:
             say("\n" + "-" * 50)
-            say(plan_file.read_text(encoding="utf-8"))
+            say(plan_file.read_text(encoding="utf-8", errors="replace"))
             say("-" * 50)
             continue
 
-        elif choice in ["5", "exit", "q"]:
+        elif key in ["5", "exit", "q"]:
             say("Abgebrochen. Du kannst diesen Stand jederzeit mit 'claudegravity --resume' fortsetzen.")
             return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
-        elif choice in ["2", "changes", "c"]:
+        elif key in ["2", "changes", "c"] and SETTINGS.chat:
+            # In der Chat-Oberfläche gibt es weder Editor noch Terminal-Sitzung: gleich nach dem Änderungswunsch fragen
+            try:
+                feedback = ask("\n📝 Gib deine Änderungswünsche ein: ", kind="plan_feedback").strip()
+            except (EOFError, KeyboardInterrupt):
+                return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
+
+        elif key in ["2", "changes", "c"]:
             say("\n" + "=" * 60)
             say("💬 WO / WIE MÖCHTEST DU DIE ÄNDERUNGEN VORNEHMEN?")
             say("=" * 60)
@@ -484,67 +671,67 @@ def handle_plan_approval_and_changes(
             say("-" * 60)
 
             try:
-                c_choice = ask("Auswahl [1-6]: ").strip()
+                c_choice = ask("Auswahl [1-6]: ", kind="plan_change").strip()
+                if c_choice in ("1", "2"):
+                    # Von Hand ändern: an einer Kopie, damit die geprüfte Fassung erhalten bleibt
+                    before = sha256_file(plan_file)
+                    manual_file = session_dir / f"{next_plan_file(session_dir).stem}_manual.md"
+                    shutil.copyfile(plan_file, manual_file)
+                    if c_choice == "1":
+                        open_in_editor(manual_file)
+                        ask("\nDrücke [Enter], sobald du mit dem Bearbeiten im Editor fertig bist...", kind="enter")
+                    else:
+                        say("\n📋 Plan-Pfad für Claude UI:")
+                        say(f"   Pfad: {manual_file.resolve()}")
+                        say("   Kopiere den Inhalt der Datei in deine Claude UI / Web-Chat.")
+                        ask(
+                            f"\nDrücke [Enter], wenn du die Änderungen vorgenommen und in {manual_file.name} gespeichert hast...",
+                            kind="enter",
+                        )
+                    if sha256_file(manual_file) == before or not is_usable_plan(manual_file.read_text(encoding="utf-8", errors="replace")):
+                        say(f"ℹ️  {plan_file.name} bleibt unverändert (keine Änderung gespeichert).")
+                        with contextlib.suppress(OSError):
+                            manual_file.unlink()
+                    else:
+                        plan_file = manual_file
+                        changed = True
+                        say(f"💾 Manuell bearbeiteter Plan gesichert als {manual_file.name}")
+                        append_log(session_dir, f"Plan vom Nutzer von Hand geändert: {manual_file.name}")
+                        note_plan(session_dir, manual_file, planner, "manual")
+                elif c_choice == "3":
+                    feedback = ask("\n📝 Gib deine Änderungswünsche ein: ", kind="plan_feedback").strip()
+                elif c_choice == "4":
+                    start_interactive_session(planner, "Architekt", project_path)
+                elif c_choice == "5":
+                    start_interactive_session(reviewer, "Prüfstatiker", project_path)
             except (EOFError, KeyboardInterrupt):
                 return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
 
-            if c_choice == "1":
-                editor = os.environ.get("EDITOR", "xdg-open")
-                say(f"🚀 Öffne {plan_file.name} mit {editor}...")
-                subprocess.run([editor, str(plan_file)])
-                ask("\nDrücke [Enter], sobald du mit dem Bearbeiten im Editor fertig bist...")
-                v_num = len(list(session_dir.glob("PLAN_v*.md"))) + 1
-                new_v_file = session_dir / f"PLAN_v{v_num}_manual.md"
-                new_v_file.write_text(plan_file.read_text(encoding="utf-8"), encoding="utf-8")
-                plan_file = new_v_file
-                say(f"💾 Manuell bearbeiteter Plan gesichert als {new_v_file.name}")
+        elif is_feedback_text(choice):
+            feedback = choice
 
-            elif c_choice == "2":
-                say("\n📋 Plan-Pfad für Claude UI:")
-                say(f"   Pfad: {plan_file.resolve()}")
-                say("   Kopiere den Inhalt der Datei in deine Claude UI / Web-Chat.")
-                ask(f"\nDrücke [Enter], wenn du die Änderungen vorgenommen und in {plan_file.name} gespeichert hast...")
+        else:
+            say(f"[!] Ungültige Auswahl: {choice}")
+            continue
 
-            elif c_choice == "3":
-                feedback = ask("\n📝 Gib deine Änderungswünsche ein: ").strip()
-                if feedback:
-                    say(f"⏳ {planner.name} überarbeitet den Plan basierend auf deinem Feedback...")
-                    old_plan = plan_file.read_text(encoding="utf-8")
-                    prompt_user_fix = (
-                        f"Der Nutzer hat folgende Änderungswünsche am Plan geäußert:\n\n"
-                        f"Feedback: {feedback}\n\n"
-                        f"Aktueller Plan:\n{old_plan}\n\n"
-                        f"Bitte überarbeite den Plan und gib den vollständigen neuen Markdown-Plan aus."
-                        f"{planning_directive()}"
-                    )
-                    new_plan, planner, planner_flags = safe_agent_run(
-                        agent=planner,
-                        prompt=prompt_user_fix,
-                        cwd=project_path,
-                        flags=planner_flags,
-                        agents=agents,
-                        session_dir=session_dir,
-                        state=state,
-                        auto_switch=auto_switch,
-                        role="planner",
-                        exclude={reviewer.binary},
-                    )
-                    new_v_file = next_plan_file(session_dir)
-                    new_v_file.write_text(new_plan, encoding="utf-8")
-                    plan_file = new_v_file
-                    say(f"✅ Plan aktualisiert und als {new_v_file.name} gesichert!")
+        if feedback:
+            new_file, planner, planner_flags = revise_plan_on_feedback(
+                feedback, plan_file, planner, reviewer, project_path, session_dir, state, agents, auto_switch, planner_flags
+            )
+            if new_file is None:
+                return False, plan_file, planner, reviewer, planner_flags, reviewer_flags
+            plan_file = new_file
+            changed = True
 
-            elif c_choice == "4":
-                say(f"🚀 Starte interaktive {planner.name}-Sitzung (Architekt) in {project_path}...")
-                subprocess.run([planner.binary], cwd=str(project_path))
-                say("Zurück im Loop.")
-
-            elif c_choice == "5":
-                say(f"🚀 Starte interaktive {reviewer.name}-Sitzung (Prüfstatiker) in {project_path}...")
-                subprocess.run([reviewer.binary], cwd=str(project_path))
-                say("Zurück im Loop.")
-
-            elif c_choice == "6":
-                continue
+        if changed:
+            # Die geänderte Fassung hat der Prüfstatiker noch nicht gesehen
+            reviewed = False
+            state["plan_approved"] = False
+            state["user_approved"] = False
+            save_session_state(session_dir, state)
+            if review_again is not None:
+                reviewed, plan_file, planner, reviewer, planner_flags, reviewer_flags = review_again(
+                    planner, reviewer, planner_flags, reviewer_flags
+                )
 
     return False, plan_file, planner, reviewer, planner_flags, reviewer_flags

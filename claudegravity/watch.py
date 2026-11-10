@@ -23,15 +23,21 @@ import webbrowser
 from pathlib import Path
 
 from . import notify
-from .common import SETTINGS, WAIT_HOOKS, say, tr
+from .common import CHAT_CHILD_ENV, SETTINGS, WAIT_HOOKS, say, tr
+from .safety import is_sensitive_path, mask_secrets
 from .errors import LAST_ERROR
 from .session import EVENT_HOOKS, task_preview
 
 LIVE_FILE = "live.json"
+TIMELINE_FILE = "timeline.jsonl"
+# Kurzlebige Ereignisse stehen nur in live.json (activity), nicht im Verlauf
+TIMELINE_SKIP = ("call_start", "proof_start")
+TIMELINE_TEXT_LIMIT = 8000
 DEFAULT_PORT = 8765
 SESSION_LIST_LIMIT = 30
 LOG_TAIL_LINES = 80
 DIFF_LIMIT = 300_000
+NEW_FILE_LIMIT = 100_000
 REPORT_LIMIT = 20_000
 
 
@@ -47,6 +53,7 @@ class LiveState:
     pull_request: str | None = None
     url: str | None = None
     ended: bool = False
+    questions: int = 0
 
 
 LIVE = LiveState()
@@ -75,6 +82,7 @@ def write_live() -> None:
         "pull_request": LIVE.pull_request,
         "url": LIVE.url,
         "ended": LIVE.ended,
+        "chat": os.environ.get(CHAT_CHILD_ENV) or None,
         "updated": _now(),
     }
     target = LIVE.session_dir / LIVE_FILE
@@ -84,7 +92,21 @@ def write_live() -> None:
         os.replace(tmp, target)
 
 
-def bind(session_dir: Path, task: str) -> None:
+def write_timeline(kind: str, fields: dict | None = None) -> None:
+    """Eine Zeile im Verlauf der Session (timeline.jsonl): was der Lauf getan und gefragt hat, in Reihenfolge.
+    Daraus baut die Chat-Oberfläche das Gespräch. Texte werden geschwärzt und gekürzt."""
+    if LIVE.session_dir is None:
+        return
+    record: dict = {"time": _now(), "type": kind}
+    for key, value in (fields or {}).items():
+        if value is None or key in ("time", "type"):
+            continue
+        record[key] = mask_secrets(value)[:TIMELINE_TEXT_LIMIT] if isinstance(value, str) else value
+    with contextlib.suppress(OSError, TypeError, ValueError), open(LIVE.session_dir / TIMELINE_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+
+def bind(session_dir: Path, task: str, resumed: bool = False) -> None:
     """Den Lauf an seine Session binden: live.json anlegen, Ereignisse und Rückfragen mitverfolgen."""
     global _HOOKS_INSTALLED
     with _LOCK:
@@ -95,6 +117,7 @@ def bind(session_dir: Path, task: str) -> None:
             WAIT_HOOKS.append(on_wait)
             _HOOKS_INSTALLED = True
         write_live()
+        write_timeline("start", {"task": task, "resumed": resumed, "pid": os.getpid()})
 
 
 def on_event(session_dir: Path | None, event: str, fields: dict) -> None:
@@ -103,6 +126,8 @@ def on_event(session_dir: Path | None, event: str, fields: dict) -> None:
         return
     already = True
     with _LOCK:
+        if event not in TIMELINE_SKIP:
+            write_timeline(event, fields)
         if event == "call_start":
             LIVE.activity = {"kind": "call", "role": fields.get("role"), "agent": fields.get("agent"), "since": _now()}
         elif event == "proof_start":
@@ -140,20 +165,44 @@ def notify_failure() -> None:
         LIVE.ended, LIVE.activity = True, None
         write_live()
     code, detail = LAST_ERROR.get("code"), LAST_ERROR.get("detail")
+    write_timeline("error", {"code": code or "CG-1999", "detail": detail})
     message = tr(f"🛑 Fehler {code or 'CG-1999'}: {task_preview(LIVE.task, 80)}") + (f" · {detail}" if detail else "")
     notify.send(message, "error", LIVE.url)
 
 
-def on_wait(prompt: str, waiting: bool) -> None:
-    """Rückfrage im Terminal: in live.json vermerken und nach einer Weile ohne Antwort benachrichtigen."""
+def on_wait(prompt: str, waiting: bool, question: dict | None = None) -> None:
+    """Rückfrage: in live.json und im Verlauf vermerken (mit Art und möglichen Antworten für Oberflächen mit Knöpfen)
+    und nach einer Weile ohne Antwort benachrichtigen. Am Ende der Rückfrage steht die Antwort im Verlauf."""
     global _WAIT_TIMER
     if LIVE.session_dir is None:
         return
+    question = question or {}
     with _LOCK:
         if _WAIT_TIMER is not None:
             _WAIT_TIMER.cancel()
             _WAIT_TIMER = None
-        LIVE.waiting = {"prompt": task_preview(prompt.strip(), 300), "since": _now()} if waiting else None
+        if waiting:
+            LIVE.questions += 1
+            LIVE.waiting = {
+                # Kennung der Rückfrage: zwei Rückfragen in derselben Sekunde bleiben unterscheidbar
+                "id": f"{os.getpid()}-{LIVE.questions}",
+                "prompt": task_preview(prompt.strip(), 300),
+                "since": _now(),
+                "kind": question.get("kind") or "",
+                "choices": question.get("choices") or [],
+                "text": bool(question.get("text", True)),
+            }
+            write_timeline("question", {**LIVE.waiting, "detail": question.get("detail") or None})
+        else:
+            LIVE.waiting = None
+            write_timeline(
+                "answer",
+                {
+                    "kind": question.get("kind") or "",
+                    "answer": question.get("answer"),
+                    "cancelled": "answer" in question and question["answer"] is None,
+                },
+            )
         write_live()
         if waiting and notify.active():
             message = tr(f"⏳ Wartet auf dich: {task_preview(prompt.strip(), 160)}")
@@ -176,6 +225,11 @@ def _read_json(path: Path) -> dict:
 def read_state(session_dir: Path) -> dict:
     """state.json (oder .bak) ohne Ausgaben lesen."""
     return _read_json(session_dir / "state.json") or _read_json(session_dir / "state.json.bak")
+
+
+def read_live(session_dir: Path) -> dict:
+    """live.json einer Session (Prozess, aktueller Aufruf, offene Rückfrage); leer, wenn es sie nicht gibt."""
+    return _read_json(session_dir / LIVE_FILE)
 
 
 def pid_alive(pid: int | None) -> bool:
@@ -236,6 +290,29 @@ def diff_source(project: Path, state: dict) -> tuple[Path, list[str], bool] | No
     return None
 
 
+def untracked_files(cwd: Path) -> list[str]:
+    """Neue, noch nicht versionierte Dateien des Laufs; ohne .dual-loop, das Loop-Protokoll und Python-Zwischendateien."""
+    res = _git(cwd, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).dual-loop")
+    names = (res.stdout if res and res.returncode == 0 else "").splitlines()
+    return [n for n in names if n and "__pycache__/" not in n and not n.endswith((".pyc", ".pyo")) and not n.startswith("logs/loop_")]
+
+
+def new_file_diff(cwd: Path, name: str) -> str:
+    """Eine neue Datei wie im Diff zeigen (alle Zeilen mit +). Geheimnis-, Binär- und große Dateien nur mit Namen."""
+    head = f"diff --git a/{name} b/{name}\n" + tr("neue Datei") + "\n"
+    path = cwd / name
+    try:
+        if is_sensitive_path(name) or path.is_symlink() or path.stat().st_size > NEW_FILE_LIMIT:
+            return head
+        raw = path.read_bytes()
+    except OSError:
+        return head
+    if b"\0" in raw:
+        return head
+    lines = mask_secrets(raw.decode("utf-8", errors="replace")).splitlines()
+    return head + f"--- /dev/null\n+++ b/{name}\n@@ -0,0 +1,{len(lines)} @@\n" + "".join(f"+{line}\n" for line in lines)
+
+
 def file_changes(project: Path, state: dict) -> list[dict]:
     """Geänderte Dateien mit hinzugefügten/entfernten Zeilen; ohne Git die vom Loop geschriebenen Dateien."""
     source = diff_source(project, state)
@@ -252,14 +329,12 @@ def file_changes(project: Path, state: dict) -> list[dict]:
                 {"path": path, "added": int(added) if added.isdigit() else None, "removed": int(removed) if removed.isdigit() else None}
             )
     if untracked:
-        res = _git(cwd, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).dual-loop")
-        for path in (res.stdout if res and res.returncode == 0 else "").splitlines():
-            changes.append({"path": path, "added": None, "removed": None, "new": True})
+        changes += [{"path": path, "added": None, "removed": None, "new": True} for path in untracked_files(cwd)]
     return changes[:500]
 
 
 def session_diff(project: Path, session_dir: Path) -> tuple[str, bool]:
-    """Diff des Laufs als Text (begrenzt); neue Dateien erscheinen als Liste. Liefert (Text, gekürzt)."""
+    """Diff des Laufs als Text (begrenzt); neue Dateien erscheinen mit ihrem Inhalt. Liefert (Text, gekürzt)."""
     state = read_state(session_dir)
     source = diff_source(project, state)
     if source is None:
@@ -268,10 +343,10 @@ def session_diff(project: Path, session_dir: Path) -> tuple[str, bool]:
     res = _git(cwd, "diff", "--no-color", "--no-ext-diff", *rev, "--", ".", ":(exclude).dual-loop")
     text = res.stdout if res and res.returncode == 0 else ""
     if untracked:
-        new = _git(cwd, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).dual-loop")
-        names = (new.stdout if new and new.returncode == 0 else "").split()
-        if names:
-            text += "\n" + tr("Neue Dateien (noch nicht im Diff):") + "\n" + "\n".join(f"+ {n}" for n in names) + "\n"
+        for name in untracked_files(cwd):
+            if len(text) > DIFF_LIMIT:
+                break
+            text += new_file_diff(cwd, name)
     return text[:DIFF_LIMIT], len(text) > DIFF_LIMIT
 
 

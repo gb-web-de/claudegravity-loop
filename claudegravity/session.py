@@ -443,10 +443,26 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def plan_version(path: Path) -> int:
+    """Versionsnummer einer Plan-Datei (PLAN_v3.md, PLAN_v4_manual.md); 0, wenn der Name keine trägt."""
+    m = re.match(r"PLAN_v(\d+)", path.name)
+    return int(m.group(1)) if m else 0
+
+
+def plan_files(session_dir: Path) -> list[Path]:
+    """Plan-Dateien der Session, älteste zuerst. Sortiert nach Versionsnummer, nicht nach Name:
+    sonst läge PLAN_v10.md vor PLAN_v2.md und ein Fortsetzen nähme einen alten Plan."""
+    return sorted(session_dir.glob("PLAN_v*.md"), key=lambda p: (plan_version(p), p.name))
+
+
+def is_usable_plan(text: str) -> bool:
+    """Ein Plan mit Inhalt, der keine Fehlermeldung ist (leer bleibt er z. B. nach einem Abbruch mitten im Aufruf)."""
+    return bool(text.strip()) and not is_permission_error_response(text)
+
+
 def next_plan_file(session_dir: Path) -> Path:
     """Nächste freie Plan-Version; überschreibt nie eine ältere."""
-    nums = [int(m.group(1)) for p in session_dir.glob("PLAN_v*.md") if (m := re.match(r"PLAN_v(\d+)", p.name))]
-    return session_dir / f"PLAN_v{max(nums, default=0) + 1}.md"
+    return session_dir / f"PLAN_v{max((plan_version(p) for p in plan_files(session_dir)), default=0) + 1}.md"
 
 
 def plan_diff(old: str, new: str) -> str:
@@ -606,3 +622,28 @@ def find_latest_session(loop_dir: Path) -> Path | None:
         return None
     sessions = sorted([p for p in sessions_dir.iterdir() if p.is_dir()], key=lambda p: p.name, reverse=True)
     return sessions[0] if sessions else None
+
+
+def create_session_dir(sessions: Path, name: str) -> Path:
+    """Neuen Session-Ordner anlegen. Gibt es den Namen schon (zwei Läufe mit derselben Aufgabe in derselben Sekunde),
+    bekommt der neue eine Nummer angehängt, statt sich den Ordner mit dem anderen Lauf zu teilen."""
+    sessions.mkdir(parents=True, exist_ok=True)
+    for number in range(1, 1000):
+        folder = sessions / (name if number == 1 else f"{name}_{number}")
+        try:
+            folder.mkdir()
+            return folder
+        except FileExistsError:
+            continue
+    raise FileExistsError(str(sessions / name))
+
+
+def find_session(loop_dir: Path, name: str | None) -> Path | None:
+    """Session zum Fortsetzen: die genannte (`--session`, Ordnername unter .dual-loop/sessions), sonst die neueste.
+    None, wenn es die genannte nicht gibt; der Name darf kein Pfad sein."""
+    if not name:
+        return find_latest_session(loop_dir)
+    if name in (".", "..") or name != Path(name).name:
+        return None
+    wanted = loop_dir / "sessions" / name
+    return wanted if wanted.is_dir() else None

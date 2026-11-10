@@ -61,6 +61,7 @@ Downloads je System, Claude Desktop (`claudegravity.mcpb`) und Wheel stehen am [
 * **Limits im Griff:** Wechseln, Warten oder Sichern bei Ratenlimits; `--auto-switch` wechselt automatisch.
 * **Vom Issue zum Pull Request:** `claudegravity --from-issue 12 --open-pr` liest das Issue als Aufgabe und öffnet nach der Abnahme einen PR mit `Closes #12`; als GitHub Action startet ein Label oder `/claudegravity` den Lauf. → [GitHub](docs/de/github.md)
 * **Sandbox:** `--sandbox an` lässt Prüfbefehl und CLI-Bauleiter in einem Container laufen (Docker oder Podman), der nur den Arbeitsordner und die Anmeldedaten der bauenden CLI sieht. → [Sandbox](docs/de/sandbox.md)
+* **Chat im Browser:** `claudegravity chat` öffnet eine Chat-Oberfläche: Aufgabe schreiben, Plan lesen, mit einem Knopf freigeben oder in Worten ändern, dem Bau zusehen, Diff ansehen. → [Chat-Oberfläche](docs/de/chat.md)
 * **Live-Ansicht und Benachrichtigung:** `--watch` zeigt Phase, Runde, Tokens und Diff im Browser, `--notify desktop` (oder `ntfy:<thema>`, `webhook:<url>`) meldet sich, wenn der Loop auf dich wartet oder fertig ist. → [Live-Ansicht](docs/de/live-ansicht.md)
 * **Fortsetzen:** `claudegravity -c` macht nach Abbruch genau dort weiter. → [Sessions & Dateien](docs/de/sessions-und-dateien.md)
 * **Token- & Kosten-Audit** pro Rolle, Modell und Effort in der `.done`-Datei, mit Kennzahlen (Kosten je Aufgabe, Runden bis Erfolg, Nacharbeitsquote) zum Vergleichen von Sessions.
@@ -84,6 +85,7 @@ Downloads je System, Claude Desktop (`claudegravity.mcpb`) und Wheel stehen am [
 | [CLI-Referenz](docs/de/cli-referenz.md) | Alle Flags |
 | [MCP-Server](docs/de/mcp-server.md) | Registrierung, Tools, Optimizer |
 | [GitHub](docs/de/github.md) | Issue als Aufgabe, Pull Request, GitHub Action |
+| [Chat-Oberfläche](docs/de/chat.md) | `claudegravity chat`: Aufgabe, Plan, Freigabe und Bau als Gespräch im Browser |
 | [Live-Ansicht](docs/de/live-ansicht.md) | Stand im Browser, Meldungen bei Warten und Ende |
 | [Sandbox](docs/de/sandbox.md) | Prüfbefehl und Bauleiter im Container |
 | [Plugins](docs/de/plugins.md) | Claude Code, Codex, Antigravity, Copilot CLI, Cursor, Gemini CLI |

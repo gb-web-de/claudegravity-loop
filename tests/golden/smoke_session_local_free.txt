@@ -7,6 +7,7 @@ REVIEW_round1.md
 live.json
 state.json
 state.json.bak
+timeline.jsonl
 
 # LOG.md
 

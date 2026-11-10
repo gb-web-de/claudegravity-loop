@@ -4,6 +4,27 @@
 
 ## [Unveröffentlicht]
 
+### Neu
+- Chat-Oberfläche im Browser: `claudegravity chat` (Port `--chat-port`, Standard 8766). Aufgabe schreiben, Plan und Review lesen, mit einem Knopf freigeben oder in Worten ändern, Rückfragen beantworten, dem Bau zusehen, Diff und Bericht ansehen; dazu Stopp und Fortsetzen, Projektwechsel, alle Sitzungen des Projekts, Deutsch und Englisch, hell und dunkel, auch auf dem Handy. Nur auf `127.0.0.1` mit Token; schreibende Aufrufe verlangen JSON und die eigene Herkunft. → `docs/de/chat.md`
+- `--session <name>` setzt eine bestimmte Sitzung fort statt der neuesten.
+- Im Freigabe-Menü kannst du direkt einen Satz tippen, statt erst [2] und [3] zu wählen. Über dem Menü steht, ob der Prüfstatiker genehmigt hat oder noch Befunde offen sind.
+- `timeline.jsonl` im Session-Ordner: Verlauf des Laufs (Plan, Review, Rückfragen und Antworten, Bau-Runden, Prüfbefehl, Abnahme, Ende).
+- Der Diff in Live-Ansicht und Chat zeigt neue Dateien mit Inhalt (Geheimnis-, Binär- und große Dateien nur mit Namen); `__pycache__` und das Loop-Protokoll unter `logs/` erscheinen nicht mehr als Änderung.
+
+### Behoben
+- Ein nach deinem Änderungswunsch überarbeiteter Plan wurde ohne neues Review gebaut und trotzdem als „geprüft“ angezeigt. Jetzt prüft der Prüfstatiker jede geänderte Fassung; der freigegebene Plan (auch im PR-Text) ist der tatsächlich gebaute.
+- Strg+C an einer Rückfrage wirkte erst nach der Eingabetaste. Jetzt endet der Lauf sofort und nennt den Befehl zum Fortsetzen.
+- Strg+C während Review oder Überarbeitung schrieb einen leeren `PLAN_vN.md`, den ein Fortsetzen dann benutzt hätte.
+- Fortsetzen (`-c`) vergaß die Besetzung: `--planner`, `--reviewer`, `--builder` und eigene Endpunkte je Rolle mussten erneut angegeben werden, sonst lief die Sitzung mit anderen Rollen weiter oder brach mit CG-1001 ab.
+- Zwei Läufe mit derselben Aufgabe in derselben Sekunde teilten sich einen Session-Ordner.
+- Ab zehn Plan-Fassungen nahm ein Fortsetzen einen alten Plan (`PLAN_v10` lag vor `PLAN_v2`).
+- „Im Editor öffnen“ stürzte unter macOS und Windows ab (fest `xdg-open`); jetzt `$VISUAL`/`$EDITOR`, sonst das Standardprogramm des Systems. Bearbeitet wird eine Kopie, das Original bleibt.
+- Die interaktive CLI-Sitzung aus dem Menü stürzte bei Endpunkten ab.
+- Endete ein Lauf im Freigabe-Menü, fehlten das Ereignis `session_end` und der Hinweis zum Fortsetzen.
+- Stopp während eines laufenden CLI-Aufrufs endete als Fehler statt als sauberer Abbruch; Stopp während der Abnahme verwarf die Fertigmeldung mit leeren Befunden.
+- Bei Endpunkten als Bauleiter fragte der Loop nach Schreibrechten „()“, die es dort nicht gibt.
+- Ein Dateiende (EOF) an drei Rückfragen im Änderungs-Untermenü brach den Lauf mit einem Traceback ab.
+
 ## [1.6.0] – 2026-10-26
 
 ### Neu

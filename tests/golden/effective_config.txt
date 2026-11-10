@@ -18,6 +18,7 @@
   builder_fresh          = false                        [Standard]
   builder_model          = "qwen2.5-coder:7b"           [Kommandozeile]
   candidates             = –                            [Standard]
+  chat_port              = 8766                         [Standard]
   delay                  = 3                            [Standard]
   effort                 = –                            [Standard]
   endpoint               = –                            [Standard]

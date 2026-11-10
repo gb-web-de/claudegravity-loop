@@ -11,6 +11,7 @@ from pathlib import Path
 from . import __version__
 from .candidates import run_candidates
 from .common import (
+    CHAT_CHILD_ENV,
     CLOUD_PLANNER_ORDER,
     CLOUD_TIMEOUT,
     HYBRID_STRATEGIES,
@@ -34,7 +35,8 @@ from .backends import (
 from .session import LOG_FORMATS, find_latest_session, get_permission_flags, is_git_repo, task_preview
 from .github import issue_task, load_issue
 from .sandbox import DEFAULT_SANDBOX_IMAGE, resolve_engine
-from . import notify, watch
+from . import chat, notify, watch
+from .chat import CHAT_PORT
 from .watch import DEFAULT_PORT as DEFAULT_WATCH_PORT
 from .budget import (
     Budget,
@@ -154,6 +156,12 @@ def build_parser(full_help: bool = False, lang: str | None = None) -> argparse.A
         help="Trockenlauf: Zeigt Rollen, Modelle, Kosten-Analyse und generierten Befehl ohne Ausführung",
     )
     add("-c", "--resume", "--continue", dest="resume", action="store_true", core=True, help="Unterbrochene Sitzung fortsetzen")
+    add(
+        "--session",
+        default=None,
+        metavar="NAME",
+        help="Bestimmte Sitzung fortsetzen statt der neuesten (Ordnername unter .dual-loop/sessions); schließt -c ein",
+    )
     add(
         "--template",
         "--vorlage",
@@ -467,6 +475,13 @@ def build_parser(full_help: bool = False, lang: str | None = None) -> argparse.A
     )
     add("--watch-port", type=int, default=DEFAULT_WATCH_PORT, metavar="PORT", help="Port der Live-Ansicht (belegt: ein freier)")
     add(
+        "--chat-port",
+        type=int,
+        default=CHAT_PORT,
+        metavar="PORT",
+        help="Port der Chat-Oberfläche `claudegravity chat` (belegt: ein freier)",
+    )
+    add(
         "--notify",
         "--benachrichtigen",
         default="",
@@ -481,6 +496,8 @@ def load_cli_config(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.
     SETTINGS.lang = prescan_lang(argv)
     parser = build_parser(full_help="--help-all" in argv)
     args = parser.parse_args(argv)
+    if args.session:
+        args.resume = True
     config_report = apply_config_layers(parser, args, argv)
     SETTINGS.lang = resolve_lang(args.lang)
     if args.print_effective_config:
@@ -529,6 +546,7 @@ def apply_runtime_settings(args: argparse.Namespace) -> None:
     env_timeout = os.environ.get("CLAUDEGRAVITY_TIMEOUT", "")
     SETTINGS.endpoint_timeout = args.timeout or (int(env_timeout) if env_timeout.isdigit() else None)
     SETTINGS.shield = not args.no_shield and os.environ.get("CLAUDEGRAVITY_SHIELD", "").lower() != "off"
+    SETTINGS.chat = bool(os.environ.get(CHAT_CHILD_ENV))
 
 
 def setup_agents(args: argparse.Namespace) -> dict[str, AgentCLI]:
@@ -828,6 +846,9 @@ def main():
     if args.task.strip().lower() == "watch" and not args.resume:
         watch.run_watch(Path(args.project).resolve(), args.watch_port)
         return
+    if args.task.strip().lower() == "chat" and not args.resume:
+        chat.run_chat(Path(args.project).resolve(), args.chat_port)
+        return
     agents = setup_agents(args)
 
     if args.init or (args.task.strip().lower() == "init" and not args.resume):
@@ -867,7 +888,7 @@ def main():
         return
     notify.warn_problems()
     session_dir, state, task = open_session(args, project_path, config_report)
-    watch.bind(session_dir, task)
+    watch.bind(session_dir, task, resumed=bool(args.resume or not args.task))
     if args.watch:
         watch.start_for_run(project_path, args.watch_port)
     run = setup_run(args, agents, project_path, session_dir, state, task)

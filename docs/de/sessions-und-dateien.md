@@ -20,6 +20,7 @@
 │           ├── audit-events.jsonl   # Sicherheitsereignisse (siehe Rechte-Audit)
 │           ├── events.jsonl         # strukturiertes Ereignis-Log (nur mit --log-format json)
 │           ├── live.json            # Live-Stand des laufenden Prozesses (siehe Live-Ansicht)
+│           ├── timeline.jsonl       # Verlauf des Laufs als Zeilen (Plan, Review, Rückfragen, Bau-Runden), Quelle der Chat-Oberfläche
 │           ├── workspace/           # Git-Worktree der Session (Branch loop/<session>)
 │           ├── AUDIT.md             # Audit-Bericht, wenn der Lauf ohne Fertigmeldung endet
 │           └── .done                # Fertigmeldung + Audit-Bericht

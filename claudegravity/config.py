@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .common import tr
 from .notify import redact as redact_notify
-from .session import find_latest_session, load_session_state
+from .session import find_session, load_session_state
 
 
 # ==========================================
@@ -24,6 +24,7 @@ CONFIG_EXCLUDED = {
     "task",
     "project",
     "resume",
+    "session",
     "check",
     "dry_run",
     "print_effective_config",
@@ -37,7 +38,15 @@ PROJECT_PROFILE_FORBIDDEN = {"yolo", "open_pr", "pr_draft", "sandbox", "sandbox_
 # Standardwerte, die erst später im Lauf gesetzt werden (für --print-effective-config)
 CONFIG_DISPLAY_DEFAULTS = {"strategy": "balanced", "max_iterations": "10 (Etappen: 2 je Etappe + 2)"}
 # Beim Fortsetzen gilt der gespeicherte Stand der Session vor Umgebung und Profil
+# Eigene Endpunkte je Rolle: Flag -> Schlüssel im Session-Stand
+ROLE_ENDPOINT_KEYS = {
+    "endpoint": "endpoint",
+    "architekt_endpoint": "planner_endpoint",
+    "pruefstatiker_endpoint": "reviewer_endpoint",
+    "bauer_endpoint": "builder_endpoint",
+}
 SESSION_CONFIG_KEYS = {
+    **ROLE_ENDPOINT_KEYS,
     "strategy": "strategy",
     "planner": "planner_binary",
     "reviewer": "reviewer_binary",
@@ -348,7 +357,7 @@ def apply_config_layers(
     warnings += more
     session_state = None
     if getattr(args, "resume", False):
-        latest = find_latest_session(project_path / ".dual-loop")
+        latest = find_session(project_path / ".dual-loop", getattr(args, "session", None))
         session_state = load_session_state(latest) if latest else None
     explicit = explicit_cli_values(parser, argv)
     values, sources, conflicts, more, template = resolve_config(parser, explicit, env, project_profile, global_profile, session_state)

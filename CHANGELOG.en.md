@@ -4,6 +4,27 @@
 
 ## [Unreleased]
 
+### Added
+- Chat interface in the browser: `claudegravity chat` (port `--chat-port`, default 8766). Write the task, read plan and review, approve with a button or change it in words, answer questions, watch the build, view diff and report; plus stop and resume, project switching, all sessions of the project, German and English, light and dark, also on a phone. Only on `127.0.0.1` with a token; writing calls require JSON and its own origin. → `docs/en/chat.md`
+- `--session <name>` resumes a specific session instead of the latest.
+- In the approval menu you can type a sentence right away instead of choosing [2] and [3] first. Above the menu you see whether the reviewer approved or findings are still open.
+- `timeline.jsonl` in the session folder: the run's history (plan, review, questions and answers, build rounds, proof command, inspection, end).
+- The diff in live view and chat shows new files with their content (secret, binary and large files by name only); `__pycache__` and the loop log under `logs/` no longer appear as changes.
+
+### Fixed
+- A plan revised after your change request was built without a new review and still shown as "reviewed". Now the reviewer checks every changed version; the approved plan (also in the PR text) is the one actually built.
+- Ctrl+C at a question only took effect after Enter. Now the run ends at once and names the command to resume.
+- Ctrl+C during review or revision wrote an empty `PLAN_vN.md` that a resume would then have used.
+- Resume (`-c`) forgot the cast: `--planner`, `--reviewer`, `--builder` and per-role endpoints had to be given again, otherwise the session continued with other roles or stopped with CG-1001.
+- Two runs with the same task in the same second shared one session folder.
+- From ten plan versions on, a resume took an old plan (`PLAN_v10` sorted before `PLAN_v2`).
+- "Open in the editor" crashed on macOS and Windows (hard-coded `xdg-open`); now `$VISUAL`/`$EDITOR`, otherwise the system's default program. A copy is edited, the original stays.
+- The interactive CLI session from the menu crashed for endpoints.
+- When a run ended in the approval menu, the `session_end` event and the resume hint were missing.
+- Stop during a running CLI call ended as an error instead of a clean abort; stop during the inspection discarded the completion signal with empty findings.
+- With endpoints as builder, the loop asked for write permissions "()" that do not exist there.
+- An end of input (EOF) at three questions in the changes submenu aborted the run with a traceback.
+
 ## [1.6.0] – 2026-10-26
 
 ### Added
