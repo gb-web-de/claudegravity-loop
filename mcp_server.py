@@ -48,7 +48,7 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 # Neueste zuerst; der Server antwortet mit der Version des Clients, wenn er sie kennt
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", MCP_PROTOCOL_VERSION)
 SERVER_NAME = "claudegravity-mcp"
-SERVER_VERSION = "1.6.0"
+SERVER_VERSION = "1.7.0"
 PROJECT_ENV = "CLAUDEGRAVITY_PROJECT"
 HOST_ENV = "CLAUDEGRAVITY_HOST"
 # clientInfo.name aus initialize → Backend-Schlüssel des Loops (Teilstring, klein geschrieben, erster Treffer gilt)

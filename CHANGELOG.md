@@ -4,6 +4,8 @@
 
 ## [Unveröffentlicht]
 
+## [1.7.0] – 2026-11-10
+
 ### Neu
 - Chat-Oberfläche im Browser: `claudegravity chat` (Port `--chat-port`, Standard 8766). Aufgabe schreiben, Plan und Review lesen, mit einem Knopf freigeben oder in Worten ändern, Rückfragen beantworten, dem Bau zusehen, Diff und Bericht ansehen; dazu Stopp und Fortsetzen, Projektwechsel, alle Sitzungen des Projekts, Deutsch und Englisch, hell und dunkel, auch auf dem Handy. Nur auf `127.0.0.1` mit Token; schreibende Aufrufe verlangen JSON und die eigene Herkunft. → `docs/de/chat.md`
 - `--session <name>` setzt eine bestimmte Sitzung fort statt der neuesten.
@@ -12,6 +14,7 @@
 - Der Diff in Live-Ansicht und Chat zeigt neue Dateien mit Inhalt (Geheimnis-, Binär- und große Dateien nur mit Namen); `__pycache__` und das Loop-Protokoll unter `logs/` erscheinen nicht mehr als Änderung.
 
 ### Behoben
+- Fehlermeldungen einer KI-CLI zeigen nur noch ihren Text statt des ganzen JSON-Datensatzes; eine abgelaufene Anmeldung („OAuth session expired“) wird als CG-1203 mit dem Hinweis zum Anmelden gemeldet statt als CG-1206.
 - Ein nach deinem Änderungswunsch überarbeiteter Plan wurde ohne neues Review gebaut und trotzdem als „geprüft“ angezeigt. Jetzt prüft der Prüfstatiker jede geänderte Fassung; der freigegebene Plan (auch im PR-Text) ist der tatsächlich gebaute.
 - Strg+C an einer Rückfrage wirkte erst nach der Eingabetaste. Jetzt endet der Lauf sofort und nennt den Befehl zum Fortsetzen.
 - Strg+C während Review oder Überarbeitung schrieb einen leeren `PLAN_vN.md`, den ein Fortsetzen dann benutzt hätte.

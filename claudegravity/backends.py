@@ -253,6 +253,30 @@ def cli_timeout() -> int | None:
     return value or None
 
 
+CLI_ERROR_LIMIT = 1500
+
+
+def cli_error_text(output: str) -> str:
+    """Lesbare Fehlermeldung aus der Ausgabe einer CLI. Meldet sie ihren Fehler als JSON (claude mit
+    --output-format json), zählt nur dessen Text (`result` bzw. `error`), nicht der ganze Datensatz."""
+    text = output.strip()
+    for candidate in (text, text.splitlines()[-1] if text else ""):
+        if not candidate.startswith("{"):
+            continue
+        try:
+            data = json.loads(candidate)
+        except ValueError:
+            continue
+        if isinstance(data, dict):
+            for key in ("result", "error", "message"):
+                value = data.get(key)
+                if isinstance(value, dict):
+                    value = value.get("message")
+                if isinstance(value, str) and value.strip():
+                    return value.strip()[:CLI_ERROR_LIMIT]
+    return text if len(text) <= CLI_ERROR_LIMIT else text[:CLI_ERROR_LIMIT] + " …"
+
+
 def _exec_cli(binary: str, args: list[str], cwd: Path | None = None, stdin: str | None = None) -> str:
     """Startet eine CLI. Prompts gehen über stdin, damit sie weder in der Prozessliste
     auftauchen noch an der Windows-Längengrenze (~32 KB) abgeschnitten werden. Im Bauleiter-Bereich der Sandbox
@@ -291,7 +315,7 @@ def _exec_cli(binary: str, args: list[str], cwd: Path | None = None, stdin: str 
             r_time = extract_reset_time(err_msg)
             r_secs = parse_reset_seconds(r_time) if r_time else None
             raise RateLimitError(binary, err_msg, r_time, r_secs)
-        raise RuntimeError(f"{binary} Fehler (Code {res.returncode}): {err_msg}")
+        raise RuntimeError(f"{binary} Fehler (Code {res.returncode}): {cli_error_text(err_msg)}")
     return res.stdout.strip()
 
 

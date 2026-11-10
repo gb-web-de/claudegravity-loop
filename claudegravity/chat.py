@@ -515,7 +515,8 @@ def chat_session_payload(project: Path, session_dir: Path, after: int, run: Chat
             "question": waiting,
             "owned": owned,
             "stopping": bool(run and run.alive and run.stop_at is not None),
-            "can_resume": not snapshot.get("running") and snapshot.get("phase") != "completed" and not snapshot.get("done"),
+            # erst, wenn auch der Prozess des Laufs weg ist (er meldet sein Ende kurz vorher)
+            "can_resume": not snapshot.get("running") and not owned and snapshot.get("phase") != "completed" and not snapshot.get("done"),
         }
     )
     return snapshot
@@ -534,6 +535,7 @@ class ChatServer(http.server.ThreadingHTTPServer):
         self.token = secrets.token_urlsafe(18)
         self.runs: list[ChatRun] = []
         self.lock = threading.Lock()
+        self.resume_lock = threading.Lock()
         self.setup: dict | None = None
         self.setup_time = 0.0
         self.setup_busy = False
@@ -758,12 +760,18 @@ class ChatHandler(watch.WatchHandler):
             if session_dir is None:
                 self._fail(404, tr("Sitzung nicht gefunden."))
                 return
-            if watch.session_summary(session_dir)["running"]:
-                self._fail(409, tr("Diese Sitzung läuft noch."))
-                return
-            lang = ["--lang", SETTINGS.lang] if SETTINGS.lang != "de" else []
-            task = str(watch.read_state(session_dir).get("task") or "")
-            run = server.start(project, ["-p", str(project), "--session", session_dir.name, "--no-guide", *lang], task, session_dir.name)
+            # Auch ein eben erst gestarteter Lauf zählt (er hat sich noch nicht in live.json gemeldet):
+            # ein Doppelklick auf „Fortsetzen“ darf nie zwei Läufe auf dieselbe Sitzung loslassen.
+            with server.resume_lock:
+                previous = server.run_for(project, session_dir.name)
+                if (previous and previous.alive) or watch.session_summary(session_dir)["running"]:
+                    self._fail(409, tr("Diese Sitzung läuft noch."))
+                    return
+                lang = ["--lang", SETTINGS.lang] if SETTINGS.lang != "de" else []
+                task = str(watch.read_state(session_dir).get("task") or "")
+                run = server.start(
+                    project, ["-p", str(project), "--session", session_dir.name, "--no-guide", *lang], task, session_dir.name
+                )
             self._json({"ok": True, "run": run.run_id})
         elif parts.path in ("/api/answer", "/api/stop"):
             run = server.run_for(project, session)

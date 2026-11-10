@@ -219,7 +219,10 @@ ERROR_CODES_EN = {
 }
 ERROR_PATTERNS = [
     ("CG-1002", r"Agent-CLI '.*' ist nicht verfügbar"),
-    ("CG-1203", r"HTTP 40[13]\b|unauthori[sz]ed|not logged in|nicht angemeldet|please (?:log ?in|login)|authentication"),
+    (
+        "CG-1203",
+        r"HTTP 40[13]\b|unauthori[sz]ed|not logged in|nicht angemeldet|please (?:log ?in|login)|authenticat|oauth|session expired|invalid api key",
+    ),
     ("CG-1204", r"HTTP 404\b|model .*not found|Modell .*nicht gefunden"),
     ("CG-1202", r"Zeitüberschreitung|Zeitlimit|timed? ?out"),
     ("CG-1201", r"Verbindungsfehler|connection (?:refused|reset)|Name or service not known|getaddrinfo"),

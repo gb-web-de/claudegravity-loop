@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.7.0] – 2026-11-10
+
 ### Added
 - Chat interface in the browser: `claudegravity chat` (port `--chat-port`, default 8766). Write the task, read plan and review, approve with a button or change it in words, answer questions, watch the build, view diff and report; plus stop and resume, project switching, all sessions of the project, German and English, light and dark, also on a phone. Only on `127.0.0.1` with a token; writing calls require JSON and its own origin. → `docs/en/chat.md`
 - `--session <name>` resumes a specific session instead of the latest.
@@ -12,6 +14,7 @@
 - The diff in live view and chat shows new files with their content (secret, binary and large files by name only); `__pycache__` and the loop log under `logs/` no longer appear as changes.
 
 ### Fixed
+- Error messages of an AI CLI show only their text instead of the whole JSON record; an expired login ("OAuth session expired") is reported as CG-1203 with the hint to log in instead of CG-1206.
 - A plan revised after your change request was built without a new review and still shown as "reviewed". Now the reviewer checks every changed version; the approved plan (also in the PR text) is the one actually built.
 - Ctrl+C at a question only took effect after Enter. Now the run ends at once and names the command to resume.
 - Ctrl+C during review or revision wrote an empty `PLAN_vN.md` that a resume would then have used.

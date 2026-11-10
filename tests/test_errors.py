@@ -57,6 +57,16 @@ class ErrorCodeTest(unittest.TestCase):
         self.assertIn("[CG-1003]", res.stderr)
         self.assertNotIn("Traceback", res.stderr)
 
+    def test_cli_errors_show_their_text_not_the_json_record(self):
+        raw = '{"usage":{"input_tokens":0},"is_error":true,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","type":"result"}'
+        text = loop.cli_error_text(raw)
+        self.assertEqual(text, "Failed to authenticate: OAuth session expired and could not be refreshed")
+        self.assertEqual(loop.classify_error(f"claude Fehler (Code 1): {text}"), "CG-1203")
+        self.assertEqual(loop.cli_error_text('Hinweis\n{"error":{"message":"kaputt"}}'), "kaputt")
+        self.assertEqual(loop.cli_error_text("einfach kaputt"), "einfach kaputt")
+        self.assertEqual(loop.classify_error("codex Fehler (Code 2): einfach kaputt"), "CG-1206")
+        self.assertLess(len(loop.cli_error_text("x" * 5000)), 1600)
+
 
 if __name__ == "__main__":
     unittest.main()
